@@ -1,18 +1,30 @@
 "use client";
 
-// Engineer-mode input panel: every cost lever, fully controlled. This
-// component owns no state — every edit patches a slice of `inputs` and
-// bubbles a brand-new CalcInputs object up via `onChange`.
+// Engineer-mode input panel. Owns no cost state — every edit patches a slice of
+// `inputs` and bubbles a fresh CalcInputs up via `onChange`. Fields are grouped
+// by decision (Workload → Retrieval → Generation → Infrastructure) and low-level
+// assumptions collapse under the Advanced view.
 
-import type { CalcInputs, PriceBook, RagMode } from "@/lib/types";
-import { NumberField, SegmentedToggle, Section } from "./inputs/controls";
+import { useState } from "react";
+import type { CalcInputs, PriceBook } from "@/lib/types";
+import { SegmentedToggle } from "./inputs/controls";
+import { WorkloadPanel } from "./inputs/WorkloadPanel";
 import { CorpusPanel } from "./inputs/CorpusPanel";
 import { ChunkingPanel } from "./inputs/ChunkingPanel";
 import { VectorStorePanel } from "./inputs/VectorStorePanel";
 import { RetrievalPanel } from "./inputs/RetrievalPanel";
 import { GuardrailsPanel } from "./inputs/GuardrailsPanel";
 import { GenerationPanel } from "./inputs/GenerationPanel";
-import { TrafficPanel } from "./inputs/TrafficPanel";
+
+type View = "quick" | "advanced";
+
+function GroupLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+      {children}
+    </div>
+  );
+}
 
 export function InputPanel(props: {
   inputs: CalcInputs;
@@ -20,67 +32,62 @@ export function InputPanel(props: {
   priceBook: PriceBook;
 }) {
   const { inputs, onChange, priceBook } = props;
+  const [view, setView] = useState<View>("quick");
+  const advanced = view === "advanced";
 
   return (
     <div className="space-y-4">
-      <div className="panel p-4">
-        <SegmentedToggle<RagMode>
-          label="RAG mode"
-          value={inputs.ragMode}
+      <div className="panel flex items-center justify-between gap-3 p-3">
+        <SegmentedToggle<View>
+          label="View"
+          value={view}
           options={[
-            { value: "A", label: "A — Self-built" },
-            { value: "B", label: "B — Bedrock Knowledge Bases" },
+            { value: "quick", label: "Quick estimate" },
+            { value: "advanced", label: "Advanced assumptions" },
           ]}
-          onChange={(v) => onChange({ ...inputs, ragMode: v })}
+          onChange={setView}
         />
+        <span className="text-[11px] text-slate-500">
+          {advanced ? "All levers shown" : "Low-level assumptions hidden"}
+        </span>
       </div>
 
-      <Section title="Query" hint="Applies to every query regardless of RAG mode.">
-        <NumberField
-          label="User query length"
-          suffix="tokens"
-          value={inputs.queryTokens}
-          min={0}
-          step={1}
-          onChange={(v) => onChange({ ...inputs, queryTokens: v })}
-        />
-      </Section>
-
+      <GroupLabel>Workload</GroupLabel>
+      <WorkloadPanel inputs={inputs} priceBook={priceBook} onChange={onChange} />
       <CorpusPanel corpus={inputs.corpus} onChange={(next) => onChange({ ...inputs, corpus: next })} />
 
+      <GroupLabel>Retrieval</GroupLabel>
       <ChunkingPanel
         chunking={inputs.chunking}
         priceBook={priceBook}
+        advanced={advanced}
         onChange={(next) => onChange({ ...inputs, chunking: next })}
       />
-
-      <VectorStorePanel
-        vectorStore={inputs.vectorStore}
-        priceBook={priceBook}
-        onChange={(next) => onChange({ ...inputs, vectorStore: next })}
-      />
-
       <RetrievalPanel
         retrieval={inputs.retrieval}
         priceBook={priceBook}
         onChange={(next) => onChange({ ...inputs, retrieval: next })}
       />
 
-      <GuardrailsPanel
-        guardrails={inputs.guardrails}
-        onChange={(next) => onChange({ ...inputs, guardrails: next })}
-      />
-
+      <GroupLabel>Generation</GroupLabel>
       <GenerationPanel
         generation={inputs.generation}
         priceBook={priceBook}
+        advanced={advanced}
         onChange={(next) => onChange({ ...inputs, generation: next })}
       />
 
-      <TrafficPanel
-        traffic={inputs.traffic}
+      <GroupLabel>Infrastructure assumptions</GroupLabel>
+      <VectorStorePanel
+        vectorStore={inputs.vectorStore}
         priceBook={priceBook}
-        onChange={(next) => onChange({ ...inputs, traffic: next })}
+        advanced={advanced}
+        onChange={(next) => onChange({ ...inputs, vectorStore: next })}
+      />
+      <GuardrailsPanel
+        guardrails={inputs.guardrails}
+        advanced={advanced}
+        onChange={(next) => onChange({ ...inputs, guardrails: next })}
       />
     </div>
   );

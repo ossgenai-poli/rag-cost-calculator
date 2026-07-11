@@ -2,7 +2,6 @@
 
 import type { GenerationInputs, GenerationMode, PriceBook } from "@/lib/types";
 import {
-  FieldRow,
   NumberField,
   SegmentedToggle,
   SelectField,
@@ -14,8 +13,9 @@ export function GenerationPanel(props: {
   generation: GenerationInputs;
   onChange: (next: GenerationInputs) => void;
   priceBook: PriceBook;
+  advanced?: boolean;
 }) {
-  const { generation, onChange, priceBook } = props;
+  const { generation, onChange, priceBook, advanced = true } = props;
   const llmModels = priceBook.models.filter((m) => m.kind === "llm");
   const bedrockModels = llmModels.filter((m) => m.bedrock);
   const nonBedrockModels = llmModels.filter((m) => !m.bedrock);
@@ -74,24 +74,15 @@ export function GenerationPanel(props: {
         </p>
       )}
 
-      <FieldRow>
-        <NumberField
-          label="Output tokens"
-          suffix="tokens/answer"
-          value={generation.outTokens}
-          min={0}
-          step={1}
-          onChange={(v) => onChange({ ...generation, outTokens: v })}
-        />
-        <NumberField
-          label="Prompt overhead"
-          suffix="tokens/query"
-          value={generation.promptOverhead}
-          min={0}
-          step={1}
-          onChange={(v) => onChange({ ...generation, promptOverhead: v })}
-        />
-      </FieldRow>
+      <NumberField
+        label="System prompt & formatting"
+        hint="System prompt + formatting tokens added to every query (prompt overhead)"
+        suffix="tokens/query"
+        value={generation.promptOverhead}
+        min={0}
+        step={1}
+        onChange={(v) => onChange({ ...generation, promptOverhead: v })}
+      />
 
       <div className="pt-2 border-t border-slate-800 space-y-3">
         <span className="text-xs text-slate-500">
@@ -107,36 +98,38 @@ export function GenerationPanel(props: {
           }))}
           onChange={selectGpu}
         />
-        <FieldRow>
-          <NumberField
-            label="GPU price"
-            suffix="$/hr"
-            value={generation.gpuPricePerHr}
-            min={0}
-            step={0.01}
-            disabled={!selfHosted}
-            onChange={(v) => onChange({ ...generation, gpuPricePerHr: v })}
-          />
-          <NumberField
-            label="Sustained throughput"
-            suffix="tok/s"
-            value={generation.sustainedTokPerSec}
-            min={1}
-            step={1}
-            disabled={!selfHosted}
-            onChange={(v) => onChange({ ...generation, sustainedTokPerSec: v })}
-          />
-        </FieldRow>
-        <SliderField
-          label="Utilization target"
-          value={generation.utilTarget}
-          min={0.05}
-          max={1}
+        <NumberField
+          label="GPU price"
+          suffix="$/hr"
+          value={generation.gpuPricePerHr}
+          min={0}
           step={0.01}
-          format={(v) => `${Math.round(v * 100)}%`}
           disabled={!selfHosted}
-          onChange={(v) => onChange({ ...generation, utilTarget: v })}
+          onChange={(v) => onChange({ ...generation, gpuPricePerHr: v })}
         />
+        {advanced && (
+          <>
+            <NumberField
+              label="Sustained throughput"
+              suffix="tok/s"
+              value={generation.sustainedTokPerSec}
+              min={1}
+              step={1}
+              disabled={!selfHosted}
+              onChange={(v) => onChange({ ...generation, sustainedTokPerSec: v })}
+            />
+            <SliderField
+              label="Utilization target"
+              value={generation.utilTarget}
+              min={0.05}
+              max={1}
+              step={0.01}
+              format={(v) => `${Math.round(v * 100)}%`}
+              disabled={!selfHosted}
+              onChange={(v) => onChange({ ...generation, utilTarget: v })}
+            />
+          </>
+        )}
       </div>
     </Section>
   );
