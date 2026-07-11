@@ -1,0 +1,47 @@
+name: Refresh Prices
+
+on:
+  schedule:
+    # nightly at 06:00 UTC
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh public/prices.json from the AWS Price List API
+        # The script never throws: if AWS is unreachable or credentials are
+        # missing, it exits 0 and leaves committed defaults in place.
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: npm run refresh-prices
+
+      - name: Commit and push if prices changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- public/prices.json; then
+            git add public/prices.json
+            git commit -m "chore: nightly price refresh"
+            git push
+          else
+            echo "No price changes, skipping commit."
+          fi

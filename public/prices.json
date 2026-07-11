@@ -1,0 +1,151 @@
+{
+  "updatedAt": "2026-07-11T04:30:59.293Z",
+  "source": "fallback",
+  "region": "us-east-1",
+  "gpus": [
+    {
+      "instanceType": "p5.48xlarge",
+      "gpu": "8x H100",
+      "pricePerHr": 55.04,
+      "sustainedTokPerSec": 2600
+    },
+    {
+      "instanceType": "p5e.48xlarge",
+      "gpu": "8x H200",
+      "pricePerHr": 47.76,
+      "sustainedTokPerSec": 3000
+    },
+    {
+      "instanceType": "p4d.24xlarge",
+      "gpu": "8x A100",
+      "pricePerHr": 32.77,
+      "sustainedTokPerSec": 1500
+    },
+    {
+      "instanceType": "g5.12xlarge",
+      "gpu": "4x A10G",
+      "pricePerHr": 5.672,
+      "sustainedTokPerSec": 350
+    }
+  ],
+  "opensearch": {
+    "ocuPricePerHr": 0.24,
+    "storagePricePerGBmo": 0.024,
+    "gbRamPerOcu": 6,
+    "minOCU": 2
+  },
+  "models": [
+    {
+      "id": "claude-opus-4-8",
+      "label": "Claude Opus 4.8 (Bedrock)",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "llm",
+      "inPricePer1K": 0.015,
+      "outPricePer1K": 0.075,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "claude-sonnet-4",
+      "label": "Claude Sonnet 4 (Bedrock)",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "llm",
+      "inPricePer1K": 0.003,
+      "outPricePer1K": 0.015,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "qwen2.5-72b-bedrock",
+      "label": "Qwen2.5-72B (Bedrock)",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "llm",
+      "inPricePer1K": 0.0009,
+      "outPricePer1K": 0.0009,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "deepseek-r1-bedrock",
+      "label": "DeepSeek-R1 (Bedrock)",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "llm",
+      "inPricePer1K": 0.00135,
+      "outPricePer1K": 0.0054,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "gemini-3.1-pro",
+      "label": "Gemini 3.1 Pro (non-Bedrock)",
+      "provider": "gemini",
+      "bedrock": false,
+      "kind": "llm",
+      "inPricePer1K": 0.002,
+      "outPricePer1K": 0.012,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "grok-4.20",
+      "label": "Grok 4.20 (non-Bedrock)",
+      "provider": "grok",
+      "bedrock": false,
+      "kind": "llm",
+      "inPricePer1K": 0.002,
+      "outPricePer1K": 0.006,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "gpt-5.2",
+      "label": "GPT-5.2 (non-Bedrock)",
+      "provider": "openai",
+      "bedrock": false,
+      "kind": "llm",
+      "inPricePer1K": 0.00175,
+      "outPricePer1K": 0.014,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "titan-embed-v2",
+      "label": "Titan Text Embeddings V2 (Bedrock)",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "embedding",
+      "inPricePer1K": 0.00002,
+      "outPricePer1K": 0,
+      "dim": 1024,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "cohere-embed-v3",
+      "label": "Cohere Embed English V3 (Bedrock)",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "embedding",
+      "inPricePer1K": 0.0001,
+      "outPricePer1K": 0,
+      "dim": 1024,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "cohere-rerank-v3",
+      "label": "Cohere Rerank V3 (Bedrock)",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "rerank",
+      "inPricePer1K": 0.001,
+      "outPricePer1K": 0,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "bedrock-guardrails",
+      "label": "Bedrock Guardrails",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "guardrail",
+      "inPricePer1K": 0.00075,
+      "outPricePer1K": 0,
+      "verifiedAt": "2026-07-10"
+    }
+  ]
+}

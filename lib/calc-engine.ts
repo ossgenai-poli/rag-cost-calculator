@@ -1,0 +1,279 @@
+// ============================================================================
+// calc-engine — pure, deterministic RAG cost model. No I/O, no React.
+// Composes against the frozen contract in ./types.ts.
+// ============================================================================
+
+import type {
+  CalcInputs,
+  PriceBook,
+  CalcResult,
+  IngestionResult,
+  VectorStoreResult,
+  PerQueryResult,
+  CostBreakdownLine,
+  RagMode,
+} from "./types";
+import { computeCrossover } from "./crossover";
+
+/** Fixed tiny S3/network per-query overhead ($), keeps golden tests stable. */
+export const INFRA_CRUMBS_PER_QUERY = 0.00002;
+
+// ---------------------------------------------------------------------------
+// Ingestion
+// ---------------------------------------------------------------------------
+
+function computeIngestion(inputs: CalcInputs): IngestionResult {
+  const { corpus, chunking } = inputs;
+
+  const corpusTokens = corpus.numDocs * corpus.avgTokensPerDoc;
+  const effChunk = chunking.chunkSize * (1 - chunking.overlapFraction);
+  const numVectors = corpusTokens / effChunk;
+  const embedIngestOnce = (corpusTokens / 1000) * chunking.embedPricePer1K;
+
+  // Amortize the one-time embed cost according to how often the corpus refreshes.
+  const embedIngestMonthly =
+    corpus.refreshCadence === "one-time"
+      ? embedIngestOnce / 12
+      : corpus.refreshCadence === "weekly"
+        ? embedIngestOnce * 4.345
+        : embedIngestOnce * 1; // "monthly"
+
+  return {
+    corpusTokens,
+    effChunk,
+    numVectors,
+    "embedIngest$": embedIngestOnce,
+    embedIngestMonthly$: embedIngestMonthly,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Vector store (OpenSearch Serverless)
+// ---------------------------------------------------------------------------
+
+function computeVectorStore(inputs: CalcInputs, numVectors: number): VectorStoreResult {
+  const { chunking, vectorStore } = inputs;
+  const dim = chunking.embedDim;
+  const { m, replicas, indexingAlgo, pqCompression, minOCU, ocuPricePerHr, storagePricePerGBmo, gbRamPerOcu, indexingOCUhrs } =
+    vectorStore;
+
+  const hnswBytes = 1.1 * (4 * dim + 8 * m) * numVectors * (1 + replicas);
+
+  const ramBytes =
+    indexingAlgo === "hnsw"
+      ? hnswBytes
+      : indexingAlgo === "ivf_pq"
+        ? hnswBytes / pqCompression
+        : hnswBytes / 2; // "ivf_fp16"
+
+  const ramGB = ramBytes / 1e9;
+  const searchOCU = Math.max(minOCU, Math.ceil(ramGB / gbRamPerOcu));
+  const storageGB = (4 * dim * numVectors) / 1e9; // raw fp32 vectors, unquantized
+
+  const opensearchMonthly = (indexingOCUhrs + searchOCU * 730) * ocuPricePerHr + storageGB * storagePricePerGBmo;
+  const opensearchFloor = minOCU * ocuPricePerHr * 730; // always-on baseline
+
+  return {
+    ramBytes,
+    ramGB,
+    searchOCU,
+    storageGB,
+    opensearchMonthly$: opensearchMonthly,
+    opensearchFloor$: opensearchFloor,
+    hnswBytes,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Per-query cost
+// ---------------------------------------------------------------------------
+
+function computePerQuery(inputs: CalcInputs): PerQueryResult {
+  const { guardrails, chunking, retrieval, generation, queryTokens } = inputs;
+
+  const guardrailIn = guardrails.inputEnabled ? guardrails.unitsPerQuery * guardrails.unitPricePer1K : 0;
+  const embedQuery = (queryTokens / 1000) * chunking.embedPricePer1K;
+  const rerank = retrieval.rerankEnabled ? (retrieval.topK / 1000) * retrieval.rerankPricePer1K : 0;
+  const llmInputTok = retrieval.topN * chunking.chunkSize + generation.promptOverhead + queryTokens;
+  const apiGen = (llmInputTok / 1000) * generation.llmInPricePer1K + (generation.outTokens / 1000) * generation.llmOutPricePer1K;
+  const guardrailOut = guardrails.outputEnabled ? guardrails.unitsPerQuery * guardrails.unitPricePer1K : 0;
+  const infraCrumbs = INFRA_CRUMBS_PER_QUERY;
+
+  const perQuery = guardrailIn + embedQuery + rerank + apiGen + guardrailOut + infraCrumbs;
+
+  return {
+    guardrailIn$: guardrailIn,
+    embedQuery$: embedQuery,
+    rerank$: rerank,
+    llmInputTok,
+    apiGen$: apiGen,
+    guardrailOut$: guardrailOut,
+    infraCrumbs$: infraCrumbs,
+    perQuery$: perQuery,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Breakdown + dominant lever
+// ---------------------------------------------------------------------------
+
+function buildBreakdown(
+  ingestion: IngestionResult,
+  vectorStore: VectorStoreResult,
+  perQuery: PerQueryResult,
+  queriesPerMonth: number
+): CostBreakdownLine[] {
+  const generationMonthly = perQuery.apiGen$ * queriesPerMonth;
+  const guardrailsMonthly = (perQuery.guardrailIn$ + perQuery.guardrailOut$) * queriesPerMonth;
+  const queryOtherMonthly = (perQuery.embedQuery$ + perQuery.rerank$ + perQuery.infraCrumbs$) * queriesPerMonth;
+
+  return [
+    { label: "Ingestion (embedding)", monthly$: ingestion.embedIngestMonthly$, category: "ingestion" },
+    { label: "Vector store (OpenSearch Serverless)", monthly$: vectorStore.opensearchMonthly$, category: "vectorstore" },
+    { label: "Generation (LLM)", monthly$: generationMonthly, category: "generation" },
+    { label: "Guardrails", monthly$: guardrailsMonthly, category: "guardrails" },
+    { label: "Query overhead (embed + rerank + infra)", monthly$: queryOtherMonthly, category: "query" },
+  ];
+}
+
+function findDominantLever(breakdown: CostBreakdownLine[], totalMonthly: number) {
+  const dominant = breakdown.reduce((max, line) => (line.monthly$ > max.monthly$ ? line : max), breakdown[0]);
+  return {
+    label: dominant.label,
+    monthly$: dominant.monthly$,
+    share: totalMonthly > 0 ? dominant.monthly$ / totalMonthly : 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// calculate()
+// ---------------------------------------------------------------------------
+
+function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, reportedMode: RagMode): CalcResult {
+  const ingestion = computeIngestion(effectiveInputs);
+  const vectorStore = computeVectorStore(effectiveInputs, ingestion.numVectors);
+  const perQuery = computePerQuery(effectiveInputs);
+
+  const queriesPerMonth = effectiveInputs.traffic.queriesPerMonth;
+  const queryMonthly = perQuery.perQuery$ * queriesPerMonth;
+  const totalMonthly = ingestion.embedIngestMonthly$ + vectorStore.opensearchMonthly$ + queryMonthly;
+
+  const breakdown = buildBreakdown(ingestion, vectorStore, perQuery, queriesPerMonth);
+  const dominantLever = findDominantLever(breakdown, totalMonthly);
+  const crossover = computeCrossover(effectiveInputs, priceBook, perQuery);
+
+  return {
+    ingestion,
+    vectorStore,
+    perQuery,
+    queryMonthly$: queryMonthly,
+    totalMonthly$: totalMonthly,
+    breakdown,
+    dominantLever,
+    crossover,
+    mode: reportedMode,
+  };
+}
+
+/**
+ * Compute the full RAG cost model for one mode.
+ *
+ * ragMode "A" (self-built) uses inputs as-is. ragMode "B" (Bedrock Knowledge
+ * Bases) clones inputs and overrides the vector store / generation params to
+ * reflect the managed service (HNSW-only, redundant OCUs, API-only
+ * generation) so the managed premium shows up naturally in the totals.
+ */
+export function calculate(inputs: CalcInputs, priceBook: PriceBook): CalcResult {
+  if (inputs.ragMode === "B") {
+    const effectiveInputs: CalcInputs = {
+      ...inputs,
+      vectorStore: {
+        ...inputs.vectorStore,
+        indexingAlgo: "hnsw",
+        replicas: Math.max(2, inputs.vectorStore.replicas),
+      },
+      generation: {
+        ...inputs.generation,
+        mode: "api",
+      },
+    };
+    return computeForMode(effectiveInputs, priceBook, "B");
+  }
+  return computeForMode(inputs, priceBook, "A");
+}
+
+// ---------------------------------------------------------------------------
+// defaultInputs()
+// ---------------------------------------------------------------------------
+
+/** Sensible engineer defaults derived from the priceBook. */
+export function defaultInputs(priceBook: PriceBook): CalcInputs {
+  const embedModel = priceBook.models.find((model) => model.kind === "embedding");
+  const llmModel = priceBook.models.find((model) => model.kind === "llm");
+  const rerankModel = priceBook.models.find((model) => model.kind === "rerank");
+  const guardrailModel = priceBook.models.find((model) => model.kind === "guardrail");
+  const gpu = priceBook.gpus[0];
+
+  if (!embedModel || !llmModel || !gpu) {
+    throw new Error("defaultInputs: priceBook is missing a required embedding model, llm model, or gpu instance");
+  }
+
+  const chunkSize = 512;
+
+  return {
+    ragMode: "A",
+    corpus: {
+      numDocs: 10000,
+      avgTokensPerDoc: 800,
+      refreshCadence: "monthly",
+    },
+    chunking: {
+      chunkSize,
+      overlapFraction: 0.1,
+      embedModelId: embedModel.id,
+      embedDim: embedModel.dim ?? 1024,
+      embedPricePer1K: embedModel.inPricePer1K,
+    },
+    vectorStore: {
+      indexingAlgo: "hnsw",
+      m: 16,
+      replicas: 1,
+      pqCompression: 32,
+      minOCU: priceBook.opensearch.minOCU,
+      ocuPricePerHr: priceBook.opensearch.ocuPricePerHr,
+      storagePricePerGBmo: priceBook.opensearch.storagePricePerGBmo,
+      gbRamPerOcu: priceBook.opensearch.gbRamPerOcu,
+      indexingOCUhrs: 10,
+    },
+    retrieval: {
+      topK: 20,
+      rerankEnabled: !!rerankModel,
+      rerankModelId: rerankModel?.id ?? "",
+      rerankPricePer1K: rerankModel?.inPricePer1K ?? 0,
+      topN: 5,
+    },
+    guardrails: {
+      inputEnabled: false,
+      outputEnabled: false,
+      unitPricePer1K: guardrailModel?.inPricePer1K ?? 0,
+      unitsPerQuery: 1,
+    },
+    generation: {
+      mode: "api",
+      llmModelId: llmModel.id,
+      llmInPricePer1K: llmModel.inPricePer1K,
+      llmOutPricePer1K: llmModel.outPricePer1K,
+      outTokens: 500,
+      promptOverhead: 300,
+      gpuInstanceType: gpu.instanceType,
+      gpuPricePerHr: gpu.pricePerHr,
+      sustainedTokPerSec: gpu.sustainedTokPerSec,
+      utilTarget: 0.7,
+    },
+    traffic: {
+      queriesPerMonth: 100000,
+      region: priceBook.region,
+    },
+    queryTokens: 50,
+  };
+}
