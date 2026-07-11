@@ -31,7 +31,8 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
+          # AWS Price List Query API only serves from us-east-1 (or ap-south-1).
+          AWS_REGION: us-east-1
         run: npm run refresh-prices
 
       - name: Commit and push if prices changed

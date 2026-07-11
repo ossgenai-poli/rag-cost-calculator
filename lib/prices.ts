@@ -101,9 +101,14 @@ export async function loadPrices(): Promise<LoadPricesResult> {
       const res = await fetchWithTimeout("/api/prices", FETCH_TIMEOUT_MS);
       if (!res.ok) throw new Error(`/api/prices fetch failed: ${res.status}`);
       const json = await res.json();
-      const parsed = priceBookSchema.parse(json);
-      const priceBook: PriceBook = { ...parsed, source: "live" };
-      return { priceBook, stale: false, asOf: asOfFromUpdatedAt(priceBook.updatedAt) };
+      // Respect the source the route actually reported — the route returns
+      // "fallback" when AWS was unreachable, so don't mislabel it as live.
+      const priceBook = priceBookSchema.parse(json);
+      return {
+        priceBook,
+        stale: priceBook.source === "fallback",
+        asOf: asOfFromUpdatedAt(priceBook.updatedAt),
+      };
     } catch {
       // live route unreachable/slow/invalid — fall through to committed JSON
     }

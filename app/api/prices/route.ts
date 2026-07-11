@@ -94,8 +94,9 @@ async function fetchOpenSearchPrices(client: PricingClient): Promise<OpenSearchP
     const usagetype: string = parsed?.product?.attributes?.usagetype || "";
     const price = extractOnDemandUsd(entry);
     if (price === null) continue;
-    if (/OCU/i.test(usagetype) && ocuPricePerHr === null) ocuPricePerHr = price;
-    if (/Storage/i.test(usagetype) && storagePricePerGBmo === null) storagePricePerGBmo = price;
+    // OCU compute appears as usagetypes like "...OCU-IndexingHours" / "SearchOCU".
+    if (/OCU|ComputeUnit/i.test(usagetype) && ocuPricePerHr === null) ocuPricePerHr = price;
+    if (/Storage|GB-Mo|GB-Month/i.test(usagetype) && storagePricePerGBmo === null) storagePricePerGBmo = price;
   }
 
   if (ocuPricePerHr === null || storagePricePerGBmo === null) {
@@ -122,29 +123,45 @@ function fallbackPriceBook(): PriceBook {
 }
 
 export async function GET() {
+  // Fetch GPU and OpenSearch prices INDEPENDENTLY. A failure in one must not
+  // discard the other (GPU prices are the volatile ones and matter most).
+  // `source` is "live" if we obtained ANY live data, else "fallback".
+  let gpus: GpuInstancePrice[] = GPU_DEFAULTS;
+  let opensearch: OpenSearchPrice = OPENSEARCH_DEFAULTS;
+  let gotLive = false;
+
   try {
     const client = new PricingClient({ region: "us-east-1" });
-    const [gpus, opensearch] = await Promise.all([
-      fetchGpuPrices(client),
-      fetchOpenSearchPrices(client),
-    ]);
 
-    const priceBook: PriceBook = {
-      updatedAt: new Date().toISOString(),
-      source: "live",
-      region: REGION,
-      gpus,
-      opensearch,
-      models: MODEL_PRICES,
-    };
+    try {
+      gpus = await fetchGpuPrices(client);
+      gotLive = true;
+    } catch {
+      gpus = GPU_DEFAULTS; // keep accurate defaults for GPU
+    }
 
-    const validated = priceBookSchema.parse(priceBook);
-    return Response.json(validated);
+    try {
+      opensearch = await fetchOpenSearchPrices(client);
+      gotLive = true;
+    } catch {
+      opensearch = OPENSEARCH_DEFAULTS; // OCU/storage price is stable — default is fine
+    }
   } catch {
-    // Any AWS/network/parse/validation failure -> static fallback. Covers
-    // missing credentials during the static build as well as live API errors.
-    const priceBook = fallbackPriceBook();
-    const validated = priceBookSchema.parse(priceBook);
-    return Response.json(validated);
+    // client construction / no-creds (e.g. static build) -> full fallback
+  }
+
+  const priceBook: PriceBook = {
+    updatedAt: new Date().toISOString(),
+    source: gotLive ? "live" : "fallback",
+    region: REGION,
+    gpus,
+    opensearch,
+    models: MODEL_PRICES,
+  };
+
+  try {
+    return Response.json(priceBookSchema.parse(priceBook));
+  } catch {
+    return Response.json(priceBookSchema.parse(fallbackPriceBook()));
   }
 }

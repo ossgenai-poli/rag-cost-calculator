@@ -117,8 +117,8 @@ async function fetchOpenSearchPrices(client) {
     const usagetype = parsed?.product?.attributes?.usagetype || "";
     const price = extractOnDemandUsd(entry);
     if (price === null) continue;
-    if (/OCU/i.test(usagetype) && ocuPricePerHr === null) ocuPricePerHr = price;
-    if (/Storage/i.test(usagetype) && storagePricePerGBmo === null) storagePricePerGBmo = price;
+    if (/OCU|ComputeUnit/i.test(usagetype) && ocuPricePerHr === null) ocuPricePerHr = price;
+    if (/Storage|GB-Mo|GB-Month/i.test(usagetype) && storagePricePerGBmo === null) storagePricePerGBmo = price;
   }
 
   if (ocuPricePerHr === null || storagePricePerGBmo === null) {
@@ -133,25 +133,33 @@ async function fetchOpenSearchPrices(client) {
 }
 
 async function main() {
+  // Fetch GPU and OpenSearch prices INDEPENDENTLY so one failing doesn't
+  // discard the other. `source` is "live" if we got ANY live data.
   let gpus = GPU_DEFAULTS;
   let opensearch = OPENSEARCH_DEFAULTS;
+  let gotLive = false;
+
+  const client = new PricingClient({ region: "us-east-1" });
 
   try {
-    const client = new PricingClient({ region: "us-east-1" });
-    const [liveGpus, liveOpensearch] = await Promise.all([
-      fetchGpuPrices(client),
-      fetchOpenSearchPrices(client),
-    ]);
-    gpus = liveGpus;
-    opensearch = liveOpensearch;
-    console.log("Fetched live EC2 GPU + OpenSearch Serverless prices from AWS Pricing API.");
+    gpus = await fetchGpuPrices(client);
+    gotLive = true;
+    console.log("Fetched live EC2 GPU prices.");
   } catch (err) {
-    console.log(`AWS fetch failed, using defaults: ${err.message}`);
+    console.log(`EC2 GPU fetch failed, using defaults: ${err.message}`);
+  }
+
+  try {
+    opensearch = await fetchOpenSearchPrices(client);
+    gotLive = true;
+    console.log("Fetched live OpenSearch Serverless prices.");
+  } catch (err) {
+    console.log(`OpenSearch fetch failed, using defaults: ${err.message}`);
   }
 
   const priceBook = {
     updatedAt: new Date().toISOString(),
-    source: "fallback",
+    source: gotLive ? "live" : "fallback",
     region: REGION,
     gpus,
     opensearch,
@@ -159,7 +167,7 @@ async function main() {
   };
 
   await writeFile(OUT_PATH, JSON.stringify(priceBook, null, 2) + "\n", "utf8");
-  console.log(`Wrote ${OUT_PATH}`);
+  console.log(`Wrote ${OUT_PATH} (source: ${priceBook.source})`);
 }
 
 main()
