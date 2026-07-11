@@ -75,15 +75,15 @@ export function ResultsPanel({
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
             stale
-              ? "bg-amber-500/10 text-amber-400"
+              ? "bg-sky-500/10 text-sky-400"
               : "bg-emerald-500/10 text-emerald-400"
           }`}
         >
-          {stale ? "stale / fallback" : "live"}
+          {stale ? "reference prices" : "live from AWS"}
         </span>
         <span className="text-slate-600">·</span>
         <span>
-          {priceBook.source} · {priceBook.region}
+          {stale ? "reference" : "live"} · {priceBook.region}
         </span>
       </div>
 
