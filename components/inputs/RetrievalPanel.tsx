@@ -29,8 +29,8 @@ export function RetrievalPanel(props: {
           onChange={(v) => onChange({ ...retrieval, topK: v })}
         />
         <NumberField
-          label="Top N"
-          hint="Chunks kept after rerank, into LLM context"
+          label="Chunks sent to the LLM"
+          hint="Top N — chunks kept after rerank, placed into LLM context"
           value={retrieval.topN}
           min={1}
           step={1}

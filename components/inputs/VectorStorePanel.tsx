@@ -7,8 +7,9 @@ export function VectorStorePanel(props: {
   vectorStore: VectorStoreInputs;
   onChange: (next: VectorStoreInputs) => void;
   priceBook: PriceBook;
+  advanced?: boolean;
 }) {
-  const { vectorStore, onChange } = props;
+  const { vectorStore, onChange, advanced = true } = props;
   const isPq = vectorStore.indexingAlgo === "ivf_pq";
 
   return (
@@ -22,32 +23,6 @@ export function VectorStorePanel(props: {
           { value: "ivf_fp16", label: "IVF + FP16" },
         ]}
         onChange={(v) => onChange({ ...vectorStore, indexingAlgo: v })}
-      />
-      <FieldRow>
-        <NumberField
-          label="m (HNSW neighbors)"
-          value={vectorStore.m}
-          min={1}
-          step={1}
-          disabled={vectorStore.indexingAlgo !== "hnsw"}
-          onChange={(v) => onChange({ ...vectorStore, m: v })}
-        />
-        <NumberField
-          label="Replicas"
-          value={vectorStore.replicas}
-          min={1}
-          step={1}
-          onChange={(v) => onChange({ ...vectorStore, replicas: v })}
-        />
-      </FieldRow>
-      <NumberField
-        label="PQ compression"
-        hint="Only relevant when algorithm is ivf_pq (e.g. 32)"
-        value={vectorStore.pqCompression}
-        min={1}
-        step={1}
-        disabled={!isPq}
-        onChange={(v) => onChange({ ...vectorStore, pqCompression: v })}
       />
       <FieldRow>
         <NumberField
@@ -66,32 +41,65 @@ export function VectorStorePanel(props: {
           onChange={(v) => onChange({ ...vectorStore, ocuPricePerHr: v })}
         />
       </FieldRow>
-      <FieldRow>
-        <NumberField
-          label="Storage price"
-          suffix="$/GB-mo"
-          value={vectorStore.storagePricePerGBmo}
-          min={0}
-          step={0.001}
-          onChange={(v) => onChange({ ...vectorStore, storagePricePerGBmo: v })}
-        />
-        <NumberField
-          label="RAM per OCU"
-          suffix="GB"
-          value={vectorStore.gbRamPerOcu}
-          min={0.1}
-          step={0.1}
-          onChange={(v) => onChange({ ...vectorStore, gbRamPerOcu: v })}
-        />
-      </FieldRow>
-      <NumberField
-        label="Indexing OCU-hours"
-        hint="One-time / periodic indexing compute, in OCU-hours"
-        value={vectorStore.indexingOCUhrs}
-        min={0}
-        step={0.5}
-        onChange={(v) => onChange({ ...vectorStore, indexingOCUhrs: v })}
-      />
+
+      {advanced && (
+        <>
+          <FieldRow>
+            <NumberField
+              label="m (HNSW neighbors)"
+              value={vectorStore.m}
+              min={1}
+              step={1}
+              disabled={vectorStore.indexingAlgo !== "hnsw"}
+              onChange={(v) => onChange({ ...vectorStore, m: v })}
+            />
+            <NumberField
+              label="Replicas"
+              value={vectorStore.replicas}
+              min={1}
+              step={1}
+              onChange={(v) => onChange({ ...vectorStore, replicas: v })}
+            />
+          </FieldRow>
+          <NumberField
+            label="PQ compression"
+            hint="Only relevant when algorithm is ivf_pq (e.g. 32)"
+            value={vectorStore.pqCompression}
+            min={1}
+            step={1}
+            disabled={!isPq}
+            onChange={(v) => onChange({ ...vectorStore, pqCompression: v })}
+          />
+          <FieldRow>
+            <NumberField
+              label="Storage price"
+              suffix="$/GB-mo"
+              value={vectorStore.storagePricePerGBmo}
+              min={0}
+              step={0.001}
+              onChange={(v) => onChange({ ...vectorStore, storagePricePerGBmo: v })}
+            />
+            <NumberField
+              label="RAM per OCU"
+              suffix="GB"
+              hint="OCU RAM — GB of searchable RAM per OpenSearch Compute Unit"
+              value={vectorStore.gbRamPerOcu}
+              min={0.1}
+              step={0.1}
+              onChange={(v) => onChange({ ...vectorStore, gbRamPerOcu: v })}
+            />
+          </FieldRow>
+          <NumberField
+            label="One-time indexing compute"
+            hint="Indexing OCU-hours — one-time / periodic indexing compute"
+            suffix="OCU-hours"
+            value={vectorStore.indexingOCUhrs}
+            min={0}
+            step={0.5}
+            onChange={(v) => onChange({ ...vectorStore, indexingOCUhrs: v })}
+          />
+        </>
+      )}
     </Section>
   );
 }

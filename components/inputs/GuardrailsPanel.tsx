@@ -6,8 +6,9 @@ import { FieldRow, NumberField, Section, Toggle } from "./controls";
 export function GuardrailsPanel(props: {
   guardrails: GuardrailInputs;
   onChange: (next: GuardrailInputs) => void;
+  advanced?: boolean;
 }) {
-  const { guardrails, onChange } = props;
+  const { guardrails, onChange, advanced = true } = props;
 
   return (
     <Section title="Guardrails">
@@ -23,24 +24,26 @@ export function GuardrailsPanel(props: {
           onChange={(v) => onChange({ ...guardrails, outputEnabled: v })}
         />
       </FieldRow>
-      <FieldRow>
-        <NumberField
-          label="Unit price"
-          suffix="$/1K units"
-          value={guardrails.unitPricePer1K}
-          min={0}
-          step={0.00001}
-          onChange={(v) => onChange({ ...guardrails, unitPricePer1K: v })}
-        />
-        <NumberField
-          label="Units per query"
-          hint="Approx. guardrail units charged per query text"
-          value={guardrails.unitsPerQuery}
-          min={0}
-          step={1}
-          onChange={(v) => onChange({ ...guardrails, unitsPerQuery: v })}
-        />
-      </FieldRow>
+      {advanced && (
+        <FieldRow>
+          <NumberField
+            label="Unit price"
+            suffix="$/1K units"
+            value={guardrails.unitPricePer1K}
+            min={0}
+            step={0.00001}
+            onChange={(v) => onChange({ ...guardrails, unitPricePer1K: v })}
+          />
+          <NumberField
+            label="Units per query"
+            hint="Approx. guardrail units charged per query text"
+            value={guardrails.unitsPerQuery}
+            min={0}
+            step={1}
+            onChange={(v) => onChange({ ...guardrails, unitsPerQuery: v })}
+          />
+        </FieldRow>
+      )}
     </Section>
   );
 }
