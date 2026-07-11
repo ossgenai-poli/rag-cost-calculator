@@ -30,20 +30,27 @@ function ec2Location(region: string): string {
   return EC2_LOCATION_BY_REGION[region] || EC2_LOCATION_BY_REGION["us-east-1"];
 }
 
-/** Extract the OnDemand USD price-per-unit from a raw Price List JSON string. */
-function extractOnDemandUsd(priceListJson: string): number | null {
+/**
+ * Extract the first positive OnDemand USD price-per-unit from a Price List
+ * entry. The AWS SDK returns entries as LazyJsonString objects (NOT plain
+ * strings), so we coerce with String() rather than checking typeof, and we
+ * scan every term/dimension instead of assuming the first one.
+ */
+function extractOnDemandUsd(entry: unknown): number | null {
   try {
-    const parsed = JSON.parse(priceListJson);
+    const parsed = JSON.parse(typeof entry === "string" ? entry : String(entry));
     const onDemand = parsed?.terms?.OnDemand;
     if (!onDemand) return null;
-    const term = Object.values(onDemand)[0] as any;
-    const priceDimensions = term?.priceDimensions;
-    if (!priceDimensions) return null;
-    const dimension = Object.values(priceDimensions)[0] as any;
-    const usd = dimension?.pricePerUnit?.USD;
-    if (usd === undefined) return null;
-    const n = Number(usd);
-    return Number.isFinite(n) ? n : null;
+    for (const term of Object.values(onDemand) as any[]) {
+      const dims = term?.priceDimensions;
+      if (!dims) continue;
+      for (const dim of Object.values(dims) as any[]) {
+        const usd = dim?.pricePerUnit?.USD;
+        const n = usd != null ? Number(usd) : NaN;
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -67,8 +74,11 @@ async function fetchGpuPrices(client: PricingClient): Promise<GpuInstancePrice[]
       MaxResults: 5,
     });
     const res = await client.send(command);
-    const priceListEntry = res.PriceList?.[0];
-    const usd = typeof priceListEntry === "string" ? extractOnDemandUsd(priceListEntry) : null;
+    let usd: number | null = null;
+    for (const entry of res.PriceList ?? []) {
+      usd = extractOnDemandUsd(entry);
+      if (usd !== null) break;
+    }
     if (usd === null) throw new Error(`no OnDemand price for ${gpu.instanceType}`);
     // sustainedTokPerSec isn't in the Pricing API — merged in from defaults.
     results.push({ ...gpu, pricePerHr: usd });
@@ -84,13 +94,19 @@ async function fetchOpenSearchPrices(client: PricingClient): Promise<OpenSearchP
     MaxResults: 100,
   });
   const res = await client.send(command);
-  const entries = (res.PriceList || []).filter((e: unknown): e is string => typeof e === "string");
+  const entries = res.PriceList ?? [];
 
   let ocuPricePerHr: number | null = null;
   let storagePricePerGBmo: number | null = null;
 
   for (const entry of entries) {
-    const parsed = JSON.parse(entry);
+    // Entries are LazyJsonString objects — coerce with String(), don't typeof-filter.
+    let parsed: any;
+    try {
+      parsed = JSON.parse(typeof entry === "string" ? entry : String(entry));
+    } catch {
+      continue;
+    }
     const usagetype: string = parsed?.product?.attributes?.usagetype || "";
     const price = extractOnDemandUsd(entry);
     if (price === null) continue;
