@@ -37,6 +37,12 @@ export function RetrievalPanel(props: {
           onChange={(v) => onChange({ ...retrieval, topN: v })}
         />
       </FieldRow>
+      {retrieval.topN > retrieval.topK && (
+        <p className="text-xs text-amber-400">
+          ⚠ Chunks sent to the LLM ({retrieval.topN}) exceeds chunks retrieved ({retrieval.topK}).
+          You can&apos;t rerank down to more than you fetched.
+        </p>
+      )}
       <Toggle
         label="Rerank enabled"
         checked={retrieval.rerankEnabled}

@@ -131,6 +131,10 @@ export function CrossoverChart({ crossover }: CrossoverChartProps) {
           <span className="text-slate-300">Break-even: {formatTokens(breakEvenTokens)} tokens/month</span>
           {" "}— equivalent to ~{equivalentQPS.toFixed(2)} sustained QPS, assuming{" "}
           {formatPercent(utilAtBreakEven)} realized GPU utilization at that point.
+          <span className="mt-1 block text-slate-500">
+            Box capacity is sized conservatively against total (prefill + decode) tokens, so
+            real-world self-hosting is slightly cheaper than shown.
+          </span>
         </div>
       )}
 

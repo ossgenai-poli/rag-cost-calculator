@@ -127,7 +127,8 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "bedrock",
     bedrock: true,
     kind: "guardrail",
-    inPricePer1K: 0.00075,
+    // $ per 1,000 text units (1 text unit ≈ 1000 chars). ~$0.75/1K units.
+    inPricePer1K: 0.75,
     outPricePer1K: 0,
     verifiedAt: VERIFIED_AT,
   },

@@ -3,7 +3,11 @@
 import type { CalcInputs, CalcResult, PriceBook } from "@/lib/types";
 import { deriveDisplayMetrics } from "@/lib/derived";
 import { buildScenarios } from "@/lib/scenarios";
+import { computeSensitivity } from "@/lib/sensitivity";
+import { activeProvider } from "@/lib/provider";
 import { MetricCards } from "./MetricCards";
+import { Sensitivity } from "./Sensitivity";
+import { FlashValue } from "./FlashValue";
 import { TokenBreakdown } from "./TokenBreakdown";
 import { CostBreakdown } from "./CostBreakdown";
 import { ScenarioComparison, type SavedRow } from "./ScenarioComparison";
@@ -62,6 +66,7 @@ export function ResultsPanel({
 }: ResultsPanelProps) {
   const metrics = deriveDisplayMetrics(resultA, inputs);
   const scenarios = buildScenarios(resultA, inputs);
+  const sensitivity = computeSensitivity(inputs, priceBook);
 
   const crossover = resultA.crossover;
   const hasGenVolume = crossover.monthlyGenTokens > 0;
@@ -70,22 +75,47 @@ export function ResultsPanel({
   return (
     <div className="flex flex-col gap-6">
       {/* Sticky summary strip — stays visible while editing inputs */}
-      <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between gap-4 rounded-b-lg border-b border-slate-800 bg-[#0b1220]/90 px-3 py-2 backdrop-blur">
+      <div className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-b-lg border-b border-slate-800 bg-[#0b1220]/90 px-3 py-2 backdrop-blur">
         <div className="flex items-baseline gap-2">
-          <span className="text-lg font-bold text-slate-100">{usd(metrics.totalMonthly)}</span>
+          <FlashValue className="text-lg font-bold text-slate-100">{usd(metrics.totalMonthly)}</FlashValue>
           <span className="text-xs text-slate-500">/month</span>
         </div>
         <div className="text-xs text-slate-400">
-          {usd(metrics.costPer1000, 2)} <span className="text-slate-600">/ 1K queries</span>
+          {metrics.hasTraffic ? usd(metrics.costPer1000, 2) : "—"}{" "}
+          <span className="text-slate-600">/ 1K queries</span>
         </div>
-        <div className="text-xs text-slate-500">
-          Pricing updated {formatDate(asOf)} · AWS {priceBook.region}
-          {stale && <span className="ml-2 text-sky-400">reference prices</span>}
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <span>
+            Pricing updated {formatDate(asOf)} · {activeProvider.label} {priceBook.region}
+          </span>
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+              stale ? "bg-amber-500/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"
+            }`}
+            title={
+              stale
+                ? "Static deployment: the live AWS Pricing API isn't reachable, so committed reference prices are shown."
+                : "Fetched live from the AWS Price List API."
+            }
+          >
+            {stale ? "reference prices (not live)" : "live"}
+          </span>
         </div>
       </div>
 
       {/* Headline metrics */}
       <MetricCards metrics={metrics} crossover={crossover} />
+
+      {metrics.vectorStoreFloored && (
+        <div className="-mt-3 flex items-start gap-2 px-1 text-xs text-slate-500">
+          <span aria-hidden>ℹ</span>
+          <span>
+            {activeProvider.vectorStore} is at its minimum-{activeProvider.computeUnit} floor
+            ({usd(metrics.opensearchFloor)}/mo). Corpus size and query load won&apos;t move the
+            vector-store cost until the index or QPS outgrows the floor.
+          </span>
+        </div>
+      )}
 
       {/* Dominant lever + utilization reality check */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -126,25 +156,56 @@ export function ResultsPanel({
         <span aria-hidden className="mt-0.5 text-amber-400">⚠</span>
         <div className="text-amber-200/90">
           <span className="font-medium text-amber-300">Some figures are estimated or unavailable.</span>{" "}
-          Bedrock Knowledge Bases managed pricing could not be verified, so any comparison
+          {activeProvider.managedService} managed pricing could not be verified, so any comparison
           involving it is marked incomplete rather than shown as a dollar figure.
         </div>
       </div>
 
-      {/* Mode A vs Mode B — honest about unknown managed pricing */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="panel p-4">
-          <div className="text-sm font-medium text-slate-300">Mode A — Self-built</div>
-          <div className="mt-2 text-3xl font-bold text-slate-100">{usd(resultA.totalMonthly$)}</div>
-          <div className="text-xs text-slate-500">per month · fully priced</div>
-        </div>
-        <div className="panel border border-amber-500/30 p-4">
-          <div className="text-sm font-medium text-slate-300">Mode B — Bedrock Knowledge Bases</div>
-          <div className="mt-2 text-2xl font-bold text-amber-300">Pricing incomplete</div>
-          <div className="mt-2 text-xs leading-relaxed text-slate-400">
-            Estimated infrastructure subtotal: {usd(resultB.totalMonthly$)}/month. Bedrock
-            Knowledge Bases managed charges are <span className="text-slate-300">not included</span>{" "}
-            because published pricing could not be verified.
+      {/* Two build strategies — honest about unknown managed pricing */}
+      <div className="flex flex-col gap-2">
+        <div className="text-sm font-medium text-slate-300">Two ways to build this</div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="panel p-4">
+            <div className="text-sm font-medium text-slate-200">{activeProvider.selfBuiltName}</div>
+            <div className="mb-2 text-xs text-slate-500">{activeProvider.selfBuiltDesc}</div>
+            <FlashValue className="text-3xl font-bold text-slate-100">
+              {usd(resultA.totalMonthly$)}
+            </FlashValue>
+            <div className="text-xs text-slate-500">per month · fully priced</div>
+          </div>
+
+          <div className="panel border border-amber-500/30 p-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-slate-200">{activeProvider.managedName}</span>
+              <span
+                className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400"
+                title="The engine currently models managed retrieval infra as identical to self-built; only the managed service fee is unknown."
+              >
+                not directly comparable
+              </span>
+            </div>
+            <div className="mb-2 text-xs text-slate-500">{activeProvider.managedDesc}</div>
+            <div className="space-y-1 text-sm">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-slate-400">
+                  Known components{" "}
+                  <span className="text-slate-600">(retrieval + embeddings + model API)</span>
+                </span>
+                <span className="font-semibold tabular-nums text-slate-100">
+                  ≥ {usd(resultB.totalMonthly$)}<span className="text-xs font-normal text-slate-500">/mo</span>
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-slate-400">
+                  + {activeProvider.managedServiceShort} service fee
+                </span>
+                <span className="text-amber-300">not published</span>
+              </div>
+            </div>
+            <div className="mt-2 border-t border-slate-800 pt-2 text-xs text-slate-500">
+              Reuses the self-built estimate for shared infra; the managed markup needs a vendor
+              quote, so this can&apos;t be totaled.
+            </div>
           </div>
         </div>
       </div>
@@ -165,6 +226,9 @@ export function ResultsPanel({
         <TokenBreakdown metrics={metrics} />
         <CostBreakdown metrics={metrics} />
       </div>
+
+      {/* What moves cost most */}
+      <Sensitivity rows={sensitivity} />
 
       {/* Crossover economics */}
       <CrossoverChart crossover={resultA.crossover} />

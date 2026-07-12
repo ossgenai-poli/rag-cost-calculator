@@ -18,6 +18,9 @@ import { computeCrossover } from "./crossover";
 /** Fixed tiny S3/network per-query overhead ($), keeps golden tests stable. */
 export const INFRA_CRUMBS_PER_QUERY = 0.00002;
 
+/** 730 hrs/mo × 3600 s/hr — single seconds-per-month convention used everywhere. */
+export const SECONDS_PER_MONTH = 730 * 3600;
+
 // ---------------------------------------------------------------------------
 // Ingestion
 // ---------------------------------------------------------------------------
@@ -28,7 +31,11 @@ function computeIngestion(inputs: CalcInputs): IngestionResult {
   const corpusTokens = corpus.numDocs * corpus.avgTokensPerDoc;
   const effChunk = chunking.chunkSize * (1 - chunking.overlapFraction);
   const numVectors = corpusTokens / effChunk;
-  const embedIngestOnce = (corpusTokens / 1000) * chunking.embedPricePer1K;
+  // Overlap re-embeds shared tokens, so the billed token count is the sum of
+  // full chunks (numVectors × chunkSize = corpusTokens / (1 − overlap)), not
+  // the raw corpus. Falls back to corpusTokens when effChunk is degenerate.
+  const embeddedTokens = Number.isFinite(effChunk) && effChunk > 0 ? numVectors * chunking.chunkSize : corpusTokens;
+  const embedIngestOnce = (embeddedTokens / 1000) * chunking.embedPricePer1K;
 
   // Amortize the one-time embed cost according to how often the corpus refreshes.
   const embedIngestMonthly =
@@ -52,9 +59,9 @@ function computeIngestion(inputs: CalcInputs): IngestionResult {
 // ---------------------------------------------------------------------------
 
 function computeVectorStore(inputs: CalcInputs, numVectors: number): VectorStoreResult {
-  const { chunking, vectorStore } = inputs;
+  const { chunking, vectorStore, traffic } = inputs;
   const dim = chunking.embedDim;
-  const { m, replicas, indexingAlgo, pqCompression, minOCU, ocuPricePerHr, storagePricePerGBmo, gbRamPerOcu, indexingOCUhrs } =
+  const { m, replicas, indexingAlgo, pqCompression, minOCU, ocuPricePerHr, storagePricePerGBmo, gbRamPerOcu, indexingOCUhrs, qpsPerOcu } =
     vectorStore;
 
   const hnswBytes = 1.1 * (4 * dim + 8 * m) * numVectors * (1 + replicas);
@@ -67,7 +74,12 @@ function computeVectorStore(inputs: CalcInputs, numVectors: number): VectorStore
         : hnswBytes / 2; // "ivf_fp16"
 
   const ramGB = ramBytes / 1e9;
-  const searchOCU = Math.max(minOCU, Math.ceil(ramGB / gbRamPerOcu));
+  // Search OCUs are the max of three floors: the always-on minimum, the RAM the
+  // index needs resident, and the compute the query load demands.
+  const ramOCU = Math.ceil(ramGB / gbRamPerOcu);
+  const qps = traffic.queriesPerMonth / SECONDS_PER_MONTH;
+  const loadOCU = qpsPerOcu > 0 ? Math.ceil(qps / qpsPerOcu) : 0;
+  const searchOCU = Math.max(minOCU, ramOCU, loadOCU);
   const storageGB = (4 * dim * numVectors) / 1e9; // raw fp32 vectors, unquantized
 
   const opensearchMonthly = (indexingOCUhrs + searchOCU * 730) * ocuPricePerHr + storageGB * storagePricePerGBmo;
@@ -91,12 +103,14 @@ function computeVectorStore(inputs: CalcInputs, numVectors: number): VectorStore
 function computePerQuery(inputs: CalcInputs): PerQueryResult {
   const { guardrails, chunking, retrieval, generation, queryTokens } = inputs;
 
-  const guardrailIn = guardrails.inputEnabled ? guardrails.unitsPerQuery * guardrails.unitPricePer1K : 0;
+  // Guardrails are priced per 1,000 text units, so divide units by 1000.
+  const guardrailUnit = (guardrails.unitsPerQuery / 1000) * guardrails.unitPricePer1K;
+  const guardrailIn = guardrails.inputEnabled ? guardrailUnit : 0;
   const embedQuery = (queryTokens / 1000) * chunking.embedPricePer1K;
   const rerank = retrieval.rerankEnabled ? (retrieval.topK / 1000) * retrieval.rerankPricePer1K : 0;
   const llmInputTok = retrieval.topN * chunking.chunkSize + generation.promptOverhead + queryTokens;
   const apiGen = (llmInputTok / 1000) * generation.llmInPricePer1K + (generation.outTokens / 1000) * generation.llmOutPricePer1K;
-  const guardrailOut = guardrails.outputEnabled ? guardrails.unitsPerQuery * guardrails.unitPricePer1K : 0;
+  const guardrailOut = guardrails.outputEnabled ? guardrailUnit : 0;
   const infraCrumbs = INFRA_CRUMBS_PER_QUERY;
 
   const perQuery = guardrailIn + embedQuery + rerank + apiGen + guardrailOut + infraCrumbs;
@@ -244,6 +258,7 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       storagePricePerGBmo: priceBook.opensearch.storagePricePerGBmo,
       gbRamPerOcu: priceBook.opensearch.gbRamPerOcu,
       indexingOCUhrs: 10,
+      qpsPerOcu: 2,
     },
     retrieval: {
       topK: 20,
@@ -273,6 +288,10 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
     traffic: {
       queriesPerMonth: 100000,
       region: priceBook.region,
+      method: "monthly",
+      qps: 1,
+      hoursPerDay: 24,
+      daysPerMonth: 30,
     },
     queryTokens: 50,
   };

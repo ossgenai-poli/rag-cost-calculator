@@ -5,7 +5,7 @@
 import type { CalcInputs, PriceBook, PerQueryResult, CrossoverResult } from "./types";
 
 const HOURS_PER_MONTH = 730;
-const SECONDS_PER_MONTH = 2.6298e6; // 730 hrs/mo convention used for sustained-throughput capacity
+const SECONDS_PER_MONTH = HOURS_PER_MONTH * 3600; // 2,628,000 — unified with calc-engine
 const CURVE_POINTS = 24;
 const SELF_HOST_UTIL_THRESHOLD = 0.7;
 

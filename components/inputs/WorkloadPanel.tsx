@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { CalcInputs, PriceBook } from "@/lib/types";
+import { useEffect } from "react";
+import type { CalcInputs, PriceBook, TrafficMethod } from "@/lib/types";
+import { activeProvider } from "@/lib/provider";
 import { NumberField, Section, SegmentedToggle } from "./controls";
-
-type TrafficMethod = "monthly" | "qps";
 
 /**
  * Workload block: region, traffic, and the query/answer token lengths that
  * drive everything downstream. Traffic recalculates automatically — no Apply
- * button. In QPS mode the monthly figure becomes a read-only derived value.
+ * button. In QPS mode the monthly figure is a read-only derived value, and the
+ * method + QPS breakdown are persisted in inputs.traffic so a shared link
+ * restores them.
  */
 export function WorkloadPanel(props: {
   inputs: CalcInputs;
@@ -18,22 +19,19 @@ export function WorkloadPanel(props: {
 }) {
   const { inputs, onChange, priceBook } = props;
   const { traffic } = inputs;
-
-  const [method, setMethod] = useState<TrafficMethod>("monthly");
-  const [qps, setQps] = useState(1);
-  const [hoursPerDay, setHoursPerDay] = useState(24);
-  const [daysPerMonth, setDaysPerMonth] = useState(30);
+  const { method, qps, hoursPerDay, daysPerMonth } = traffic;
 
   const derived = Math.round(qps * hoursPerDay * 3600 * daysPerMonth);
+
+  const patchTraffic = (patch: Partial<CalcInputs["traffic"]>) =>
+    onChange({ ...inputs, traffic: { ...traffic, ...patch } });
 
   // In QPS mode, push the derived monthly volume automatically, debounced so it
   // settles after the user pauses typing rather than on every keystroke.
   useEffect(() => {
     if (method !== "qps") return;
     const id = setTimeout(() => {
-      if (traffic.queriesPerMonth !== derived) {
-        onChange({ ...inputs, traffic: { ...traffic, queriesPerMonth: derived } });
-      }
+      if (traffic.queriesPerMonth !== derived) patchTraffic({ queriesPerMonth: derived });
     }, 250);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -44,27 +42,16 @@ export function WorkloadPanel(props: {
 
   return (
     <Section title="Workload" hint="Traffic and per-query sizing. Updates as you type.">
-      <label className="block">
-        <span className="text-xs text-slate-400">Region</span>
-        <div className="mt-1 flex gap-2">
-          <input
-            type="text"
-            className="w-full rounded-md border border-slate-700 bg-slate-900/60 px-2 py-1.5 text-sm text-slate-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            value={traffic.region}
-            onChange={(e) => onChange({ ...inputs, traffic: { ...traffic, region: e.target.value } })}
-          />
-          {traffic.region !== priceBook.region && (
-            <button
-              type="button"
-              className="shrink-0 rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:text-slate-200"
-              onClick={() => onChange({ ...inputs, traffic: { ...traffic, region: priceBook.region } })}
-              title={`Reset to price book default (${priceBook.region})`}
-            >
-              Use {priceBook.region}
-            </button>
-          )}
+      <div>
+        <span className="text-xs text-slate-400">Pricing region</span>
+        <div className="mt-1 flex items-center gap-2 rounded-md border border-slate-800 bg-slate-900/40 px-2.5 py-1.5">
+          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-medium text-slate-300">
+            {activeProvider.label}
+          </span>
+          <span className="text-sm text-slate-200">{priceBook.region}</span>
+          <span className="ml-auto text-[11px] text-slate-500">multi-region coming</span>
         </div>
-      </label>
+      </div>
 
       <SegmentedToggle<TrafficMethod>
         label="Traffic input method"
@@ -73,7 +60,7 @@ export function WorkloadPanel(props: {
           { value: "monthly", label: "Monthly queries" },
           { value: "qps", label: "From QPS" },
         ]}
-        onChange={setMethod}
+        onChange={(v) => patchTraffic({ method: v })}
       />
 
       {method === "monthly" ? (
@@ -82,14 +69,14 @@ export function WorkloadPanel(props: {
           value={traffic.queriesPerMonth}
           min={0}
           step={1}
-          onChange={(v) => onChange({ ...inputs, traffic: { ...traffic, queriesPerMonth: v } })}
+          onChange={(v) => patchTraffic({ queriesPerMonth: v })}
         />
       ) : (
         <div className="space-y-2 rounded-md border border-slate-800 bg-slate-900/40 p-2.5">
           <div className="grid grid-cols-3 gap-2">
-            <NumberField label="QPS" value={qps} min={0} step={0.1} onChange={setQps} />
-            <NumberField label="Hours/day" value={hoursPerDay} min={0} max={24} step={1} onChange={setHoursPerDay} />
-            <NumberField label="Days/mo" value={daysPerMonth} min={0} max={31} step={1} onChange={setDaysPerMonth} />
+            <NumberField label="QPS" value={qps} min={0} step={0.1} onChange={(v) => patchTraffic({ qps: v })} />
+            <NumberField label="Hours/day" value={hoursPerDay} min={0} max={24} step={1} onChange={(v) => patchTraffic({ hoursPerDay: v })} />
+            <NumberField label="Days/mo" value={daysPerMonth} min={0} max={31} step={1} onChange={(v) => patchTraffic({ daysPerMonth: v })} />
           </div>
           <div className="text-[11px] text-slate-400">
             {qps} QPS × {hoursPerDay} hours × {daysPerMonth} days ={" "}

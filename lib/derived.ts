@@ -24,6 +24,10 @@ export interface BreakdownRow {
 
 export interface DisplayMetrics {
   totalMonthly: number;
+  queries: number;
+  hasTraffic: boolean; // queries > 0 — guards $0-per-query at zero traffic
+  /** searchOCU is pinned at the min-OCU floor (RAM & load both below it). */
+  vectorStoreFloored: boolean;
   /** Grand total ÷ queries — the honest "all-in" per-query cost. */
   costPerQuery: number;
   /** costPerQuery × 1000 — easier to compare than fractions of a cent. */
@@ -80,6 +84,9 @@ export function deriveDisplayMetrics(result: CalcResult, inputs: CalcInputs): Di
 
   return {
     totalMonthly: total,
+    queries,
+    hasTraffic: queries > 0,
+    vectorStoreFloored: result.vectorStore.searchOCU <= inputs.vectorStore.minOCU,
     costPerQuery,
     costPer1000: costPerQuery * 1000,
     annualized: total * 12,

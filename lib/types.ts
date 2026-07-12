@@ -88,6 +88,7 @@ export interface VectorStoreInputs {
   storagePricePerGBmo: number;
   gbRamPerOcu: number;        // ~6
   indexingOCUhrs: number;     // one-time / periodic indexing OCU-hours
+  qpsPerOcu: number;          // search queries/sec one OCU can serve (load-based OCU sizing)
 }
 
 export interface RetrievalInputs {
@@ -119,9 +120,17 @@ export interface GenerationInputs {
   utilTarget: number;         // (0,1] target GPU utilization
 }
 
+export type TrafficMethod = "monthly" | "qps";
+
 export interface TrafficInputs {
   queriesPerMonth: number;
   region: string;
+  // How queriesPerMonth was derived — persisted so shared links restore the
+  // QPS helper. queriesPerMonth stays the single source of truth for the engine.
+  method: TrafficMethod;
+  qps: number;
+  hoursPerDay: number;
+  daysPerMonth: number;
 }
 
 export interface CalcInputs {

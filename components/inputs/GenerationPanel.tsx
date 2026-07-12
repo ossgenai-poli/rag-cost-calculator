@@ -110,8 +110,9 @@ export function GenerationPanel(props: {
         {advanced && (
           <>
             <NumberField
-              label="Sustained throughput"
-              suffix="tok/s"
+              label="Decode throughput"
+              hint="Output (decode) tokens/sec per box. Capacity is sized conservatively against total tokens."
+              suffix="output tok/s"
               value={generation.sustainedTokPerSec}
               min={1}
               step={1}

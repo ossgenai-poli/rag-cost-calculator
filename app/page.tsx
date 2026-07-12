@@ -24,6 +24,7 @@ interface SavedScenario {
 }
 
 const STORAGE_KEY = "rag-calc-saved-v1";
+const MAX_SAVED = 12; // keep localStorage bounded; drops the oldest beyond this
 
 /** Non-crypto id generator (Math.random is fine here — not security-sensitive). */
 function makeId(): string {
@@ -69,9 +70,10 @@ export default function Page() {
   }, [inputs]);
 
   const persistSaved = useCallback((next: SavedScenario[]) => {
-    setSaved(next);
+    const capped = next.slice(-MAX_SAVED);
+    setSaved(capped);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(capped));
     } catch {
       /* ignore quota errors */
     }
@@ -145,14 +147,21 @@ export default function Page() {
   }, [inputs, prices]);
 
   return (
-    <main className="mx-auto max-w-[1500px] px-4 py-6">
+    <main className="mx-auto max-w-[1500px] px-4 py-6 pb-20 lg:pb-6">
       <header className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">AWS RAG Price Calculator</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-100">RAG Cost Calculator</h1>
+            <span
+              className="rounded-full border border-slate-700 bg-slate-800/60 px-2 py-0.5 text-[11px] font-medium text-slate-300"
+              title="Only AWS pricing is implemented today. Azure and GCP are on the roadmap."
+            >
+              AWS · us-east-1
+            </span>
+          </div>
           <p className="max-w-3xl text-sm text-slate-400">
-            Engineer-mode monthly cost estimator for Retrieval-Augmented-Generation on AWS —
-            OpenSearch Serverless MVP. Compares self-built vs Bedrock Knowledge Bases, with an
-            API-vs-self-hosted-GPU crossover.
+            Engineer-mode monthly cost estimator for Retrieval-Augmented-Generation pipelines.
+            Compares self-built vs managed retrieval, with an API-vs-self-hosted-GPU crossover.
           </p>
         </div>
         {prices && inputs && (
@@ -174,8 +183,9 @@ export default function Page() {
         <div className="panel p-8 text-center text-slate-400">Loading prices…</div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(340px,38%)_1fr]">
-            <div className="lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(340px,38%)_1fr]">
+            {/* Inputs scroll with the page; only the results panel is sticky. */}
+            <div>
               <InputPanel inputs={inputs} onChange={setInputs} priceBook={prices.priceBook} />
             </div>
             <div
