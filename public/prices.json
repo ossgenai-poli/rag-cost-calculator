@@ -143,7 +143,7 @@
       "provider": "bedrock",
       "bedrock": true,
       "kind": "guardrail",
-      "inPricePer1K": 0.00075,
+      "inPricePer1K": 0.75,
       "outPricePer1K": 0,
       "verifiedAt": "2026-07-10"
     }

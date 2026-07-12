@@ -2,6 +2,7 @@
 
 import type { CrossoverResult } from "@/lib/types";
 import type { DisplayMetrics } from "@/lib/derived";
+import { FlashValue } from "./FlashValue";
 
 function usd(value: number, decimals = 0): string {
   return new Intl.NumberFormat("en-US", {
@@ -47,12 +48,14 @@ export function MetricCards({ metrics, crossover }: MetricCardsProps) {
     {
       label: "Estimated monthly cost",
       value: usd(metrics.totalMonthly),
-      sub: `${usd(metrics.costPerQuery, 4)} per query`,
+      sub: metrics.hasTraffic ? `${usd(metrics.costPerQuery, 4)} per query` : "no traffic set",
+      flash: true,
     },
     {
       label: "Total cost per 1,000 queries",
-      value: usd(metrics.costPer1000, 2),
-      sub: "easier to compare than $/query",
+      value: metrics.hasTraffic ? usd(metrics.costPer1000, 2) : "—",
+      sub: metrics.hasTraffic ? "easier to compare than $/query" : "set queries/month to compare",
+      flash: true,
     },
     {
       label: "Largest cost driver",
@@ -81,7 +84,7 @@ export function MetricCards({ metrics, crossover }: MetricCardsProps) {
                 c.small ? "text-xl" : "text-3xl"
               }`}
             >
-              {c.value}
+              {c.flash ? <FlashValue>{c.value}</FlashValue> : c.value}
             </div>
             <div className="mt-1 text-xs text-slate-500">{c.sub}</div>
           </div>

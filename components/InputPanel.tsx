@@ -52,11 +52,9 @@ export function InputPanel(props: {
         </span>
       </div>
 
-      <GroupLabel>Workload</GroupLabel>
       <WorkloadPanel inputs={inputs} priceBook={priceBook} onChange={onChange} />
       <CorpusPanel corpus={inputs.corpus} onChange={(next) => onChange({ ...inputs, corpus: next })} />
 
-      <GroupLabel>Retrieval</GroupLabel>
       <ChunkingPanel
         chunking={inputs.chunking}
         priceBook={priceBook}
@@ -69,7 +67,6 @@ export function InputPanel(props: {
         onChange={(next) => onChange({ ...inputs, retrieval: next })}
       />
 
-      <GroupLabel>Generation</GroupLabel>
       <GenerationPanel
         generation={inputs.generation}
         priceBook={priceBook}

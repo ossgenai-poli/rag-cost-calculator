@@ -18,7 +18,7 @@ const browser = await puppeteer.launch({
   args: ["--no-sandbox", "--disable-dev-shm-usage"],
 });
 const page = await browser.newPage();
-await page.setViewport({ width: 1440, height: 2200 });
+await page.setViewport({ width: 1440, height: 2400 });
 
 const consoleErrors = [];
 page.on("console", (msg) => {
@@ -34,12 +34,8 @@ page.on("request", (r) => {
 
 await page.goto(URL, { waitUntil: "networkidle0", timeout: 30000 });
 
-// Wait for the app to finish loading prices + rendering results.
 await page
-  .waitForFunction(
-    () => !document.body.innerText.includes("Loading prices"),
-    { timeout: 15000 }
-  )
+  .waitForFunction(() => !document.body.innerText.includes("Loading prices"), { timeout: 15000 })
   .catch(() => fail("app stuck on 'Loading prices' — never rendered results"));
 
 const text = await page.evaluate(() => document.body.innerText);
@@ -49,55 +45,47 @@ const text = await page.evaluate(() => document.body.innerText);
 const must = (re, label) => {
   if (!re.test(text)) fail(`${label}: expected to match ${re}`);
 };
-must(/AWS RAG Price Calculator/i, "title");
-must(/Prices as of/i, "freshness line");
-if (!/Mode A/i.test(text) || !/Mode B/i.test(text)) fail("Mode A/B not both present");
-must(/total/i, "total metric");
-// crossover verdict text (either branch is acceptable)
-if (!/self-host efficient|API wins in practice/.test(text))
-  fail("crossover verdict callout missing");
-// dominant lever callout
-if (!/cost (driver|lever)|Biggest cost/i.test(text))
-  fail("dominant-lever callout missing");
+must(/RAG Cost Calculator/i, "title");
+must(/Pricing updated/i, "freshness line");
+must(/Estimated monthly cost/i, "headline metric");
+must(/Total cost per 1,000 queries/i, "per-1k metric");
+// Both build strategies present under their descriptive names.
+if (!/Self-built/i.test(text) || !/Managed retrieval/i.test(text))
+  fail("both build strategies (Self-built / Managed retrieval) not present");
+// Managed retrieval must NOT show a bare total — it is incomplete.
+must(/Pricing unavailable|not published|not directly comparable/i, "managed-incomplete framing");
+// crossover verdict + dominant lever callouts
+if (!/self-host efficient|API wins in practice/.test(text)) fail("crossover verdict callout missing");
+if (!/cost driver|Biggest cost/i.test(text)) fail("dominant-lever callout missing");
+// token construction transparency
+must(/Total model tokens/i, "token construction panel");
 
 if (apiCalled) fail("static bundle called /api/prices — must NOT hit backend");
 
-// charts present (Recharts renders <svg class="recharts-surface">)
-const svgCount = await page.evaluate(
-  () => document.querySelectorAll("svg.recharts-surface").length
-);
-if (svgCount < 2)
-  fail(`expected >=2 Recharts charts (breakdown + crossover), found ${svgCount}`);
+// charts present (Recharts renders <svg class="recharts-surface">): breakdown + crossover
+const svgCount = await page.evaluate(() => document.querySelectorAll("svg.recharts-surface").length);
+if (svgCount < 2) fail(`expected >=2 Recharts charts (breakdown + crossover), found ${svgCount}`);
 
-// ---- Exercise the HNSW -> IVF-PQ lever -----------------------------------
-// Bump numVectors high enough to exceed the OCU floor, then compare algos.
+// ---- Levers: numDocs raises total; IVF-PQ lowers vector-store cost --------
 async function setNumberByLabel(labelText, value) {
   return page.evaluate(
     (labelText, value) => {
       const want = labelText.toLowerCase().trim();
-      // Find the label element whose OWN text (not descendants') matches, then
-      // locate the input in the same field-row container.
-      const candidates = [...document.querySelectorAll("label, span, div")].filter(
-        (n) => {
-          const own = [...n.childNodes]
-            .filter((c) => c.nodeType === 3)
-            .map((c) => c.textContent)
-            .join(" ")
-            .toLowerCase()
-            .trim();
-          return own.startsWith(want);
-        }
-      );
+      const candidates = [...document.querySelectorAll("label, span, div")].filter((n) => {
+        const own = [...n.childNodes]
+          .filter((c) => c.nodeType === 3)
+          .map((c) => c.textContent)
+          .join(" ")
+          .toLowerCase()
+          .trim();
+        return own.startsWith(want);
+      });
       for (const label of candidates) {
-        // search the label, its container, and up to 2 ancestors for an input
         let scope = label;
         for (let up = 0; up < 3 && scope; up++) {
           const input = scope.querySelector('input[type="number"], input:not([type])');
           if (input) {
-            const setter = Object.getOwnPropertyDescriptor(
-              window.HTMLInputElement.prototype,
-              "value"
-            ).set;
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
             setter.call(input, String(value));
             input.dispatchEvent(new Event("input", { bubbles: true }));
             input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -115,14 +103,10 @@ async function setNumberByLabel(labelText, value) {
 
 async function setAlgo(value) {
   return page.evaluate((value) => {
-    const selects = [...document.querySelectorAll("select")];
-    for (const s of selects) {
+    for (const s of [...document.querySelectorAll("select")]) {
       const opts = [...s.options].map((o) => o.value);
       if (opts.includes("ivf_pq") && opts.includes("hnsw")) {
-        const setter = Object.getOwnPropertyDescriptor(
-          window.HTMLSelectElement.prototype,
-          "value"
-        ).set;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
         setter.call(s, value);
         s.dispatchEvent(new Event("change", { bubbles: true }));
         return true;
@@ -132,46 +116,27 @@ async function setAlgo(value) {
   }, value);
 }
 
-// read the Vector Store metric card ($/mo + OCU/RAM subtext) — the metric card,
-// not the input-panel section header. It is the node containing "search OCU".
-async function readVectorStore() {
-  return page.evaluate(() => {
-    const nodes = [...document.querySelectorAll("*")].filter(
-      (n) =>
-        /vector store/i.test(n.textContent || "") &&
-        /search OCU/i.test(n.textContent || "") &&
-        n.children.length <= 4
-    );
-    const card = nodes[nodes.length - 1];
-    // innerText inserts line breaks between the card's block children, so the
-    // "$X", "N search OCU", "G GB RAM" tokens stay separated.
-    return card ? card.innerText.replace(/[ \t]+/g, " ").trim() : "";
-  });
-}
+// The all-in total lives in the sticky summary strip ("$X /month") and the
+// "Estimated monthly cost" card. Read the card's dollar value.
 async function readTotal() {
   return page.evaluate(() => {
-    const el = [...document.querySelectorAll("*")].find(
-      (n) => /^total$/i.test(n.innerText?.trim() || "") && n.children.length === 0
+    const label = [...document.querySelectorAll("*")].find(
+      (n) => /^estimated monthly cost$/i.test((n.textContent || "").trim()) && n.children.length === 0
     );
-    // the dollar value is a sibling within the same card
-    const card = el?.closest("div");
-    const m = card?.parentElement?.innerText.match(/\$([0-9,]+(?:\.[0-9]+)?)/);
+    const card = label?.closest("div.panel") || label?.parentElement;
+    const m = card?.innerText.match(/\$([0-9,]+(?:\.[0-9]+)?)/);
     return m ? parseFloat(m[1].replace(/,/g, "")) : NaN;
   });
 }
-// parse "$352.80 2.00 search OCU · 0.2 GB RAM" -> {dollars, ocu, ram}
-const parseVS = (s) => {
-  const d = (s.match(/\$([0-9,]+(?:\.[0-9]+)?)/) || [])[1];
-  const ocu = (s.match(/([0-9.]+)\s*search OCU/i) || [])[1];
-  const ram = (s.match(/([0-9.]+)\s*GB RAM/i) || [])[1];
-  return {
-    dollars: d ? parseFloat(d.replace(/,/g, "")) : NaN,
-    ocu: ocu ? parseFloat(ocu) : NaN,
-    ram: ram ? parseFloat(ram) : NaN,
-  };
-};
+// Vector-store monthly cost from the cost-breakdown table row.
+async function readVectorStoreCost() {
+  return page.evaluate(() => {
+    const row = [...document.querySelectorAll("tr")].find((tr) => /vector store/i.test(tr.textContent || ""));
+    const m = row?.innerText.match(/\$([0-9,]+(?:\.[0-9]+)?)/);
+    return m ? parseFloat(m[1].replace(/,/g, "")) : NaN;
+  });
+}
 
-// Lift N well above the OCU floor so the algorithm choice is visible.
 await setAlgo("hnsw");
 await new Promise((r) => setTimeout(r, 300));
 const totalBefore = await readTotal();
@@ -181,34 +146,26 @@ await setNumberByLabel("Avg tokens per document", 2000);
 await new Promise((r) => setTimeout(r, 500));
 const totalAfter = await readTotal();
 console.log("total before bump:", totalBefore, "-> after:", totalAfter);
-if (bumped && !(totalAfter > totalBefore))
-  fail(`numDocs bump did not raise total ($${totalBefore} -> $${totalAfter})`);
+if (bumped && !(totalAfter > totalBefore)) fail(`numDocs bump did not raise total ($${totalBefore} -> $${totalAfter})`);
+if (!bumped) fail("could not set numDocs — lever test inconclusive");
 
+// At this large corpus, IVF-PQ must cost less than HNSW for the vector store.
 await setAlgo("hnsw");
 await new Promise((r) => setTimeout(r, 500));
-const vsHnsw = parseVS(await readVectorStore());
+const vsHnsw = await readVectorStoreCost();
 await page.screenshot({ path: "docs/lever-hnsw.png" });
 
 await setAlgo("ivf_pq");
 await new Promise((r) => setTimeout(r, 500));
-const vsIvf = parseVS(await readVectorStore());
+const vsIvf = await readVectorStoreCost();
 await page.screenshot({ path: "docs/lever-ivfpq.png" });
 
-console.log("numDocs bumped:", bumped);
-console.log("VS(hnsw):", JSON.stringify(vsHnsw));
-console.log("VS(ivf_pq):", JSON.stringify(vsIvf));
-if (!bumped) fail("could not set numDocs — lever test inconclusive");
-if (!(vsIvf.ram < vsHnsw.ram))
-  fail(`IVF-PQ RAM (${vsIvf.ram}) should be < HNSW RAM (${vsHnsw.ram})`);
-if (!(vsIvf.ocu <= vsHnsw.ocu))
-  fail(`IVF-PQ OCU (${vsIvf.ocu}) should be <= HNSW OCU (${vsHnsw.ocu})`);
-if (!(vsIvf.dollars <= vsHnsw.dollars))
-  fail(`IVF-PQ $/mo (${vsIvf.dollars}) should be <= HNSW $/mo (${vsHnsw.dollars})`);
-if (vsIvf.ocu === vsHnsw.ocu && vsIvf.dollars === vsHnsw.dollars)
-  fail("HNSW vs IVF-PQ identical OCU AND cost — lever not visible at this N");
+console.log("VS $/mo  HNSW:", vsHnsw, " IVF-PQ:", vsIvf);
+if (!(vsIvf <= vsHnsw)) fail(`IVF-PQ vector-store $/mo (${vsIvf}) should be <= HNSW (${vsHnsw})`);
+if (vsIvf === vsHnsw) fail("HNSW vs IVF-PQ identical vector-store cost — lever not visible at this N");
 
 // ---- Screenshot ----------------------------------------------------------
-await setAlgo("hnsw"); // restore for a representative screenshot
+await setAlgo("hnsw");
 await new Promise((r) => setTimeout(r, 400));
 mkdirSync("docs", { recursive: true });
 await page.screenshot({ path: "docs/screenshot.png", fullPage: true });

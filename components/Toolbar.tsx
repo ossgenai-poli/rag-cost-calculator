@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PriceBook } from "@/lib/types";
 
 interface ToolbarProps {
@@ -45,6 +45,24 @@ export function Toolbar({
 }: ToolbarProps) {
   const [copied, setCopied] = useState(false);
   const [modal, setModal] = useState<null | "formulas" | "sources">(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  const flash = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 1800);
+  };
+
+  // Escape closes the modal; move focus into it when it opens (basic a11y).
+  useEffect(() => {
+    if (!modal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModal(null);
+    };
+    document.addEventListener("keydown", onKey);
+    closeRef.current?.focus();
+    return () => document.removeEventListener("keydown", onKey);
+  }, [modal]);
 
   const copyLink = async () => {
     try {
@@ -60,6 +78,19 @@ export function Toolbar({
     }
   };
 
+  const saveScenario = () => {
+    onSaveScenario();
+    flash("Scenario saved ✓");
+  };
+  const exportCsv = () => {
+    onExportCsv();
+    flash("CSV exported ✓");
+  };
+  const exportJson = () => {
+    onExportJson();
+    flash("JSON exported ✓");
+  };
+
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
@@ -69,13 +100,13 @@ export function Toolbar({
         <Btn onClick={copyLink} title="Copy a shareable link with all current parameters">
           {copied ? "Copied ✓" : "Copy link"}
         </Btn>
-        <Btn onClick={onSaveScenario} title="Save the current configuration as a scenario">
+        <Btn onClick={saveScenario} title="Save the current configuration as a scenario">
           Save scenario
         </Btn>
-        <Btn onClick={onExportCsv} title="Export the cost breakdown as CSV">
+        <Btn onClick={exportCsv} title="Export the cost breakdown as CSV">
           Export CSV
         </Btn>
-        <Btn onClick={onExportJson} title="Export all assumptions as JSON">
+        <Btn onClick={exportJson} title="Export all assumptions as JSON">
           Export JSON
         </Btn>
         <Btn onClick={() => setModal("formulas")}>Formulas</Btn>
@@ -86,6 +117,9 @@ export function Toolbar({
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
           onClick={() => setModal(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={modal === "formulas" ? "Calculation formulas" : "Pricing sources"}
         >
           <div
             className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-700 bg-[#111a2e] p-5"
@@ -96,10 +130,11 @@ export function Toolbar({
                 {modal === "formulas" ? "Calculation formulas" : "Pricing sources"}
               </h2>
               <button
+                ref={closeRef}
                 type="button"
                 onClick={() => setModal(null)}
-                className="text-slate-400 hover:text-slate-100"
-                aria-label="Close"
+                className="rounded text-slate-400 hover:text-slate-100 focus:outline-none focus:ring-1 focus:ring-accent"
+                aria-label="Close dialog"
               >
                 ✕
               </button>
@@ -107,6 +142,16 @@ export function Toolbar({
 
             {modal === "formulas" ? <Formulas /> : <Sources priceBook={priceBook} asOf={asOf} />}
           </div>
+        </div>
+      )}
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-50 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 shadow-lg"
+        >
+          {toast}
         </div>
       )}
     </>
@@ -147,6 +192,16 @@ function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
     <div className="space-y-4 text-sm">
       <div className="text-xs text-slate-400">
         Region {priceBook.region} · {priceBook.source === "live" ? "live AWS Price List API" : "committed reference prices"} · updated {asOf}
+      </div>
+      {priceBook.source !== "live" && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200/90">
+          These are committed reference prices — the live AWS Price List API isn&apos;t reachable in
+          this deployment (static build / no AWS credentials), so figures may be out of date.
+        </div>
+      )}
+      <div className="text-xs text-slate-500">
+        Note: model, embedding, rerank, and guardrail prices are typed config (not in the AWS
+        Pricing API); the formulas view is illustrative and hand-maintained.
       </div>
       <div>
         <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">OpenSearch Serverless</div>

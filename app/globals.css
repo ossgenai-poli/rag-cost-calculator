@@ -17,3 +17,22 @@ body {
   border: 1px solid #1e293b;
   border-radius: 0.75rem;
 }
+
+/* Brief highlight when a displayed value recomputes, so even tiny changes
+   register visually (a generation-dominated total barely moves for some levers). */
+@keyframes valueflash {
+  0% {
+    background-color: rgba(56, 189, 248, 0.28);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.flash {
+  animation: valueflash 0.6s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flash {
+    animation: none;
+  }
+}

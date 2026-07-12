@@ -31,6 +31,7 @@ function makeInputs(overrides: {
       storagePricePerGBmo: 0.024,
       gbRamPerOcu: 6,
       indexingOCUhrs: 10,
+      qpsPerOcu: 2,
     },
     retrieval: { topK: 10, rerankEnabled: false, rerankModelId: "", rerankPricePer1K: 0, topN: 5 },
     guardrails: { inputEnabled: false, outputEnabled: false, unitPricePer1K: 0, unitsPerQuery: 0 },
@@ -46,7 +47,14 @@ function makeInputs(overrides: {
       sustainedTokPerSec: overrides.sustainedTokPerSec,
       utilTarget: overrides.utilTarget ?? 0.5,
     },
-    traffic: { queriesPerMonth: overrides.queriesPerMonth, region: "us-east-1" },
+    traffic: {
+      queriesPerMonth: overrides.queriesPerMonth,
+      region: "us-east-1",
+      method: "monthly",
+      qps: 1,
+      hoursPerDay: 24,
+      daysPerMonth: 30,
+    },
     queryTokens: 50,
   };
 }
@@ -81,12 +89,12 @@ describe("computeCrossover", () => {
 
     expect(result.monthlyGenTokens).toBe(100_000_000); // 100k * 1000
     expect(result.gpuMonthly$).toBeCloseTo(2190, 6); // 3 * 730
-    expect(result.capacity100).toBeCloseTo(13_149_000_000, 3); // 5000 * 2.6298e6
-    expect(result.boxes).toBe(1); // ceil(100M / (13.149B*0.5)) = ceil(0.0152) = 1
+    expect(result.capacity100).toBeCloseTo(13_140_000_000, 3); // 5000 * 2,628,000
+    expect(result.boxes).toBe(1); // ceil(100M / (13.14B*0.5)) = ceil(0.0152) = 1
     expect(result.selfHostedMonthly$).toBeCloseTo(1 * 2190, 6);
     expect(result.apiBlendedPricePerToken).toBeCloseTo(5e-7, 12);
     expect(result.breakEvenTokens).toBeCloseTo(4_380_000_000, 3); // 2190 / 5e-7
-    expect(result.utilAtBreakEven).toBeCloseTo(0.333105, 5); // 4.38B / 13.149B
+    expect(result.utilAtBreakEven).toBeCloseTo(0.333333, 5); // 4.38B / 13.14B
     expect(result.verdict).toBe("API wins in practice below sustained load");
   });
 
@@ -104,7 +112,7 @@ describe("computeCrossover", () => {
 
     expect(result.gpuMonthly$).toBeCloseTo(21_900, 6); // 30 * 730
     expect(result.breakEvenTokens).toBeCloseTo(43_800_000_000, 2); // 21900 / 5e-7
-    expect(result.utilAtBreakEven).toBeCloseTo(3.331052, 5); // 43.8B / 13.149B
+    expect(result.utilAtBreakEven).toBeCloseTo(3.333333, 5); // 43.8B / 13.14B
     expect(result.verdict).toBe("self-host efficient");
   });
 

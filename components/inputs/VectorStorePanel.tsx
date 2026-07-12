@@ -98,6 +98,15 @@ export function VectorStorePanel(props: {
             step={0.5}
             onChange={(v) => onChange({ ...vectorStore, indexingOCUhrs: v })}
           />
+          <NumberField
+            label="Search throughput per OCU"
+            hint="Vector queries/sec one OCU can serve; drives load-based OCU sizing at high QPS"
+            suffix="qps/OCU"
+            value={vectorStore.qpsPerOcu}
+            min={0.1}
+            step={0.5}
+            onChange={(v) => onChange({ ...vectorStore, qpsPerOcu: v })}
+          />
         </>
       )}
     </Section>

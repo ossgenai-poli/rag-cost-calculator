@@ -6,10 +6,83 @@
 // module stays importable in tests.
 // ============================================================================
 
+import { z } from "zod";
 import type { CalcInputs, CalcResult, PriceBook } from "./types";
 import { deriveDisplayMetrics } from "./derived";
 
 const PARAM_KEY = "s";
+const SHARE_VERSION = 1;
+
+// ---------------------------------------------------------------------------
+// Zod schema for CalcInputs. Guards against NaN/negative/garbage from a crafted
+// or stale link. Fields added after v1 are optional-with-default so older
+// shared links keep decoding and get upgraded silently.
+// ---------------------------------------------------------------------------
+
+const num = z.number().finite();
+const nonNeg = num.nonnegative();
+
+const calcInputsSchema = z.object({
+  ragMode: z.enum(["A", "B"]).default("A"),
+  corpus: z.object({
+    numDocs: nonNeg,
+    avgTokensPerDoc: nonNeg,
+    refreshCadence: z.enum(["one-time", "weekly", "monthly"]),
+  }),
+  chunking: z.object({
+    chunkSize: num.positive(),
+    overlapFraction: num.min(0).max(0.99),
+    embedModelId: z.string(),
+    embedDim: num.positive(),
+    embedPricePer1K: nonNeg,
+  }),
+  vectorStore: z.object({
+    indexingAlgo: z.enum(["hnsw", "ivf_pq", "ivf_fp16"]),
+    m: nonNeg,
+    replicas: num.min(1),
+    pqCompression: num.positive(),
+    minOCU: nonNeg,
+    ocuPricePerHr: nonNeg,
+    storagePricePerGBmo: nonNeg,
+    gbRamPerOcu: num.positive(),
+    indexingOCUhrs: nonNeg,
+    qpsPerOcu: num.positive().default(2),
+  }),
+  retrieval: z.object({
+    topK: num.positive(),
+    rerankEnabled: z.boolean(),
+    rerankModelId: z.string(),
+    rerankPricePer1K: nonNeg,
+    topN: num.positive(),
+  }),
+  guardrails: z.object({
+    inputEnabled: z.boolean(),
+    outputEnabled: z.boolean(),
+    unitPricePer1K: nonNeg,
+    unitsPerQuery: nonNeg,
+  }),
+  generation: z.object({
+    mode: z.enum(["api", "self-hosted"]),
+    llmModelId: z.string(),
+    llmInPricePer1K: nonNeg,
+    llmOutPricePer1K: nonNeg,
+    outTokens: nonNeg,
+    promptOverhead: nonNeg,
+    gpuInstanceType: z.string(),
+    gpuPricePerHr: nonNeg,
+    sustainedTokPerSec: num.positive(),
+    utilTarget: num.min(0.01).max(1),
+  }),
+  traffic: z.object({
+    queriesPerMonth: nonNeg,
+    region: z.string(),
+    method: z.enum(["monthly", "qps"]).default("monthly"),
+    qps: nonNeg.default(1),
+    hoursPerDay: nonNeg.default(24),
+    daysPerMonth: nonNeg.default(30),
+  }),
+  queryTokens: nonNeg,
+});
 
 // --- base64url (unicode-safe) ------------------------------------------------
 
@@ -31,18 +104,24 @@ function fromBase64Url(param: string): string {
 // --- inputs <-> URL ----------------------------------------------------------
 
 export function encodeInputs(inputs: CalcInputs): string {
-  return toBase64Url(JSON.stringify(inputs));
+  return toBase64Url(JSON.stringify({ v: SHARE_VERSION, i: inputs }));
 }
 
-/** Parse an encoded param back to inputs. Returns null on any malformed data. */
+/**
+ * Parse an encoded param back to validated inputs. Returns null on any
+ * malformed/invalid data (NaN, negatives, wrong shape) so a bad link falls
+ * back to defaults instead of poisoning the engine. Accepts both the versioned
+ * envelope and legacy raw-inputs links.
+ */
 export function decodeInputs(param: string | null | undefined): CalcInputs | null {
   if (!param) return null;
   try {
     const parsed = JSON.parse(fromBase64Url(param));
-    if (parsed && typeof parsed === "object" && "traffic" in parsed && "generation" in parsed) {
-      return parsed as CalcInputs;
-    }
-    return null;
+    // Versioned envelope { v, i } or legacy raw inputs object.
+    const candidate =
+      parsed && typeof parsed === "object" && "i" in parsed ? (parsed as { i: unknown }).i : parsed;
+    const result = calcInputsSchema.safeParse(candidate);
+    return result.success ? (result.data as CalcInputs) : null;
   } catch {
     return null;
   }

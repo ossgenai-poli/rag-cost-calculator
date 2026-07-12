@@ -69,11 +69,15 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
     highlight: false,
   };
 
-  const hasVolume = cx.monthlyGenTokens > 0 && cx.selfHostedMonthly$ > 0;
+  // Gate on real generation volume and a real box cost — not on selfHostedMonthly$,
+  // which the crossover zeroes for $0-priced models even when there IS volume.
+  const hasVolume = cx.monthlyGenTokens > 0 && cx.gpuMonthly$ > 0;
   const tokensPerQuery = result.perQuery.llmInputTok + inputs.generation.outTokens;
+  // One box minimum when there's volume but the crossover returned the zero result.
+  const selfHostedMonthly = cx.selfHostedMonthly$ > 0 ? cx.selfHostedMonthly$ : cx.gpuMonthly$;
 
   // --- Self-built + self-hosted GPU (full stack: infra + GPU generation) ---
-  const gpuMonthly = infraNonGen + cx.selfHostedMonthly$;
+  const gpuMonthly = infraNonGen + selfHostedMonthly;
   const selfHostedGpu: Scenario = hasVolume
     ? {
         id: "self-built-gpu",

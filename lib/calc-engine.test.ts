@@ -16,7 +16,7 @@ const priceBook: PriceBook = {
     { id: "embed-1", label: "Embed 1", provider: "bedrock", bedrock: true, kind: "embedding", inPricePer1K: 0.0001, outPricePer1K: 0, dim: 1024, verifiedAt: "2026-01-01" },
     { id: "llm-1", label: "LLM 1", provider: "bedrock", bedrock: true, kind: "llm", inPricePer1K: 0.003, outPricePer1K: 0.015, verifiedAt: "2026-01-01" },
     { id: "rerank-1", label: "Rerank 1", provider: "bedrock", bedrock: true, kind: "rerank", inPricePer1K: 0.001, outPricePer1K: 0, verifiedAt: "2026-01-01" },
-    { id: "guardrail-1", label: "Guardrail 1", provider: "bedrock", bedrock: true, kind: "guardrail", inPricePer1K: 0.00075, outPricePer1K: 0, verifiedAt: "2026-01-01" },
+    { id: "guardrail-1", label: "Guardrail 1", provider: "bedrock", bedrock: true, kind: "guardrail", inPricePer1K: 0.75, outPricePer1K: 0, verifiedAt: "2026-01-01" },
   ],
 };
 
@@ -35,9 +35,10 @@ function baseInputs(): CalcInputs {
       storagePricePerGBmo: 0.024,
       gbRamPerOcu: 6,
       indexingOCUhrs: 10,
+      qpsPerOcu: 2,
     },
     retrieval: { topK: 20, rerankEnabled: true, rerankModelId: "rerank-1", rerankPricePer1K: 0.001, topN: 5 },
-    guardrails: { inputEnabled: true, outputEnabled: true, unitPricePer1K: 0.00075, unitsPerQuery: 1 },
+    guardrails: { inputEnabled: true, outputEnabled: true, unitPricePer1K: 0.75, unitsPerQuery: 1 },
     generation: {
       mode: "api",
       llmModelId: "llm-1",
@@ -50,7 +51,7 @@ function baseInputs(): CalcInputs {
       sustainedTokPerSec: 2000,
       utilTarget: 0.7,
     },
-    traffic: { queriesPerMonth: 100000, region: "us-east-1" },
+    traffic: { queriesPerMonth: 100000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
     queryTokens: 50,
   };
 }
@@ -70,10 +71,11 @@ describe("calculate — golden numbers", () => {
     expect(result.ingestion.effChunk).toBe(400);
     // numVectors = 1,000,000 / 400 = 2500
     expect(result.ingestion.numVectors).toBe(2500);
-    // embedIngest$ = 1,000,000/1000 * 0.0001 = 0.1
-    expect(result.ingestion["embedIngest$"]).toBeCloseTo(0.1, 10);
+    // Overlap re-embeds: embeddedTokens = numVectors*chunkSize = 2500*500 = 1,250,000
+    // embedIngest$ = 1,250,000/1000 * 0.0001 = 0.125
+    expect(result.ingestion["embedIngest$"]).toBeCloseTo(0.125, 10);
     // monthly cadence => same as embedIngest$
-    expect(result.ingestion.embedIngestMonthly$).toBeCloseTo(0.1, 10);
+    expect(result.ingestion.embedIngestMonthly$).toBeCloseTo(0.125, 10);
 
     // Vector store
     // hnswBytes = 1.1*(4*1024+8*16)*2500*(1+1) = 23,232,000
@@ -110,8 +112,8 @@ describe("calculate — golden numbers", () => {
     // Totals
     // queryMonthly$ = 0.017595 * 100000 = 1759.5
     expect(result.queryMonthly$).toBeCloseTo(1759.5, 6);
-    // totalMonthly$ = 0.1 + 352.80024576 + 1759.5 = 2112.40024576
-    expect(result.totalMonthly$).toBeCloseTo(2112.40024576, 5);
+    // totalMonthly$ = 0.125 + 352.80024576 + 1759.5 = 2112.42524576
+    expect(result.totalMonthly$).toBeCloseTo(2112.42524576, 5);
 
     expect(result.mode).toBe("A");
   });
@@ -340,7 +342,7 @@ describe("defaultInputs", () => {
     expect(inputs.retrieval.rerankModelId).toBe("rerank-1");
     expect(inputs.retrieval.rerankPricePer1K).toBe(0.001);
 
-    expect(inputs.guardrails.unitPricePer1K).toBe(0.00075);
+    expect(inputs.guardrails.unitPricePer1K).toBe(0.75);
 
     expect(inputs.vectorStore.minOCU).toBe(priceBook.opensearch.minOCU);
     expect(inputs.vectorStore.ocuPricePerHr).toBe(priceBook.opensearch.ocuPricePerHr);
