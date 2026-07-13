@@ -187,31 +187,51 @@ function Formulas() {
   );
 }
 
+function SourceBadge({ kind }: { kind: "live" | "reference" | "config" | "estimate" }) {
+  const map = {
+    live: ["bg-emerald-500/15 text-emerald-300", "live"],
+    reference: ["bg-amber-500/15 text-amber-300", "reference"],
+    config: ["bg-sky-500/15 text-sky-300", "typed config"],
+    estimate: ["bg-slate-600/40 text-slate-300", "estimate"],
+  } as const;
+  const [cls, label] = map[kind];
+  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{label}</span>;
+}
+
 function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
+  // Live-fetched infra vs typed model config. GPU throughput is always an estimate.
+  const infraKind = priceBook.source === "live" ? "live" : "reference";
   return (
     <div className="space-y-4 text-sm">
-      <div className="text-xs text-slate-400">
-        Region {priceBook.region} · {priceBook.source === "live" ? "live AWS Price List API" : "committed reference prices"} · updated {asOf}
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+        <span>Region {priceBook.region} · updated {asOf}</span>
+      </div>
+      {/* Badge legend */}
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+        Provenance: <SourceBadge kind="live" /> live AWS Price List API ·{" "}
+        <SourceBadge kind="reference" /> committed fallback ·{" "}
+        <SourceBadge kind="config" /> typed model config ·{" "}
+        <SourceBadge kind="estimate" /> rough estimate
       </div>
       {priceBook.source !== "live" && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200/90">
-          These are committed reference prices — the live AWS Price List API isn&apos;t reachable in
-          this deployment (static build / no AWS credentials), so figures may be out of date.
+          Infra prices are committed reference values — the live AWS Price List API isn&apos;t
+          reachable in this deployment (static build / no AWS credentials), so they may be stale.
         </div>
       )}
-      <div className="text-xs text-slate-500">
-        Note: model, embedding, rerank, and guardrail prices are typed config (not in the AWS
-        Pricing API); the formulas view is illustrative and hand-maintained.
-      </div>
       <div>
-        <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">OpenSearch Serverless</div>
+        <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+          OpenSearch Serverless <SourceBadge kind={infraKind} />
+        </div>
         <div className="text-slate-300">
           OCU ${priceBook.opensearch.ocuPricePerHr}/hr · storage ${priceBook.opensearch.storagePricePerGBmo}/GB-mo ·{" "}
           {priceBook.opensearch.gbRamPerOcu} GB RAM/OCU · min {priceBook.opensearch.minOCU} OCU
         </div>
       </div>
       <div>
-        <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Models</div>
+        <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+          Models <SourceBadge kind="config" />
+        </div>
         <table className="w-full text-xs">
           <thead>
             <tr className="text-left text-slate-500">
@@ -232,9 +252,15 @@ function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
             ))}
           </tbody>
         </table>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Model / embedding / rerank / guardrail prices are typed config (not in the AWS Pricing
+          API). Rerank is $/1K requests; guardrails $/1K text units; others $/1K tokens.
+        </p>
       </div>
       <div>
-        <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">GPU instances</div>
+        <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+          GPU instances <SourceBadge kind={infraKind} /> price · <SourceBadge kind="estimate" /> tok/s
+        </div>
         <table className="w-full text-xs">
           <tbody>
             {priceBook.gpus.map((g) => (

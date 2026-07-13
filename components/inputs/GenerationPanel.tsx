@@ -123,7 +123,7 @@ export function GenerationPanel(props: {
 
         <SelectField
           label="Weight precision"
-          hint="Quantization lowers memory (and instance count); throughput assumptions may differ."
+          hint="Quantization lowers memory (fewer instances) and raises decode throughput (rough planning factors)."
           value={String(generation.weightBits)}
           disabled={!selfHosted}
           options={[

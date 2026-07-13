@@ -3,7 +3,7 @@
 // generation on dedicated GPU instances, and reports the token volume at
 // which self-hosting a box starts paying for itself.
 import type { CalcInputs, PriceBook, PerQueryResult, CrossoverResult } from "./types";
-import { instancesToLoad } from "./self-host";
+import { instancesToLoad, precisionThroughputFactor } from "./self-host";
 
 const HOURS_PER_MONTH = 730;
 const SECONDS_PER_MONTH = HOURS_PER_MONTH * 3600; // 2,628,000 — unified with calc-engine
@@ -48,7 +48,10 @@ export function computeCrossover(
 
   const monthlyGenTokens = traffic.queriesPerMonth * tokensPerQuery;
   const gpuMonthly$ = generation.gpuPricePerHr * HOURS_PER_MONTH;
-  const capacity100 = generation.sustainedTokPerSec * SECONDS_PER_MONTH;
+  // Decode capacity (output tokens/mo), scaled by the precision speedup — lower
+  // precision decodes faster, so it raises capacity as well as lowering memory.
+  const capacity100 =
+    generation.sustainedTokPerSec * precisionThroughputFactor(generation.weightBits) * SECONDS_PER_MONTH;
   const apiBlendedPricePerToken =
     tokensPerQuery > 0 ? perQuery.apiGen$ / tokensPerQuery : 0;
 

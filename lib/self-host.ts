@@ -15,6 +15,17 @@ export function bytesPerParam(weightBits = 16): number {
   return (weightBits > 0 ? weightBits : 16) / 8;
 }
 
+/**
+ * Rough decode-throughput speedup from lower precision (memory-bandwidth bound
+ * decode benefits from smaller weights; FP8 also gets faster tensor cores).
+ * These are order-of-magnitude planning factors, not benchmarks.
+ */
+export function precisionThroughputFactor(weightBits = 16): number {
+  if (weightBits <= 4) return 1.8; // INT4 weight-only
+  if (weightBits <= 8) return 1.6; // FP8 / INT8
+  return 1; // BF16 / FP16 baseline
+}
+
 /** Raw weight footprint in GB at the given precision. */
 export function modelWeightsGB(paramsB: number, weightBits = 16): number {
   return paramsB * bytesPerParam(weightBits);
