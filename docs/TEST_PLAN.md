@@ -12,6 +12,40 @@ benchmark grounding, charts, exports, sharing, and UX. Assumes all currently ope
 
 ---
 
+## 0. Feature availability & prerequisites (READ FIRST)
+
+This plan covers the full intended feature set. Some features land in **pending pull requests** and
+are **not** on `main` yet. **Confirm which build you are testing** and run only the suites its
+features support — testing a pending feature against a build that lacks it will (correctly) fail.
+
+Ask the developer which of these are merged into your build, and tick the column:
+
+| Feature area | Suites | Required PR | On current `main`? | In your build? |
+|---|---|---|---|---|
+| Core cost model, mode switching, retrieval, vector store | A (partial), B, C | — (base) | ✅ Yes | |
+| **Guardrails — char-based input/output split** | **D2–D4** | **#16** | ❌ **No** (main uses a single unit price + units/query — see D-note) | |
+| Reranking as its own line | D1 | — | ✅ Yes | |
+| Managed Bedrock KB pricing | E | #13 | ✅ Yes | |
+| Self-hosted GPU sizing (memory/precision/instances) | F | base | ✅ engine; ⚠️ see prices-note | |
+| GPU commitment pricing + uptime | G | #17 | ✅ Yes | |
+| Crossover chart axis selector / tooltip / no-crossover | H | #15 | ✅ Yes | |
+| **Benchmark-grounded sizing + interactivity SLA** | **Suite I** | **#20** | ❌ **No** (absent) | |
+| Ops overhead + peak-vs-average | J | #18 | ✅ Yes | |
+| Sharing, saved scenarios, exports (CSV/JSON/report) | K, L | #19 (report) | ✅ Yes | |
+| Sources / formulas / provenance | M | — | ✅ Yes | |
+
+> **⚠️ Model & GPU catalog (prices-note).** The committed `public/prices.json` — the *only* price
+> source the static build uses — is **stale on current `main`** (shows obsolete models like
+> "Claude Opus 4.8 / Qwen2.5-72B" and GPUs "p4d / g5", **without** the 5 open-weight models or
+> **B200**). The regeneration ships with **PR #20**. Until #20 is merged, **A2, all of Suite F/I,
+> and the model-dependent Reference values (§3) do not apply to a `build:static` build.** On
+> `npm run dev` the live `/api/prices` returns the current catalog, so those suites can be run there.
+
+**Recommended:** run this plan against a build with **#13, #15, #16, #17, #18, #19, #20 all merged**
+(and `public/prices.json` regenerated). Against partial builds, restrict to the supported suites.
+
+---
+
 ## 1. Test environment & prerequisites
 
 | Item | Requirement |
@@ -26,9 +60,16 @@ benchmark grounding, charts, exports, sharing, and UX. Assumes all currently ope
 ```bash
 # Node 20+ and npm required
 npm install
-npm run build && npx serve out      # serves the static export, or:
-npm run dev                          # dev server at http://localhost:3000
+npm run build:static && npm run serve:static   # emits ./out and serves it at :3100
+#   (plain `npm run build` does NOT emit ./out — use build:static for the static app)
+# or, for a dev server with live prices:
+npm run dev                                     # http://localhost:3000
 ```
+
+> **Which build the tester uses matters.** `build:static` (STATIC_EXPORT=true) is the *shipped*
+> artifact — it reads bundled prices from `public/prices.json`. `npm run dev` fetches live prices
+> from `/api/prices`. If the two show different model/GPU lists, the committed `public/prices.json`
+> is stale (a known issue fixed alongside the benchmark-grounding work — see the matrix below).
 Also confirm the automated suite is green before manual testing (developer-run, but verify):
 `npm run typecheck`, `npm test`, `npm run build`.
 
@@ -52,6 +93,10 @@ Also confirm the automated suite is green before manual testing (developer-run, 
 After **Reset**, the default inputs are approximately: 10,000 docs × 800 tokens; chunk 512, overlap
 0.10; topK 20 / topN 5; query 50 tokens; output 500 tokens; prompt overhead 300; **100,000
 queries/month**; API mode. Derived input tokens/query = 5×512 + 300 + 50 = **2,910**.
+
+> The default *model* (hence the exact anchors below) depends on the catalog: with the current
+> catalog the default LLM is **Claude Fable 5**. On a stale-`prices.json` static build the default
+> model and these dollar anchors will differ (§0 prices-note) — rely on the relational checks there.
 
 Anchor outputs to verify (at committed reference prices):
 
@@ -77,7 +122,7 @@ Anchor outputs to verify (at committed reference prices):
 | ID | Test | Steps | Expected | Result | Notes |
 |---|---|---|---|---|---|
 | A1 | App loads | Open the app URL. | Page renders within a few seconds; no red console errors; a monthly cost is shown; "Pricing updated …" date visible. | | |
-| A2 | Models & GPUs present | Open the model dropdown; open the GPU dropdown. | Model list includes the 5 open-weight models: **GLM-5.2, NVIDIA Nemotron 3 Ultra, MiniMax M3, DeepSeek-V4-Pro, Kimi K2.6** and Bedrock API models. GPU list = **p5 (H100), p5e (H200), p6-b200 (B200)** — no obsolete SKUs (no p4d/A100/g5). | | |
+| A2 | Models & GPUs present | Open the model dropdown; open the GPU dropdown. | Model list includes the 5 open-weight models: **GLM-5.2, NVIDIA Nemotron 3 Ultra, MiniMax M3, DeepSeek-V4-Pro, Kimi K2.6** and Bedrock API models. GPU list = **p5 (H100), p5e (H200), p6-b200 (B200)** — no obsolete SKUs (no p4d/A100/g5). **Requires the current catalog** — on a `build:static` build this needs PR #20's `prices.json` regen (§0 prices-note); on `npm run dev` it is always current. | | |
 | A3 | Offline resilience | Load app, then set DevTools → Network → **Offline**, then Reset and change inputs. | App keeps working; prices still shown; no crash. (Prices are bundled.) | | |
 
 ### Suite B — Core cost model & mode switching
@@ -103,9 +148,9 @@ Anchor outputs to verify (at committed reference prices):
 | ID | Test | Steps | Expected | Result | Notes |
 |---|---|---|---|---|---|
 | D1 | Rerank toggle | Reset → toggle reranking off then on. | Off: reranking line = $0 and total drops. On: reranking is its **own** breakdown line (priced per search request, not per token). | | |
-| D2 | Guardrail input/output split | Reset → enable **Input guardrail** only, then **Output guardrail** only, then both. | Two independent policies. Input-only cost ≫ output-only cost at defaults (long prompt vs short answer). Both on ≈ input + output. | | |
-| D3 | Guardrail is char/text-unit based | Reset → enable both guardrails; double **topN** (bigger prompt). | **Input** guardrail cost rises with prompt length; **output** guardrail cost unchanged. (Then double output length → output rises, input flat.) | | |
-| D4 | Guardrail Advanced fields | Switch to Advanced view; open Guardrails. | Fields present: input policy price, output policy price, chars-per-text-unit (~400), chars-per-token (~4). Editing changes the cost. | | |
+| D2 | Guardrail toggles (base) | Reset → enable **Input guardrail** only, then **Output guardrail** only, then both. | Each toggle adds guardrail cost; total rises and the Guardrails breakdown line reflects it. On current `main` both sides use **one shared unit price × units/query**, so input-only ≈ output-only. | | |
+| D3 | ⏳ Char-based input/output split — **PR #16 only** | *Run only if #16 is in your build (§0).* Enable both guardrails; double **topN** (bigger prompt), then separately double output length. | Input guardrail cost scales with **prompt** length; output with **response** length; input-only ≫ output-only at defaults. **N/A — skip if #16 not merged** (base build has no split). | | |
+| D4 | Guardrail Advanced fields | Switch to Advanced view; open Guardrails. | **Base (`main`):** "Unit price ($/1K units)" + "Units per query" fields. **With #16:** input/output policy prices + chars-per-text-unit (~400) + chars-per-token (~4). Editing any field changes the cost. | | |
 
 ### Suite E — Managed Bedrock Knowledge Bases
 | ID | Test | Steps | Expected | Result | Notes |
@@ -141,9 +186,12 @@ Anchor outputs to verify (at committed reference prices):
 | H3 | Tooltip | Hover a point on the chart. | Tooltip shows the axis value, API $/mo, Self-hosted $/mo, and the fleet size + decode utilization at that point. | | |
 | H4 | No-feasible-crossover | Self-hosted; raise instances very high (or pick a costly config) until break-even exceeds fleet capacity. | A "No feasible crossover" banner appears instead of an unreachable break-even line. | | |
 
-### Suite I — Benchmark-grounded GPU sizing (interactivity SLA)
-> Grounds fleet sizing in real InferenceX benchmarks. Data covers **GLM-5.2, DeepSeek-V4-Pro,
-> MiniMax M3 on B200**; other models/GPUs fall back to a heuristic (by design).
+### Suite I — Benchmark-grounded GPU sizing (interactivity SLA) — ⏳ requires PR #20
+> **Skip this entire suite unless PR #20 is merged in your build (§0).** It is absent from current
+> `main` (no `Interactivity target` input, no grounding banner) and also depends on the regenerated
+> `public/prices.json` (B200 + the 5 open-weight models). Grounds fleet sizing in real InferenceX
+> benchmarks; data covers **GLM-5.2, DeepSeek-V4-Pro, MiniMax M3 on B200**; other models/GPUs fall
+> back to a heuristic (by design).
 
 | ID | Test | Steps | Expected | Result | Notes |
 |---|---|---|---|---|---|
@@ -206,7 +254,7 @@ Anchor outputs to verify (at committed reference prices):
 ## 5. 10-minute smoke test (run first on every browser)
 1. App loads, no console errors (A1). 2. Model/GPU lists correct (A2). 3. Default total ≈ $3,801
 (B1). 4. Mode switch changes everything (B2). 5. Managed KB Standard 50 GB/100k = $350 (E1).
-6. Self-hosted DeepSeek-V4-Pro / B200 / 200M queries flags under-provisioning ≥15 instances (I2).
+6. **(only if PR #20)** Self-hosted DeepSeek-V4-Pro / B200 / 200M queries flags under-provisioning ≥15 instances (I2).
 7. Copy link round-trips (L1). 8. Export report downloads (L7). 9. Sources modal badges (M2).
 10. No NaN anywhere under bad input (N1).
 
