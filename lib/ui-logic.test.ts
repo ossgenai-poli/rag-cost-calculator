@@ -47,6 +47,21 @@ describe("buildReport", () => {
     const withOps = { ...inputs, ops: { networkingMonthly$: 100, observabilityMonthly$: 0, overheadPct: 15 } };
     expect(buildReport(withOps, calculate(withOps, priceBook), priceBook, "2026-07-12")).toContain("Ops & overhead");
   });
+
+  it("self-hosted report records the GPU commitment model and uptime", () => {
+    const inputs = {
+      ...base(),
+      generation: {
+        ...base().generation,
+        mode: "self-hosted" as const,
+        gpuPricingModel: "reserved-3yr" as const,
+        gpuUptimeHoursPerMonth: 365,
+      },
+    };
+    const md = buildReport(inputs, calculate(inputs, priceBook), priceBook, "2026-07-12");
+    expect(md).toContain("reserved-3yr");
+    expect(md).toContain("365 hrs/mo uptime");
+  });
 });
 
 describe("deriveDisplayMetrics", () => {

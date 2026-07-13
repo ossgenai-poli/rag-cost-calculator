@@ -319,7 +319,7 @@ export function buildReport(
   lines.push(`## Key assumptions`);
   lines.push("");
   if (selfHosted) {
-    lines.push(`- **GPU:** ${g.gpuInstanceType} at ${usd(g.gpuPricePerHr)}/hr`);
+    lines.push(`- **GPU:** ${g.gpuInstanceType} at ${usd(g.gpuPricePerHr)}/hr on-demand · ${g.gpuPricingModel} · ${g.gpuUptimeHoursPerMonth} hrs/mo uptime`);
     lines.push(`- **Fleet:** ${cx.boxes} instance(s); memory floor ${cx.minInstancesToLoad}, throughput needs ${cx.throughputInstances}`);
     lines.push(`- **Precision:** ${g.weightBits}-bit weights · ${g.maxContextLen} ctx × ${g.maxConcurrentSeqs} concurrent`);
   } else {
