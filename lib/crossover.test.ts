@@ -10,6 +10,7 @@ function makeInputs(overrides: {
   sustainedTokPerSec: number;
   utilTarget?: number;
   queriesPerMonth: number;
+  numInstances?: number;
 }): CalcInputs {
   return {
     ragMode: "A",
@@ -46,6 +47,7 @@ function makeInputs(overrides: {
       gpuPricePerHr: overrides.gpuPricePerHr,
       sustainedTokPerSec: overrides.sustainedTokPerSec,
       utilTarget: overrides.utilTarget ?? 0.5,
+      numInstances: overrides.numInstances ?? 1,
     },
     traffic: {
       queriesPerMonth: overrides.queriesPerMonth,
@@ -223,31 +225,35 @@ describe("computeCrossover", () => {
     expect(() => computeCrossover(inputs, priceBook, perQuery)).not.toThrow();
   });
 
-  it("high-volume traffic increases boxes and selfHostedMonthly$ but does not by itself change the verdict", () => {
-    const base = makeInputs({
-      outTokens: 200,
-      gpuPricePerHr: 3,
-      sustainedTokPerSec: 5000,
-      utilTarget: 0.5,
-      queriesPerMonth: 100_000,
-    });
-    const highVolume = makeInputs({
-      outTokens: 200,
-      gpuPricePerHr: 3,
-      sustainedTokPerSec: 5000,
-      utilTarget: 0.5,
-      queriesPerMonth: 10_000_000, // 100x traffic
-    });
+  it("billed boxes follow the provisioned fleet, not traffic; high volume shows as throughput demand", () => {
+    // A fixed 1-instance fleet is billed the same at 100k and 10M queries — the
+    // engine does NOT auto-scale. Instead throughputInstances rises to flag that
+    // the fleet is under-provisioned at the higher volume.
+    const base = makeInputs({ outTokens: 200, gpuPricePerHr: 3, sustainedTokPerSec: 5000, utilTarget: 0.5, queriesPerMonth: 100_000, numInstances: 1 });
+    const highVolume = makeInputs({ outTokens: 200, gpuPricePerHr: 3, sustainedTokPerSec: 5000, utilTarget: 0.5, queriesPerMonth: 100_000_000, numInstances: 1 });
     const perQuery = makePerQuery(800, 0.0005);
 
     const baseResult = computeCrossover(base, priceBook, perQuery);
     const highVolumeResult = computeCrossover(highVolume, priceBook, perQuery);
 
-    expect(highVolumeResult.monthlyGenTokens).toBeGreaterThan(baseResult.monthlyGenTokens);
-    expect(highVolumeResult.boxes).toBeGreaterThan(baseResult.boxes);
-    expect(highVolumeResult.selfHostedMonthly$).toBeGreaterThan(baseResult.selfHostedMonthly$);
-    // verdict is a function of unit economics (breakEvenTokens vs single-box capacity),
-    // not current traffic volume, so it stays stable across both scenarios.
+    expect(baseResult.boxes).toBe(1);
+    expect(highVolumeResult.boxes).toBe(1); // fixed fleet — not auto-scaled
+    expect(highVolumeResult.selfHostedMonthly$).toBe(baseResult.selfHostedMonthly$);
+    // throughput demand rises, so the fleet is now under-provisioned
+    expect(highVolumeResult.throughputInstances).toBeGreaterThan(baseResult.throughputInstances);
+    expect(highVolumeResult.throughputInstances).toBeGreaterThan(highVolumeResult.boxes);
     expect(highVolumeResult.verdict).toBe(baseResult.verdict);
+  });
+
+  it("provisioning more instances raises billed boxes and cost", () => {
+    const one = makeInputs({ outTokens: 200, gpuPricePerHr: 3, sustainedTokPerSec: 5000, queriesPerMonth: 100_000, numInstances: 1 });
+    const four = makeInputs({ outTokens: 200, gpuPricePerHr: 3, sustainedTokPerSec: 5000, queriesPerMonth: 100_000, numInstances: 4 });
+    const perQuery = makePerQuery(800, 0.0005);
+
+    const r1 = computeCrossover(one, priceBook, perQuery);
+    const r4 = computeCrossover(four, priceBook, perQuery);
+    expect(r1.boxes).toBe(1);
+    expect(r4.boxes).toBe(4);
+    expect(r4.selfHostedMonthly$).toBeCloseTo(4 * r1.selfHostedMonthly$, 6);
   });
 });

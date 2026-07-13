@@ -13,23 +13,16 @@
     {
       "instanceType": "p5e.48xlarge",
       "gpu": "8x H200 141GB",
-      "pricePerHr": 47.76,
+      "pricePerHr": 63.29,
       "sustainedTokPerSec": 3000,
       "totalMemGB": 1128
     },
     {
-      "instanceType": "p4d.24xlarge",
-      "gpu": "8x A100 40GB",
-      "pricePerHr": 32.77,
-      "sustainedTokPerSec": 1500,
-      "totalMemGB": 320
-    },
-    {
-      "instanceType": "g5.12xlarge",
-      "gpu": "4x A10G 24GB",
-      "pricePerHr": 5.672,
-      "sustainedTokPerSec": 350,
-      "totalMemGB": 96
+      "instanceType": "p6-b200.48xlarge",
+      "gpu": "8x B200 192GB",
+      "pricePerHr": 113,
+      "sustainedTokPerSec": 5200,
+      "totalMemGB": 1536
     }
   ],
   "opensearch": {
@@ -39,6 +32,26 @@
     "minOCU": 2
   },
   "models": [
+    {
+      "id": "claude-fable-5",
+      "label": "Claude Fable 5 (Bedrock)",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "llm",
+      "inPricePer1K": 0.006,
+      "outPricePer1K": 0.03,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "gpt-5.5-bedrock",
+      "label": "OpenAI GPT-5.5 (Bedrock)",
+      "provider": "openai",
+      "bedrock": true,
+      "kind": "llm",
+      "inPricePer1K": 0.002,
+      "outPricePer1K": 0.016,
+      "verifiedAt": "2026-07-10"
+    },
     {
       "id": "claude-opus-4-8",
       "label": "Claude Opus 4.8 (Bedrock)",
@@ -50,8 +63,8 @@
       "verifiedAt": "2026-07-10"
     },
     {
-      "id": "claude-sonnet-4",
-      "label": "Claude Sonnet 4 (Bedrock)",
+      "id": "claude-sonnet-4-6",
+      "label": "Claude Sonnet 4.6 (Bedrock)",
       "provider": "bedrock",
       "bedrock": true,
       "kind": "llm",
@@ -60,101 +73,73 @@
       "verifiedAt": "2026-07-10"
     },
     {
-      "id": "qwen2.5-72b-bedrock",
-      "label": "Qwen2.5-72B (Bedrock)",
-      "provider": "bedrock",
-      "bedrock": true,
-      "kind": "llm",
-      "inPricePer1K": 0.0009,
-      "outPricePer1K": 0.0009,
-      "verifiedAt": "2026-07-10"
-    },
-    {
-      "id": "deepseek-r1-bedrock",
-      "label": "DeepSeek-R1 (Bedrock)",
-      "provider": "bedrock",
-      "bedrock": true,
-      "kind": "llm",
-      "inPricePer1K": 0.00135,
-      "outPricePer1K": 0.0054,
-      "verifiedAt": "2026-07-10"
-    },
-    {
-      "id": "gemini-3.1-pro",
-      "label": "Gemini 3.1 Pro (non-Bedrock)",
-      "provider": "gemini",
-      "bedrock": false,
-      "kind": "llm",
-      "inPricePer1K": 0.002,
-      "outPricePer1K": 0.012,
-      "verifiedAt": "2026-07-10"
-    },
-    {
-      "id": "grok-4.20",
-      "label": "Grok 4.20 (non-Bedrock)",
-      "provider": "grok",
-      "bedrock": false,
-      "kind": "llm",
-      "inPricePer1K": 0.002,
-      "outPricePer1K": 0.006,
-      "verifiedAt": "2026-07-10"
-    },
-    {
-      "id": "gpt-5.2",
-      "label": "GPT-5.2 (non-Bedrock)",
+      "id": "gpt-5.4-bedrock",
+      "label": "OpenAI GPT-5.4 (Bedrock)",
       "provider": "openai",
-      "bedrock": false,
+      "bedrock": true,
       "kind": "llm",
       "inPricePer1K": 0.00175,
       "outPricePer1K": 0.014,
       "verifiedAt": "2026-07-10"
     },
     {
-      "id": "deepseek-r1-oss",
-      "label": "DeepSeek-R1 671B (open weights)",
+      "id": "glm-5.2-oss",
+      "label": "GLM-5.2 (open weights)",
       "provider": "oss",
       "bedrock": false,
       "kind": "llm",
       "selfHostable": true,
-      "paramsB": 671,
-      "inPricePer1K": 0.00055,
-      "outPricePer1K": 0.00219,
-      "verifiedAt": "2026-07-10"
-    },
-    {
-      "id": "llama-3.1-405b-oss",
-      "label": "Llama 3.1 405B (open weights)",
-      "provider": "oss",
-      "bedrock": false,
-      "kind": "llm",
-      "selfHostable": true,
-      "paramsB": 405,
-      "inPricePer1K": 0.0008,
-      "outPricePer1K": 0.0008,
-      "verifiedAt": "2026-07-10"
-    },
-    {
-      "id": "glm-4.5-oss",
-      "label": "GLM-4.5 355B (open weights)",
-      "provider": "oss",
-      "bedrock": false,
-      "kind": "llm",
-      "selfHostable": true,
-      "paramsB": 355,
+      "paramsB": 400,
       "inPricePer1K": 0.0006,
       "outPricePer1K": 0.0022,
       "verifiedAt": "2026-07-10"
     },
     {
-      "id": "qwen3-235b-oss",
-      "label": "Qwen3 235B (open weights)",
+      "id": "nemotron-3-ultra-oss",
+      "label": "NVIDIA Nemotron 3 Ultra 550B-A55B (open weights)",
       "provider": "oss",
       "bedrock": false,
       "kind": "llm",
       "selfHostable": true,
-      "paramsB": 235,
-      "inPricePer1K": 0.0002,
-      "outPricePer1K": 0.0006,
+      "paramsB": 550,
+      "inPricePer1K": 0.001,
+      "outPricePer1K": 0.003,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "minimax-m3-oss",
+      "label": "MiniMax M3 (open weights)",
+      "provider": "oss",
+      "bedrock": false,
+      "kind": "llm",
+      "selfHostable": true,
+      "paramsB": 480,
+      "inPricePer1K": 0.0003,
+      "outPricePer1K": 0.0011,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "deepseek-v4-pro-oss",
+      "label": "DeepSeek-V4-Pro (open weights)",
+      "provider": "oss",
+      "bedrock": false,
+      "kind": "llm",
+      "selfHostable": true,
+      "paramsB": 720,
+      "inPricePer1K": 0.0006,
+      "outPricePer1K": 0.0024,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "kimi-k2.6-oss",
+      "label": "Kimi K2.6 (open weights)",
+      "provider": "oss",
+      "bedrock": false,
+      "kind": "llm",
+      "selfHostable": true,
+      "paramsB": 1000,
+      "inPricePer1K": 0.0006,
+      "outPricePer1K": 0.0025,
       "verifiedAt": "2026-07-10"
     },
     {

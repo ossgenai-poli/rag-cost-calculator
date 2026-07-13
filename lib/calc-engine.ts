@@ -284,6 +284,7 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       gpuPricePerHr: gpu.pricePerHr,
       sustainedTokPerSec: gpu.sustainedTokPerSec,
       utilTarget: 0.7,
+      numInstances: 1,
     },
     traffic: {
       queriesPerMonth: 100000,
