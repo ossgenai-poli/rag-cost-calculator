@@ -157,6 +157,30 @@ describe("calculate — golden numbers", () => {
 // Indexing algo: HNSW vs IVF_PQ
 // ---------------------------------------------------------------------------
 
+describe("topN ≤ topK enforcement (QA-002)", () => {
+  it("clamps chunks-sent-to-LLM to retrieved chunks at the calc boundary", () => {
+    const atCap = baseInputs();
+    atCap.retrieval.topK = 20;
+    atCap.retrieval.topN = 20;
+    const capped = calculate(atCap, priceBook);
+
+    const over = baseInputs();
+    over.retrieval.topK = 20;
+    over.retrieval.topN = 30; // impossible: can't send more than retrieved
+    const overRes = calculate(over, priceBook);
+
+    // topN is clamped to topK, so input tokens + generation cost are identical
+    // to topN=20 — the engine never bills the impossible 30-chunk config.
+    expect(overRes.perQuery.llmInputTok).toBe(capped.perQuery.llmInputTok);
+    expect(overRes.perQuery.apiGen$).toBeCloseTo(capped.perQuery.apiGen$, 12);
+    // And raising topN further past topK still changes nothing.
+    const over2 = baseInputs();
+    over2.retrieval.topK = 20;
+    over2.retrieval.topN = 1000;
+    expect(calculate(over2, priceBook).perQuery.llmInputTok).toBe(capped.perQuery.llmInputTok);
+  });
+});
+
 describe("indexing algorithm", () => {
   it("ivf_pq reduces ramBytes vs hnsw, and searchOCU drops out of a non-floor value", () => {
     // Large corpus so hnsw's searchOCU is well above the minOCU floor.

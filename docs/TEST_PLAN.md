@@ -26,11 +26,13 @@ benchmark grounding, charts, exports, sharing, and UX. Assumes all currently ope
 ```bash
 # Node 20+ and npm required
 npm install
-npm run build && npx serve out      # serves the static export, or:
-npm run dev                          # dev server at http://localhost:3000
+npm run build:static && npm run serve:static   # emits ./out, serves at :3100
+#   NOTE: plain `npm run build` does NOT emit ./out — you must use build:static.
+npm run dev                                     # or: dev server at :3000 (live prices)
 ```
 Also confirm the automated suite is green before manual testing (developer-run, but verify):
-`npm run typecheck`, `npm test`, `npm run build`.
+`npm run typecheck`, `npm test`, `npm run build:static`, and `npm run test:e2e`
+(headless static-bundle check; needs Chrome installed).
 
 ---
 

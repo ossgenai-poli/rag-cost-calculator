@@ -52,8 +52,11 @@ must(/Total cost per 1,000 queries/i, "per-1k metric");
 // Both build strategies present under their descriptive names.
 if (!/Self-built/i.test(text) || !/Managed retrieval/i.test(text))
   fail("both build strategies (Self-built / Managed retrieval) not present");
-// Managed retrieval must NOT show a bare total — it is incomplete.
-must(/Pricing unavailable|not published|not directly comparable/i, "managed-incomplete framing");
+// Managed retrieval is now fully priced from AWS's published rates (no longer
+// "incomplete"). Assert the priced card is shown and the old framing is gone.
+must(/AWS published rates|verified pricing/i, "managed-priced card (AWS published rates)");
+if (/Pricing unavailable/i.test(text))
+  fail("managed retrieval still shows 'Pricing unavailable' — it is priced now");
 // crossover verdict + dominant lever callouts
 if (!/self-host efficient|API wins in practice/.test(text)) fail("crossover verdict callout missing");
 if (!/cost driver|Biggest cost/i.test(text)) fail("dominant-lever callout missing");
