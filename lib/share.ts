@@ -59,8 +59,10 @@ const calcInputsSchema = z.object({
   guardrails: z.object({
     inputEnabled: z.boolean(),
     outputEnabled: z.boolean(),
-    unitPricePer1K: nonNeg,
-    unitsPerQuery: nonNeg,
+    inputPricePer1KUnits: nonNeg.default(0.75),
+    outputPricePer1KUnits: nonNeg.default(0.75),
+    charsPerTextUnit: num.positive().default(400),
+    charsPerToken: num.positive().default(4),
   }),
   generation: z.object({
     mode: z.enum(["api", "self-hosted"]),

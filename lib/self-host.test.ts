@@ -75,7 +75,7 @@ describe("crossover memory floor", () => {
       chunking: { chunkSize: 400, overlapFraction: 0.1, embedModelId: "e", embedDim: 1024, embedPricePer1K: 0.0001 },
       vectorStore: { indexingAlgo: "hnsw", m: 16, replicas: 1, pqCompression: 32, minOCU: 2, ocuPricePerHr: 0.24, storagePricePerGBmo: 0.024, gbRamPerOcu: 6, indexingOCUhrs: 10, qpsPerOcu: 2 },
       retrieval: { topK: 10, rerankEnabled: false, rerankModelId: "", rerankPricePer1K: 0, topN: 5 },
-      guardrails: { inputEnabled: false, outputEnabled: false, unitPricePer1K: 0, unitsPerQuery: 0 },
+      guardrails: { inputEnabled: false, outputEnabled: false, inputPricePer1KUnits: 0, outputPricePer1KUnits: 0, charsPerTextUnit: 400, charsPerToken: 4 },
       generation: {
         mode: "self-hosted", llmModelId: "big-oss", llmInPricePer1K: 0.00055, llmOutPricePer1K: 0.00219,
         outTokens: 200, promptOverhead: 100, gpuInstanceType: "p5.48xlarge", gpuPricePerHr: 55.04,

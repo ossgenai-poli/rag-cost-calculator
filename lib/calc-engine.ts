@@ -105,9 +105,6 @@ function computeVectorStore(inputs: CalcInputs, numVectors: number): VectorStore
 function computePerQuery(inputs: CalcInputs): PerQueryResult {
   const { guardrails, chunking, retrieval, generation, queryTokens } = inputs;
 
-  // Guardrails are priced per 1,000 text units, so divide units by 1000.
-  const guardrailUnit = (guardrails.unitsPerQuery / 1000) * guardrails.unitPricePer1K;
-  const guardrailIn = guardrails.inputEnabled ? guardrailUnit : 0;
   const embedQuery = (queryTokens / 1000) * chunking.embedPricePer1K;
   // Reranking is billed per search REQUEST (one per query), not per token.
   // rerankPricePer1K is $ per 1,000 rerank requests.
@@ -119,7 +116,21 @@ function computePerQuery(inputs: CalcInputs): PerQueryResult {
   const compIn = generation.apiComparisonInPricePer1K || generation.llmInPricePer1K;
   const compOut = generation.apiComparisonOutPricePer1K || generation.llmOutPricePer1K;
   const apiComparisonGen = (llmInputTok / 1000) * compIn + (generation.outTokens / 1000) * compOut;
-  const guardrailOut = guardrails.outputEnabled ? guardrailUnit : 0;
+
+  // Guardrails bill per text unit (a fixed block of characters) per policy. The
+  // input policy scans the whole prompt (retrieved context + overhead + query);
+  // the output policy scans the generated response. Estimate characters from
+  // tokens, then text units from characters — so a long RAG prompt is charged for
+  // the many text units it actually is, not a flat "1 unit/query".
+  const charsPerUnit = guardrails.charsPerTextUnit > 0 ? guardrails.charsPerTextUnit : 1;
+  const inputTextUnits = (llmInputTok * guardrails.charsPerToken) / charsPerUnit;
+  const outputTextUnits = (generation.outTokens * guardrails.charsPerToken) / charsPerUnit;
+  const guardrailIn = guardrails.inputEnabled
+    ? (inputTextUnits / 1000) * guardrails.inputPricePer1KUnits
+    : 0;
+  const guardrailOut = guardrails.outputEnabled
+    ? (outputTextUnits / 1000) * guardrails.outputPricePer1KUnits
+    : 0;
   const infraCrumbs = INFRA_CRUMBS_PER_QUERY;
 
   const perQuery = guardrailIn + embedQuery + rerank + apiGen + guardrailOut + infraCrumbs;
@@ -364,8 +375,10 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
     guardrails: {
       inputEnabled: false,
       outputEnabled: false,
-      unitPricePer1K: guardrailModel?.inPricePer1K ?? 0,
-      unitsPerQuery: 1,
+      inputPricePer1KUnits: guardrailModel?.inPricePer1K ?? 0,
+      outputPricePer1KUnits: guardrailModel?.inPricePer1K ?? 0,
+      charsPerTextUnit: 400, // Bedrock content-filter / denied-topics / PII text-unit size
+      charsPerToken: 4,
     },
     generation: {
       mode: "api",
