@@ -1,7 +1,7 @@
 "use client";
 
 import type { GenerationInputs, GenerationMode, GpuInstancePrice, ModelPrice, PriceBook } from "@/lib/types";
-import { instancesToLoad, modelMemoryGB } from "@/lib/self-host";
+import { instancesToLoad, modelWeightsGB, kvCacheGB } from "@/lib/self-host";
 import {
   NumberField,
   SegmentedToggle,
@@ -26,10 +26,17 @@ export function GenerationPanel(props: {
   const selfHosted = generation.mode === "self-hosted";
   const gpu = priceBook.gpus.find((g) => g.instanceType === generation.gpuInstanceType);
 
-  // Minimum instances to hold the selected model's weights on the selected GPU
-  // at the selected precision.
+  // Minimum instances to load + serve the model on the GPU: weights (precision)
+  // + KV cache (attention arch × context × concurrency) + runtime reserve.
   const floorFor = (model: ModelPrice | undefined, g: GpuInstancePrice | undefined, bits: number) =>
-    instancesToLoad(model?.paramsB, g?.totalMemGB ?? 0, bits);
+    instancesToLoad(
+      model?.paramsB,
+      g?.totalMemGB ?? 0,
+      bits,
+      model?.kvBytesPerToken,
+      generation.maxContextLen,
+      generation.maxConcurrentSeqs
+    );
 
   function patchModel(model: ModelPrice | undefined, g: GpuInstancePrice | undefined, extra?: Partial<GenerationInputs>) {
     const next: GenerationInputs = { ...generation, ...extra };
@@ -83,10 +90,32 @@ export function GenerationPanel(props: {
 
   const memInstances =
     selfHosted && selectedModel?.paramsB && gpu ? floorFor(selectedModel, gpu, generation.weightBits) : null;
-  const modelMem = selectedModel?.paramsB ? modelMemoryGB(selectedModel.paramsB, generation.weightBits) : 0;
+  const weightsGB = selectedModel?.paramsB ? modelWeightsGB(selectedModel.paramsB, generation.weightBits) : 0;
+  const kvGB = kvCacheGB(
+    selectedModel?.kvBytesPerToken,
+    generation.weightBits,
+    generation.maxContextLen,
+    generation.maxConcurrentSeqs
+  );
 
   const precisionLabel = (bits: number) =>
     bits >= 16 ? "BF16 / FP16" : bits === 8 ? "FP8 / INT8" : "INT4";
+
+  // KV-affecting change: patch + re-default the fleet to the new minimum.
+  function patchServing(patch: Partial<GenerationInputs>) {
+    const next: GenerationInputs = { ...generation, ...patch };
+    if (selfHosted) {
+      next.numInstances = instancesToLoad(
+        selectedModel?.paramsB,
+        gpu?.totalMemGB ?? 0,
+        next.weightBits,
+        selectedModel?.kvBytesPerToken,
+        next.maxContextLen,
+        next.maxConcurrentSeqs
+      );
+    }
+    onChange(next);
+  }
 
   return (
     <Section title="Generation">
@@ -165,13 +194,30 @@ export function GenerationPanel(props: {
             { value: "8", label: "FP8 / INT8 (1 byte)" },
             { value: "4", label: "INT4 (0.5 bytes)" },
           ]}
-          onChange={(v) => {
-            const bits = Number(v);
-            const next: GenerationInputs = { ...generation, weightBits: bits };
-            if (selfHosted) next.numInstances = floorFor(selectedModel, gpu, bits);
-            onChange(next);
-          }}
+          onChange={(v) => patchServing({ weightBits: Number(v) })}
         />
+
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField
+            label="Max context length"
+            hint="Longest sequence held in KV cache — drives KV memory (and instances)."
+            suffix="tokens"
+            value={generation.maxContextLen}
+            min={128}
+            step={512}
+            disabled={!selfHosted}
+            onChange={(v) => patchServing({ maxContextLen: v })}
+          />
+          <NumberField
+            label="Max concurrent seqs"
+            hint="Concurrent sequences (batch) held in KV cache."
+            value={generation.maxConcurrentSeqs}
+            min={1}
+            step={1}
+            disabled={!selfHosted}
+            onChange={(v) => patchServing({ maxConcurrentSeqs: v })}
+          />
+        </div>
 
         {selfHosted && memInstances && gpu && selectedModel && (
           <div className="rounded-md border border-accent/30 bg-accent/5 p-2.5 text-xs">
@@ -180,9 +226,18 @@ export function GenerationPanel(props: {
               <span className="ml-1 font-normal text-slate-400">= {memInstances * gpu.totalMemGB} GB HBM</span>
             </div>
             <div className="mt-0.5 text-slate-400">
-              {selectedModel.paramsB}B params ≈ {Math.round(modelMem)} GB at {precisionLabel(generation.weightBits)}{" "}
-              (weights + overhead) vs {gpu.totalMemGB} GB per instance.
+              Weights {Math.round(weightsGB)} GB ({precisionLabel(generation.weightBits)}) + KV cache{" "}
+              {Math.round(kvGB)} GB
+              {selectedModel.attentionType && (
+                <span className="text-slate-500"> ({selectedModel.attentionType})</span>
+              )}{" "}
+              + ~15% reserve, vs {gpu.totalMemGB} GB/instance.
             </div>
+            {kvGB > weightsGB && (
+              <div className="mt-0.5 text-amber-400">
+                ⚠ KV cache now exceeds weights — driven by context length × concurrency.
+              </div>
+            )}
           </div>
         )}
 
@@ -190,7 +245,7 @@ export function GenerationPanel(props: {
           label="Number of instances"
           hint={
             memInstances
-              ? `Defaults to ${memInstances} (minimum to load the model). Increase for more throughput headroom.`
+              ? `Defaults to ${memInstances} (minimum to load + serve the model). Increase for more throughput headroom.`
               : "GPU instances provisioned for generation."
           }
           value={generation.numInstances}

@@ -77,6 +77,8 @@ const calcInputsSchema = z.object({
     apiComparisonModelId: z.string().default(""),
     apiComparisonInPricePer1K: nonNeg.default(0),
     apiComparisonOutPricePer1K: nonNeg.default(0),
+    maxContextLen: num.positive().default(8192),
+    maxConcurrentSeqs: num.positive().default(16),
   }),
   traffic: z.object({
     queriesPerMonth: nonNeg,
