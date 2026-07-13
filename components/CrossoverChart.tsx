@@ -35,6 +35,11 @@ function formatPercent(fraction: number): string {
   return `${(fraction * 100).toFixed(0)}%`;
 }
 
+/** Break-even utilization can exceed a fleet's capacity; express that honestly. */
+function formatBreakEvenUtil(u: number): string {
+  return u <= 1 ? `${(u * 100).toFixed(0)}%` : `${u.toFixed(1)}× capacity`;
+}
+
 export function CrossoverChart({ crossover }: CrossoverChartProps) {
   const {
     curve,
@@ -43,6 +48,8 @@ export function CrossoverChart({ crossover }: CrossoverChartProps) {
     utilAtBreakEven,
     verdict,
     monthlyGenTokens,
+    boxes,
+    gpuMonthly$,
   } = crossover;
   const isEfficient = verdict === "self-host efficient";
   const showWorkload = monthlyGenTokens > 0;
@@ -51,7 +58,8 @@ export function CrossoverChart({ crossover }: CrossoverChartProps) {
     <div className="panel p-4">
       <h3 className="mb-1 text-sm font-medium text-slate-300">API vs. self-hosted GPU crossover</h3>
       <p className="mb-3 text-xs text-slate-500">
-        Where linear API pricing meets the stepped cost of a dedicated GPU box.
+        Your fixed GPU-fleet cost vs the API&apos;s linear cost.{" "}
+        <span className="text-slate-600">X: monthly LLM tokens · Y: monthly generation cost ($/mo)</span>
       </p>
 
       {curve.length === 0 ? (
@@ -61,7 +69,7 @@ export function CrossoverChart({ crossover }: CrossoverChartProps) {
       ) : (
         <div style={{ width: "100%", height: 320 }}>
           <ResponsiveContainer>
-            <LineChart data={curve} margin={{ top: 8, right: 24, bottom: 28, left: 16 }}>
+            <LineChart data={curve} margin={{ top: 22, right: 16, bottom: 8, left: 8 }}>
               <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
               <XAxis
                 dataKey="tokens"
@@ -70,28 +78,14 @@ export function CrossoverChart({ crossover }: CrossoverChartProps) {
                 stroke="#94a3b8"
                 tick={{ fill: "#94a3b8", fontSize: 12 }}
                 tickFormatter={formatTokens}
-                height={40}
-              >
-                <Label
-                  value="Monthly LLM tokens"
-                  position="insideBottom"
-                  offset={-4}
-                  style={{ fill: "#64748b", fontSize: 12 }}
-                />
-              </XAxis>
+                height={24}
+              />
               <YAxis
                 stroke="#94a3b8"
                 tick={{ fill: "#94a3b8", fontSize: 12 }}
                 tickFormatter={formatDollars}
-                width={64}
-              >
-                <Label
-                  value="Monthly generation cost"
-                  angle={-90}
-                  position="insideLeft"
-                  style={{ fill: "#64748b", fontSize: 12, textAnchor: "middle" }}
-                />
-              </YAxis>
+                width={56}
+              />
               <Tooltip
                 contentStyle={{ background: "#111a2e", border: "1px solid #1e293b", borderRadius: 8 }}
                 labelStyle={{ color: "#e2e8f0" }}
@@ -100,25 +94,17 @@ export function CrossoverChart({ crossover }: CrossoverChartProps) {
               />
               <Legend wrapperStyle={{ color: "#e2e8f0", fontSize: 12 }} />
               <Line type="monotone" dataKey="api$" name="API (linear)" stroke="#38bdf8" dot={false} strokeWidth={2} />
-              <Line type="stepAfter" dataKey="selfHosted$" name="Self-hosted (stepped)" stroke="#f59e0b" dot={false} strokeWidth={2} />
+              <Line type="monotone" dataKey="selfHosted$" name="Self-hosted (fixed fleet)" stroke="#f59e0b" dot={false} strokeWidth={2} />
 
               {breakEvenTokens > 0 && (
                 <ReferenceLine x={breakEvenTokens} stroke="#e2e8f0" strokeDasharray="4 4">
-                  <Label
-                    value={`Break-even · ${formatTokens(breakEvenTokens)}`}
-                    position="top"
-                    style={{ fill: "#e2e8f0", fontSize: 11 }}
-                  />
+                  <Label value="Break-even" position="top" style={{ fill: "#e2e8f0", fontSize: 11 }} />
                 </ReferenceLine>
               )}
 
               {showWorkload && (
                 <ReferenceLine x={monthlyGenTokens} stroke="#34d399" strokeDasharray="2 2">
-                  <Label
-                    value={`Your workload · ${formatTokens(monthlyGenTokens)}`}
-                    position="insideTopRight"
-                    style={{ fill: "#34d399", fontSize: 11 }}
-                  />
+                  <Label value="Workload" position="insideTopRight" style={{ fill: "#34d399", fontSize: 11 }} />
                 </ReferenceLine>
               )}
             </LineChart>
@@ -128,12 +114,15 @@ export function CrossoverChart({ crossover }: CrossoverChartProps) {
 
       {breakEvenTokens > 0 && (
         <div className="mt-2 rounded-md border border-slate-800 bg-slate-900/40 p-2.5 text-xs text-slate-400">
-          <span className="text-slate-300">Break-even: {formatTokens(breakEvenTokens)} tokens/month</span>
-          {" "}— equivalent to ~{equivalentQPS.toFixed(2)} sustained QPS, assuming{" "}
-          {formatPercent(utilAtBreakEven)} realized GPU utilization at that point.
+          <span className="text-slate-300">
+            Break-even: {formatTokens(breakEvenTokens)} tokens/month
+          </span>{" "}
+          — where your {boxes}-instance fleet ({formatDollars(gpuMonthly$ * boxes)}/mo) matches the
+          API&apos;s linear cost, ≈ {equivalentQPS.toFixed(2)} sustained QPS.
           <span className="mt-1 block text-slate-500">
-            Box capacity is sized conservatively against total (prefill + decode) tokens, so
-            real-world self-hosting is slightly cheaper than shown.
+            {utilAtBreakEven <= 1
+              ? `The fleet would need to run at ~${formatPercent(utilAtBreakEven)} utilization to break even — anything above that favors self-hosting.`
+              : `That's ${utilAtBreakEven.toFixed(1)}× the fleet's own capacity, so it can't process enough to beat the hosted API — the API stays cheaper.`}
           </span>
         </div>
       )}
@@ -148,8 +137,8 @@ export function CrossoverChart({ crossover }: CrossoverChartProps) {
           <div className="text-slate-200 tabular-nums">{equivalentQPS.toFixed(2)}</div>
         </div>
         <div>
-          <div className="text-slate-500" title="Util at break-even">Required realized GPU utilization</div>
-          <div className="text-slate-200 tabular-nums">{formatPercent(utilAtBreakEven)}</div>
+          <div className="text-slate-500" title="Fleet utilization needed to reach break-even volume">Utilization to break even</div>
+          <div className="text-slate-200 tabular-nums">{formatBreakEvenUtil(utilAtBreakEven)}</div>
         </div>
         <div>
           <div className="text-slate-500">Verdict</div>

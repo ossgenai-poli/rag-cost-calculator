@@ -133,8 +133,10 @@ export function ResultsPanel({
               Utilization reality check
             </div>
             <div className="mt-1 text-lg font-semibold text-slate-100">
-              {formatPercent(crossover.utilAtBreakEven)} required GPU utilization at break-even —{" "}
-              {crossover.verdict}
+              {crossover.utilAtBreakEven <= 1
+                ? `${formatPercent(crossover.utilAtBreakEven)} fleet utilization needed to break even`
+                : `break-even needs ${crossover.utilAtBreakEven.toFixed(1)}× the fleet's capacity`}{" "}
+              — {crossover.verdict}
             </div>
             <div className="mt-1 text-xs text-slate-400">
               GPU idle time below break-even utilization means the API often wins in practice,

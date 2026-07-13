@@ -71,11 +71,16 @@ export function computeCrossover(
   const selfHostedMonthly$ = boxes * gpuMonthly$;
 
   const apiMonthly$ = apiBlendedPricePerToken * monthlyGenTokens;
-  const breakEvenTokens = gpuMonthly$ / apiBlendedPricePerToken;
+  // Break-even is where the whole provisioned FLEET's fixed cost equals the API's
+  // linear cost — so it scales with the number of instances the user provisions.
+  const breakEvenTokens = selfHostedMonthly$ / apiBlendedPricePerToken;
   const equivalentQPS = breakEvenTokens / tokensPerQuery / SECONDS_PER_MONTH;
-  const utilAtBreakEven = breakEvenTokens / capacity100;
+  // Utilization the fleet must sustain to break even = break-even volume ÷ fleet
+  // capacity. If that's low, self-hosting pays off easily; if it exceeds ~1, the
+  // fleet physically can't process enough to beat a cheap hosted API.
+  const utilAtBreakEven = breakEvenTokens / (boxes * capacity100);
   const verdict: CrossoverResult["verdict"] =
-    utilAtBreakEven > SELF_HOST_UTIL_THRESHOLD
+    utilAtBreakEven <= SELF_HOST_UTIL_THRESHOLD
       ? "self-host efficient"
       : "API wins in practice below sustained load";
 
@@ -86,10 +91,9 @@ export function computeCrossover(
     for (let i = 0; i < CURVE_POINTS; i++) {
       const tokens = step * i;
       const api$ = apiBlendedPricePerToken * tokens;
-      // Curve reflects the provisioned fleet (flat) until demand outgrows it.
-      const stepBoxes = Math.max(1, boxes, Math.ceil(tokens / capacityEff), minInstancesToLoad);
-      const selfHosted$ = stepBoxes * gpuMonthly$;
-      curve.push({ tokens, api$, selfHosted$ });
+      // Fixed provisioned fleet: cost is flat regardless of volume. Crosses the
+      // rising API line at break-even — the classic fixed-vs-variable crossover.
+      curve.push({ tokens, api$, selfHosted$: selfHostedMonthly$ });
     }
   }
 
