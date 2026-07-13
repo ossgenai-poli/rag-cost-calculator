@@ -17,6 +17,7 @@ import type { BreakdownRow, DisplayMetrics } from "@/lib/derived";
 const COLORS: Record<CostBreakdownLine["category"], string> = {
   generation: "#fbbf24",
   vectorstore: "#a78bfa",
+  rerank: "#e879f9",
   query: "#34d399",
   ingestion: "#38bdf8",
   guardrails: "#f87171",

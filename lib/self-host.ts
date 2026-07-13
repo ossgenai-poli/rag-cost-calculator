@@ -10,22 +10,31 @@ export const BYTES_PER_PARAM_FP16 = 2;
 /** Headroom for KV cache, activations, and fragmentation. */
 export const MEM_OVERHEAD = 1.2;
 
-/** Raw weight footprint in GB at FP16. */
-export function modelWeightsGB(paramsB: number): number {
-  return paramsB * BYTES_PER_PARAM_FP16;
+/** Bytes per parameter for a given weight precision (bits). Defaults to FP16. */
+export function bytesPerParam(weightBits = 16): number {
+  return (weightBits > 0 ? weightBits : 16) / 8;
 }
 
-/** Serving memory footprint in GB (weights + overhead). */
-export function modelMemoryGB(paramsB: number): number {
-  return modelWeightsGB(paramsB) * MEM_OVERHEAD;
+/** Raw weight footprint in GB at the given precision. */
+export function modelWeightsGB(paramsB: number, weightBits = 16): number {
+  return paramsB * bytesPerParam(weightBits);
+}
+
+/** Serving memory footprint in GB (weights + overhead) at the given precision. */
+export function modelMemoryGB(paramsB: number, weightBits = 16): number {
+  return modelWeightsGB(paramsB, weightBits) * MEM_OVERHEAD;
 }
 
 /**
  * Minimum number of GPU instances required just to load the model, given each
- * instance's aggregate HBM. Returns 1 when inputs are unknown/zero so it never
- * lowers a throughput-derived box count.
+ * instance's aggregate HBM and the weight precision. Returns 1 when inputs are
+ * unknown/zero so it never lowers a throughput-derived box count.
  */
-export function instancesToLoad(paramsB: number | undefined, instanceTotalMemGB: number): number {
+export function instancesToLoad(
+  paramsB: number | undefined,
+  instanceTotalMemGB: number,
+  weightBits = 16
+): number {
   if (!paramsB || paramsB <= 0 || !(instanceTotalMemGB > 0)) return 1;
-  return Math.max(1, Math.ceil(modelMemoryGB(paramsB) / instanceTotalMemGB));
+  return Math.max(1, Math.ceil(modelMemoryGB(paramsB, weightBits) / instanceTotalMemGB));
 }

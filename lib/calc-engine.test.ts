@@ -15,7 +15,7 @@ const priceBook: PriceBook = {
   models: [
     { id: "embed-1", label: "Embed 1", provider: "bedrock", bedrock: true, kind: "embedding", inPricePer1K: 0.0001, outPricePer1K: 0, dim: 1024, verifiedAt: "2026-01-01" },
     { id: "llm-1", label: "LLM 1", provider: "bedrock", bedrock: true, kind: "llm", inPricePer1K: 0.003, outPricePer1K: 0.015, verifiedAt: "2026-01-01" },
-    { id: "rerank-1", label: "Rerank 1", provider: "bedrock", bedrock: true, kind: "rerank", inPricePer1K: 0.001, outPricePer1K: 0, verifiedAt: "2026-01-01" },
+    { id: "rerank-1", label: "Rerank 1", provider: "bedrock", bedrock: true, kind: "rerank", inPricePer1K: 2.0, outPricePer1K: 0, verifiedAt: "2026-01-01" },
     { id: "guardrail-1", label: "Guardrail 1", provider: "bedrock", bedrock: true, kind: "guardrail", inPricePer1K: 0.75, outPricePer1K: 0, verifiedAt: "2026-01-01" },
   ],
 };
@@ -37,7 +37,7 @@ function baseInputs(): CalcInputs {
       indexingOCUhrs: 10,
       qpsPerOcu: 2,
     },
-    retrieval: { topK: 20, rerankEnabled: true, rerankModelId: "rerank-1", rerankPricePer1K: 0.001, topN: 5 },
+    retrieval: { topK: 20, rerankEnabled: true, rerankModelId: "rerank-1", rerankPricePer1K: 2.0, topN: 5 },
     guardrails: { inputEnabled: true, outputEnabled: true, unitPricePer1K: 0.75, unitsPerQuery: 1 },
     generation: {
       mode: "api",
@@ -50,7 +50,7 @@ function baseInputs(): CalcInputs {
       gpuPricePerHr: 50,
       sustainedTokPerSec: 2000,
       utilTarget: 0.7,
-      numInstances: 1,
+      numInstances: 1, weightBits: 16,
     },
     traffic: { queriesPerMonth: 100000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
     queryTokens: 50,
@@ -98,8 +98,8 @@ describe("calculate — golden numbers", () => {
     expect(result.perQuery.guardrailIn$).toBeCloseTo(0.00075, 10);
     // embedQuery$ = 50/1000*0.0001 = 0.000005
     expect(result.perQuery.embedQuery$).toBeCloseTo(0.000005, 10);
-    // rerank$ = 20/1000*0.001 = 0.00002
-    expect(result.perQuery.rerank$).toBeCloseTo(0.00002, 10);
+    // rerank$ = per search request = 2.0/1000 = 0.002 (one request per query)
+    expect(result.perQuery.rerank$).toBeCloseTo(0.002, 10);
     // llmInputTok = 5*500 + 300 + 50 = 2850
     expect(result.perQuery.llmInputTok).toBe(2850);
     // apiGen$ = 2850/1000*0.003 + 500/1000*0.015 = 0.00855 + 0.0075 = 0.01605
@@ -107,14 +107,14 @@ describe("calculate — golden numbers", () => {
     // guardrailOut$ = 1*0.00075 = 0.00075
     expect(result.perQuery.guardrailOut$).toBeCloseTo(0.00075, 10);
     expect(result.perQuery.infraCrumbs$).toBe(INFRA_CRUMBS_PER_QUERY);
-    // perQuery$ = 0.00075+0.000005+0.00002+0.01605+0.00075+0.00002 = 0.017595
-    expect(result.perQuery.perQuery$).toBeCloseTo(0.017595, 10);
+    // perQuery$ = 0.00075+0.000005+0.002+0.01605+0.00075+0.00002 = 0.019575
+    expect(result.perQuery.perQuery$).toBeCloseTo(0.019575, 10);
 
     // Totals
-    // queryMonthly$ = 0.017595 * 100000 = 1759.5
-    expect(result.queryMonthly$).toBeCloseTo(1759.5, 6);
-    // totalMonthly$ = 0.125 + 352.80024576 + 1759.5 = 2112.42524576
-    expect(result.totalMonthly$).toBeCloseTo(2112.42524576, 5);
+    // queryMonthly$ = 0.019575 * 100000 = 1957.5
+    expect(result.queryMonthly$).toBeCloseTo(1957.5, 6);
+    // totalMonthly$ = 0.125 + 352.80024576 + 1957.5 = 2310.42524576
+    expect(result.totalMonthly$).toBeCloseTo(2310.42524576, 5);
 
     expect(result.mode).toBe("A");
   });
@@ -122,9 +122,9 @@ describe("calculate — golden numbers", () => {
   it("builds a breakdown with one line per category and a correct dominant lever", () => {
     const result = calculate(baseInputs(), priceBook);
 
-    expect(result.breakdown).toHaveLength(5);
+    expect(result.breakdown).toHaveLength(6);
     const categories = result.breakdown.map((line) => line.category).sort();
-    expect(categories).toEqual(["generation", "guardrails", "ingestion", "query", "vectorstore"].sort());
+    expect(categories).toEqual(["generation", "guardrails", "ingestion", "query", "rerank", "vectorstore"].sort());
 
     const maxLine = result.breakdown.reduce((max, line) => (line.monthly$ > max.monthly$ ? line : max));
     expect(result.dominantLever.label).toBe(maxLine.label);
@@ -377,7 +377,7 @@ describe("defaultInputs", () => {
     expect(inputs.generation.sustainedTokPerSec).toBe(2000);
 
     expect(inputs.retrieval.rerankModelId).toBe("rerank-1");
-    expect(inputs.retrieval.rerankPricePer1K).toBe(0.001);
+    expect(inputs.retrieval.rerankPricePer1K).toBe(2.0);
 
     expect(inputs.guardrails.unitPricePer1K).toBe(0.75);
 

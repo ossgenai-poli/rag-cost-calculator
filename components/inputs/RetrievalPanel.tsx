@@ -55,6 +55,12 @@ export function RetrievalPanel(props: {
         options={rerankModels.map((m) => ({ value: m.id, label: m.label }))}
         onChange={selectRerankModel}
       />
+      {retrieval.rerankEnabled && (
+        <div className="text-[11px] text-slate-500">
+          Billed per search request (1 per query):{" "}
+          <span className="text-slate-300">${retrieval.rerankPricePer1K}/1K requests</span>
+        </div>
+      )}
     </Section>
   );
 }

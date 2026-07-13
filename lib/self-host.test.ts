@@ -21,6 +21,14 @@ describe("self-host GPU sizing", () => {
     expect(instancesToLoad(671, 0)).toBe(1);
     expect(instancesToLoad(0, 640)).toBe(1);
   });
+
+  it("quantization lowers memory and required instances", () => {
+    // 671B on a 640 GB box: FP16(16b)->3, FP8(8b)->2, INT4(4b)->1
+    expect(instancesToLoad(671, 640, 16)).toBe(3); // 1610 GB
+    expect(instancesToLoad(671, 640, 8)).toBe(2); // 805 GB
+    expect(instancesToLoad(671, 640, 4)).toBe(1); // 402 GB
+    expect(modelMemoryGB(671, 8)).toBeCloseTo(805.2, 4);
+  });
 });
 
 describe("crossover memory floor", () => {
@@ -46,7 +54,7 @@ describe("crossover memory floor", () => {
       generation: {
         mode: "self-hosted", llmModelId: "big-oss", llmInPricePer1K: 0.00055, llmOutPricePer1K: 0.00219,
         outTokens: 200, promptOverhead: 100, gpuInstanceType: "p5.48xlarge", gpuPricePerHr: 55.04,
-        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1,
+        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, weightBits: 16,
       },
       traffic: { queriesPerMonth: 1000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
       queryTokens: 50,

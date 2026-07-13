@@ -170,7 +170,7 @@
       "provider": "bedrock",
       "bedrock": true,
       "kind": "rerank",
-      "inPricePer1K": 0.001,
+      "inPricePer1K": 2,
       "outPricePer1K": 0,
       "verifiedAt": "2026-07-10"
     },

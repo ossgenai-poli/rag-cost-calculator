@@ -158,7 +158,8 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "bedrock",
     bedrock: true,
     kind: "rerank",
-    inPricePer1K: 0.001,
+    // $ per 1,000 rerank REQUESTS (one request per query, up to ~100 docs each).
+    inPricePer1K: 2.0,
     outPricePer1K: 0,
     verifiedAt: VERIFIED_AT,
   },
