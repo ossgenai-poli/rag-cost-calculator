@@ -266,6 +266,8 @@ export interface CrossoverResult {
   breakEvenTokens: number;
   equivalentQPS: number;       // break-even tokens expressed as QPS
   utilAtBreakEven: number;     // honesty check (<~0.5 => GPU idle)
+  tokensPerQuery: number;      // total (input+output) LLM tokens per query — converts the token axis to queries/QPS
+  outputFraction: number;      // output ÷ total tokens — converts the token axis to output/input tokens and derives decode util
   verdict: "self-host efficient" | "API wins in practice below sustained load";
   /** sampled points for the Recharts crossover chart */
   curve: Array<{ tokens: number; api$: number; selfHosted$: number }>;

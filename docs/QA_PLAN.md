@@ -126,8 +126,11 @@ Also gate: `npm run typecheck`, `npm run build`, and (for UI-affecting changes)
 
 ### P2 — product quality
 - Feature-level **guardrail** pricing (input/output separate; char-based units).
-- Crossover **X-axis selector** (queries / QPS / input-tok / output-tok) and a
-  "no feasible crossover" state; per-point tooltip with instances + utilization.
+- ✅ **Crossover X-axis selector** (LLM tokens / queries / QPS / input-tok /
+  output-tok), a "no feasible crossover" banner when break-even exceeds the fleet's
+  decode capacity, and a per-point tooltip with fleet size + decode utilization.
+  `crossover.ts` exposes `tokensPerQuery` + `outputFraction` so the chart converts
+  the token axis into any unit without re-deriving.
 - **Reserved / Spot / Savings Plan** GPU pricing + uptime schedule.
 - Networking / logging / monitoring / production-overhead line items.
 - Peak-vs-average workload modeling; exportable assumptions + calc report.
