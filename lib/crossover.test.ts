@@ -77,7 +77,7 @@ function makePerQuery(llmInputTok: number, apiGen$: number): PerQueryResult {
 const priceBook = {} as PriceBook; // unused by computeCrossover
 
 describe("computeCrossover", () => {
-  it("golden numbers: moderate scenario resolves to 'API wins'", () => {
+  it("golden numbers: cheap box breaks even below capacity -> 'self-host efficient'", () => {
     const inputs = makeInputs({
       outTokens: 200,
       gpuPricePerHr: 3,
@@ -95,12 +95,13 @@ describe("computeCrossover", () => {
     expect(result.boxes).toBe(1); // ceil(100M / (13.14B*0.5)) = ceil(0.0152) = 1
     expect(result.selfHostedMonthly$).toBeCloseTo(1 * 2190, 6);
     expect(result.apiBlendedPricePerToken).toBeCloseTo(5e-7, 12);
-    expect(result.breakEvenTokens).toBeCloseTo(4_380_000_000, 3); // 2190 / 5e-7
-    expect(result.utilAtBreakEven).toBeCloseTo(0.333333, 5); // 4.38B / 13.14B
-    expect(result.verdict).toBe("API wins in practice below sustained load");
+    expect(result.breakEvenTokens).toBeCloseTo(4_380_000_000, 3); // 1 box × 2190 / 5e-7
+    expect(result.utilAtBreakEven).toBeCloseTo(0.333333, 5); // 4.38B / (1 × 13.14B)
+    // Break-even at 33% of capacity is easily sustained -> self-hosting wins.
+    expect(result.verdict).toBe("self-host efficient");
   });
 
-  it("golden numbers: bigger GPU box relative to API price flips verdict to 'self-host efficient'", () => {
+  it("golden numbers: pricey box needs >capacity to break even -> 'API wins'", () => {
     const inputs = makeInputs({
       outTokens: 200,
       gpuPricePerHr: 30, // 10x pricier/larger box than the 'API wins' case
@@ -113,12 +114,13 @@ describe("computeCrossover", () => {
     const result = computeCrossover(inputs, priceBook, perQuery);
 
     expect(result.gpuMonthly$).toBeCloseTo(21_900, 6); // 30 * 730
-    expect(result.breakEvenTokens).toBeCloseTo(43_800_000_000, 2); // 21900 / 5e-7
-    expect(result.utilAtBreakEven).toBeCloseTo(3.333333, 5); // 43.8B / 13.14B
-    expect(result.verdict).toBe("self-host efficient");
+    expect(result.breakEvenTokens).toBeCloseTo(43_800_000_000, 2); // 1 box × 21900 / 5e-7
+    expect(result.utilAtBreakEven).toBeCloseTo(3.333333, 5); // 43.8B / (1 × 13.14B) > 1 => unreachable
+    // Break-even needs 3.3× the box's capacity — impossible, so the API wins.
+    expect(result.verdict).toBe("API wins in practice below sustained load");
   });
 
-  it("curve is monotonically non-decreasing and visibly stepped for selfHosted$", () => {
+  it("curve is a flat fixed-fleet line vs a rising linear API line", () => {
     const inputs = makeInputs({
       outTokens: 200,
       gpuPricePerHr: 3,
@@ -133,21 +135,16 @@ describe("computeCrossover", () => {
     expect(result.curve.length).toBeGreaterThan(0);
     expect(result.curve[0].tokens).toBe(0);
 
-    let sawStep = false;
     for (let i = 1; i < result.curve.length; i++) {
       const prev = result.curve[i - 1];
       const cur = result.curve[i];
       expect(cur.tokens).toBeGreaterThanOrEqual(prev.tokens);
-      expect(cur.api$).toBeGreaterThanOrEqual(prev.api$);
-      expect(cur.selfHosted$).toBeGreaterThanOrEqual(prev.selfHosted$);
-      if (cur.selfHosted$ === prev.selfHosted$) sawStep = true; // flat segment = a step
+      expect(cur.api$).toBeGreaterThan(prev.api$); // API rises linearly
     }
-    expect(sawStep).toBe(true);
-
-    // api$ increases linearly; selfHosted$ increases in discrete jumps.
-    const uniqueSelfHostedValues = new Set(result.curve.map((p) => p.selfHosted$));
-    const uniqueApiValues = new Set(result.curve.map((p) => p.api$));
-    expect(uniqueSelfHostedValues.size).toBeLessThan(uniqueApiValues.size);
+    // A fixed fleet costs the same at every volume — one unique self-hosted value.
+    const uniqueSelfHosted = new Set(result.curve.map((p) => p.selfHosted$));
+    expect(uniqueSelfHosted.size).toBe(1);
+    expect([...uniqueSelfHosted][0]).toBeCloseTo(result.selfHostedMonthly$, 6);
   });
 
   it("guards divide-by-zero when apiGen$ (and thus apiBlendedPricePerToken) is 0", () => {
@@ -255,5 +252,11 @@ describe("computeCrossover", () => {
     expect(r1.boxes).toBe(1);
     expect(r4.boxes).toBe(4);
     expect(r4.selfHostedMonthly$).toBeCloseTo(4 * r1.selfHostedMonthly$, 6);
+    // Break-even scales with the provisioned fleet — a bigger fleet needs more
+    // volume to pay off. (This is the behavior the narrative must reflect.)
+    expect(r4.breakEvenTokens).toBeCloseTo(4 * r1.breakEvenTokens, 4);
+    expect(r4.equivalentQPS).toBeCloseTo(4 * r1.equivalentQPS, 6);
+    // Per-box unit economics (util at break-even) stay the same across fleet sizes.
+    expect(r4.utilAtBreakEven).toBeCloseTo(r1.utilAtBreakEven, 6);
   });
 });

@@ -144,13 +144,13 @@ export function Toggle(props: {
         aria-checked={checked}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed ${
+        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${
           checked ? "bg-accent" : "bg-slate-700"
         }`}
       >
         <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-slate-100 transition-transform ${
-            checked ? "translate-x-4" : "translate-x-0.5"
+          className={`absolute left-0.5 h-4 w-4 rounded-full bg-slate-100 transition-transform ${
+            checked ? "translate-x-4" : "translate-x-0"
           }`}
         />
       </button>
