@@ -49,6 +49,7 @@ function makeInputs(overrides: {
       utilTarget: overrides.utilTarget ?? 0.5,
       numInstances: overrides.numInstances ?? 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16,
     },
+    managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
     traffic: {
       queriesPerMonth: overrides.queriesPerMonth,
       region: "us-east-1",

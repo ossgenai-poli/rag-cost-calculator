@@ -230,6 +230,18 @@ function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
       </div>
       <div>
         <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+          Bedrock Managed Knowledge Bases <SourceBadge kind="config" />
+        </div>
+        <div className="text-slate-300">
+          Storage ${priceBook.managedKb.indexStoragePerGBmo}/GB-mo · Retrieve ${priceBook.managedKb.retrievePer1k}/1K
+          calls · Agentic ${priceBook.managedKb.agenticRetrievePer1k}/1K · parsing/embed/rerank included
+        </div>
+        <div className="mt-0.5 text-[11px] text-slate-500">
+          Published on the AWS Bedrock pricing page · verified {priceBook.managedKb.verifiedAt}
+        </div>
+      </div>
+      <div>
+        <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
           Models <SourceBadge kind="config" />
         </div>
         <table className="w-full text-xs">

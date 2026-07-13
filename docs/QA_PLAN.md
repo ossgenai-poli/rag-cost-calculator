@@ -113,9 +113,16 @@ Also gate: `npm run typecheck`, `npm run build`, and (for UI-affecting changes)
   `maxConcurrentSeqs` inputs. Memory = (weights + KV) × 1.15 reserve; KV precision
   follows weight precision. GQA models (GLM) now correctly need far more memory
   per token than MLA models (DeepSeek/Kimi) despite fewer params.
-- Still open (pending data / to discuss):
-  - **Managed KB** built from its own component tree (today it honestly reuses the
-    self-built infra estimate and discloses it, but should be independent).
+- ✅ **Managed Bedrock KB independent cost tree** — priced from AWS's published
+  rates (index storage $5/GB-mo; Standard retrieve $1/1k; Agentic planning $4/1k +
+  $1/1k underlying; parsing/embedding/reranking included). The "Bedrock KB + API"
+  scenario is now `complete` (no longer "Pricing unavailable") and independent of
+  the self-built vector store. Golden tests reproduce AWS's own $350 (standard) and
+  $850 (agentic) 50 GB / 100k-query examples.
+- ✅ **Stale-input back-compat** — saved scenarios (localStorage) and shared links
+  are now normalized through the zod schema on load (`coerceInputs`), so a scenario
+  saved before a field existed (e.g. `managedKb`) backfills defaults instead of
+  crashing the engine. Previously only shared links were validated.
 
 ### P2 — product quality
 - Feature-level **guardrail** pricing (input/output separate; char-based units).

@@ -9,7 +9,7 @@
 //   - OpenAI API pricing:     https://openai.com/api/pricing/
 //
 // Prices are USD per 1K tokens (vendor pages quote per-1M; divide by 1000).
-import type { ModelPrice, OpenSearchPrice, GpuInstancePrice } from "./types";
+import type { ModelPrice, OpenSearchPrice, GpuInstancePrice, ManagedKbPrice } from "./types";
 
 const VERIFIED_AT = "2026-07-10";
 
@@ -191,6 +191,18 @@ export const MODEL_PRICES: ModelPrice[] = [
     verifiedAt: VERIFIED_AT,
   },
 ];
+
+// Amazon Bedrock Managed Knowledge Bases pricing, verified 2026-07-12 against
+// https://aws.amazon.com/bedrock/pricing/ (Knowledge Bases -> Managed Knowledge
+// Bases). Parsing, embeddings, and reranking are included in these rates.
+// Verified examples: 50 GB + 100k standard retrievals = $350/mo;
+// 50 GB + 100k agentic × 2 underlying = $850/mo.
+export const MANAGED_KB_PRICING: ManagedKbPrice = {
+  indexStoragePerGBmo: 5.0,
+  retrievePer1k: 1.0,
+  agenticRetrievePer1k: 4.0,
+  verifiedAt: "2026-07-12",
+};
 
 // OpenSearch Serverless defaults (us-east-1), used as the fallback when the
 // live Price List API call for AmazonOpenSearchServerless fails.

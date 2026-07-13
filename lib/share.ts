@@ -80,6 +80,13 @@ const calcInputsSchema = z.object({
     maxContextLen: num.positive().default(8192),
     maxConcurrentSeqs: num.positive().default(16),
   }),
+  managedKb: z
+    .object({
+      retrievalMode: z.enum(["standard", "agentic"]).default("standard"),
+      underlyingRetrievalsPerCall: nonNeg.default(2),
+      indexedDataGB: nonNeg.default(1),
+    })
+    .default({ retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 1 }),
   traffic: z.object({
     queriesPerMonth: nonNeg,
     region: z.string(),
@@ -127,11 +134,21 @@ export function decodeInputs(param: string | null | undefined): CalcInputs | nul
     // Versioned envelope { v, i } or legacy raw inputs object.
     const candidate =
       parsed && typeof parsed === "object" && "i" in parsed ? (parsed as { i: unknown }).i : parsed;
-    const result = calcInputsSchema.safeParse(candidate);
-    return result.success ? (result.data as CalcInputs) : null;
+    return coerceInputs(candidate);
   } catch {
     return null;
   }
+}
+
+/**
+ * Validate + upgrade a raw inputs object (e.g. a saved scenario persisted before
+ * newer fields existed) to a complete CalcInputs. Fields added after the object
+ * was stored are backfilled from the schema defaults, so old saved scenarios and
+ * shared links never crash the engine. Returns null if the shape is unusable.
+ */
+export function coerceInputs(candidate: unknown): CalcInputs | null {
+  const result = calcInputsSchema.safeParse(candidate);
+  return result.success ? (result.data as CalcInputs) : null;
 }
 
 /** Read encoded inputs from the current window URL, if present. */

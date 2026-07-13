@@ -26,6 +26,14 @@ export interface OpenSearchPrice {
   minOCU: number;            // always-on floor (indexing + search), e.g. 2
 }
 
+/** Amazon Bedrock Managed Knowledge Bases pricing (aws.amazon.com/bedrock/pricing). */
+export interface ManagedKbPrice {
+  indexStoragePerGBmo: number;  // $ per GB of raw indexed data / month
+  retrievePer1k: number;        // $ per 1,000 Retrieve API calls
+  agenticRetrievePer1k: number; // $ per 1,000 Agentic Retrieve API calls
+  verifiedAt: string;           // ISO date the rate was verified against the AWS page
+}
+
 /** LLM / embedding model price (from typed model-prices.ts config). */
 export interface ModelPrice {
   id: string;                // stable key, e.g. "claude-opus-4-8"
@@ -54,6 +62,7 @@ export interface PriceBook {
   region: string;            // e.g. "us-east-1"
   gpus: GpuInstancePrice[];
   opensearch: OpenSearchPrice;
+  managedKb: ManagedKbPrice;
   models: ModelPrice[];      // all LLM/embed/rerank/guardrail models
 }
 
@@ -140,6 +149,14 @@ export interface GenerationInputs {
   maxConcurrentSeqs: number;  // concurrent sequences (batch) held in KV cache
 }
 
+export type ManagedKbRetrievalMode = "standard" | "agentic";
+
+export interface ManagedKbInputs {
+  retrievalMode: ManagedKbRetrievalMode;
+  underlyingRetrievalsPerCall: number; // avg Retrieve calls per Agentic call (agentic only)
+  indexedDataGB: number;               // raw indexed data size, $/GB-mo storage basis
+}
+
 export type TrafficMethod = "monthly" | "qps";
 
 export interface TrafficInputs {
@@ -161,6 +178,7 @@ export interface CalcInputs {
   retrieval: RetrievalInputs;
   guardrails: GuardrailInputs;
   generation: GenerationInputs;
+  managedKb: ManagedKbInputs;
   traffic: TrafficInputs;
   queryTokens: number;        // user query length in tokens
 }
@@ -205,6 +223,17 @@ export interface CostBreakdownLine {
   category: "ingestion" | "vectorstore" | "query" | "rerank" | "generation" | "guardrails";
 }
 
+/** Managed Bedrock KB scenario — its own independent cost tree (retrieval only;
+ *  LLM generation is added on top by the consumer). */
+export interface ManagedKbResult {
+  storageMonthly$: number;      // indexed data × $/GB-mo
+  retrievalMonthly$: number;    // standard or agentic + underlying retrievals
+  managedSubtotal$: number;     // storage + retrieval (matches AWS's published example totals)
+  generationMonthly$: number;   // API LLM generation (Retrieve does not generate)
+  guardrailsMonthly$: number;
+  total$: number;               // full RAG monthly for the managed scenario
+}
+
 export interface CalcResult {
   ingestion: IngestionResult;
   vectorStore: VectorStoreResult;
@@ -214,6 +243,7 @@ export interface CalcResult {
   breakdown: CostBreakdownLine[];
   dominantLever: { label: string; monthly$: number; share: number };
   crossover: CrossoverResult;
+  managedKb: ManagedKbResult;
   mode: RagMode;
 }
 

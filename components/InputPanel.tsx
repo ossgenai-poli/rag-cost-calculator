@@ -15,6 +15,7 @@ import { VectorStorePanel } from "./inputs/VectorStorePanel";
 import { RetrievalPanel } from "./inputs/RetrievalPanel";
 import { GuardrailsPanel } from "./inputs/GuardrailsPanel";
 import { GenerationPanel } from "./inputs/GenerationPanel";
+import { ManagedKbPanel } from "./inputs/ManagedKbPanel";
 
 type View = "quick" | "advanced";
 
@@ -72,6 +73,12 @@ export function InputPanel(props: {
         priceBook={priceBook}
         advanced={advanced}
         onChange={(next) => onChange({ ...inputs, generation: next })}
+      />
+
+      <ManagedKbPanel
+        managedKb={inputs.managedKb}
+        priceBook={priceBook}
+        onChange={(next) => onChange({ ...inputs, managedKb: next })}
       />
 
       <GroupLabel>Infrastructure assumptions</GroupLabel>

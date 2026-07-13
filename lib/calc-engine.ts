@@ -171,6 +171,42 @@ function findDominantLever(breakdown: CostBreakdownLine[], totalMonthly: number)
 }
 
 // ---------------------------------------------------------------------------
+// Managed Bedrock Knowledge Bases — independent cost tree (verified AWS rates).
+// Parsing / embeddings / reranking are included in the retrieval price, so this
+// scenario does NOT reuse the self-built vector-store / embed / rerank costs.
+// ---------------------------------------------------------------------------
+
+function computeManagedKb(inputs: CalcInputs, priceBook: PriceBook, perQuery: PerQueryResult) {
+  const { managedKb, traffic, guardrails } = inputs;
+  const kb = priceBook.managedKb;
+  const queries = traffic.queriesPerMonth;
+
+  const storageMonthly = managedKb.indexedDataGB * kb.indexStoragePerGBmo;
+  const retrievalMonthly =
+    managedKb.retrievalMode === "agentic"
+      ? (queries / 1000) * kb.agenticRetrievePer1k +
+        ((queries * managedKb.underlyingRetrievalsPerCall) / 1000) * kb.retrievePer1k
+      : (queries / 1000) * kb.retrievePer1k;
+  const managedSubtotal = storageMonthly + retrievalMonthly;
+
+  // Retrieve returns chunks; generation is a separate LLM call. Use the API
+  // comparison model so it lines up with the "Self-built + API" scenario.
+  const generationMonthly = perQuery.apiComparisonGen$ * queries;
+  const guardrailsMonthly =
+    (guardrails.inputEnabled || guardrails.outputEnabled ? perQuery.guardrailIn$ + perQuery.guardrailOut$ : 0) *
+    queries;
+
+  return {
+    storageMonthly$: storageMonthly,
+    retrievalMonthly$: retrievalMonthly,
+    managedSubtotal$: managedSubtotal,
+    generationMonthly$: generationMonthly,
+    guardrailsMonthly$: guardrailsMonthly,
+    total$: managedSubtotal + generationMonthly + guardrailsMonthly,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // calculate()
 // ---------------------------------------------------------------------------
 
@@ -218,6 +254,7 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
     breakdown,
     dominantLever,
     crossover,
+    managedKb: computeManagedKb(effectiveInputs, priceBook, perQuery),
     mode: reportedMode,
   };
 }
@@ -324,6 +361,13 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       apiComparisonOutPricePer1K: llmModel.outPricePer1K,
       maxContextLen: 8192,
       maxConcurrentSeqs: 16,
+    },
+    managedKb: {
+      retrievalMode: "standard",
+      underlyingRetrievalsPerCall: 2,
+      // Raw indexed data size; default is a text estimate (~4 B/token) — raise
+      // it for multimodal (PDFs/images) which dominate storage.
+      indexedDataGB: Math.max(1, Math.round((10000 * 800 * 4) / 1e9)),
     },
     traffic: {
       queriesPerMonth: 100000,

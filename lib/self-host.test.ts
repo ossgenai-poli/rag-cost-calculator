@@ -62,6 +62,7 @@ describe("crossover memory floor", () => {
     region: "us-east-1",
     gpus: [{ instanceType: "p5.48xlarge", gpu: "8x H100 80GB", pricePerHr: 55.04, sustainedTokPerSec: 2600, totalMemGB: 640 }],
     opensearch: { ocuPricePerHr: 0.24, storagePricePerGBmo: 0.024, gbRamPerOcu: 6, minOCU: 2 },
+    managedKb: { indexStoragePerGBmo: 5, retrievePer1k: 1, agenticRetrievePer1k: 4, verifiedAt: "2026-01-01" },
     models: [
       { id: "big-oss", label: "Big OSS 671B", provider: "oss", bedrock: false, kind: "llm", selfHostable: true, paramsB: 671, inPricePer1K: 0.00055, outPricePer1K: 0.00219, verifiedAt: "2026-01-01" },
     ],
@@ -80,6 +81,7 @@ describe("crossover memory floor", () => {
         outTokens: 200, promptOverhead: 100, gpuInstanceType: "p5.48xlarge", gpuPricePerHr: 55.04,
         sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16,
       },
+      managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
       traffic: { queriesPerMonth: 1000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
       queryTokens: 50,
     };
