@@ -52,6 +52,10 @@ export interface ModelPrice {
   kvBytesPerToken?: number;
   /** attention family — explains the KV footprint: "MLA" | "GQA" | "hybrid". */
   attentionType?: string;
+  /** InferenceX benchmark model key for GPU-sizing grounding (undefined = no data). */
+  inferencexKey?: string;
+  /** how the benchmark data relates to this model: measured | proxy | estimate. */
+  benchmarkProvenance?: "measured" | "proxy" | "estimate";
   verifiedAt: string;        // ISO date the price was validated against vendor page
 }
 
@@ -157,6 +161,9 @@ export interface GenerationInputs {
   // Serving shape — drives KV-cache memory. KV precision follows weightBits.
   maxContextLen: number;      // max sequence length held in KV cache (tokens)
   maxConcurrentSeqs: number;  // concurrent sequences (batch) held in KV cache
+  // Interactivity SLA for benchmark-grounded GPU sizing: target output tok/s per
+  // user. Higher = snappier UX = lower per-GPU throughput = more GPUs needed.
+  interactivityTarget: number;
 }
 
 export type ManagedKbRetrievalMode = "standard" | "agentic";
@@ -238,6 +245,29 @@ export interface PerQueryResult {
   perQuery$: number;
 }
 
+/**
+ * Benchmark-grounded GPU sizing check — validates the provisioned self-hosted
+ * fleet against real InferenceX throughput at the customer's interactivity SLA.
+ * `available` is false when no benchmark curve exists for the model/GPU/precision.
+ */
+export interface GroundingResult {
+  available: boolean;
+  provenance?: "measured" | "proxy" | "estimate";
+  note?: string;                 // why unavailable, or the proxy/estimate caveat
+  interactivityTarget?: number;  // the SLA used (tok/s/user)
+  achievedInteractivity?: number;// tok/s/user at the chosen operating point
+  tputPerGpu?: number;           // decode tok/s per GPU at the SLA (benchmark)
+  ttftAtSla?: number;            // TTFT (s) at that operating point
+  gpusPerBox?: number;
+  requiredDecodeTokPerSec?: number; // qps × output tokens
+  minInstancesThroughput?: number;  // ceil(required / (tputPerGpu × gpusPerBox))
+  minInstancesMemory?: number;      // memory floor (from crossover)
+  minInstances?: number;            // max(throughput, memory)
+  provisionedInstances?: number;    // what the user provisioned
+  underProvisioned?: boolean;
+  slaAchievable?: boolean;          // false when target > best interactivity in the curve
+}
+
 export interface CostBreakdownLine {
   label: string;
   monthly$: number;
@@ -265,6 +295,7 @@ export interface CalcResult {
   dominantLever: { label: string; monthly$: number; share: number };
   crossover: CrossoverResult;
   managedKb: ManagedKbResult;
+  grounding: GroundingResult;
   mode: RagMode;
 }
 
