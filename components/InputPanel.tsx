@@ -16,6 +16,7 @@ import { RetrievalPanel } from "./inputs/RetrievalPanel";
 import { GuardrailsPanel } from "./inputs/GuardrailsPanel";
 import { GenerationPanel } from "./inputs/GenerationPanel";
 import { ManagedKbPanel } from "./inputs/ManagedKbPanel";
+import { OpsPanel } from "./inputs/OpsPanel";
 
 type View = "quick" | "advanced";
 
@@ -93,6 +94,7 @@ export function InputPanel(props: {
         advanced={advanced}
         onChange={(next) => onChange({ ...inputs, guardrails: next })}
       />
+      <OpsPanel ops={inputs.ops} onChange={(next) => onChange({ ...inputs, ops: next })} />
     </div>
   );
 }

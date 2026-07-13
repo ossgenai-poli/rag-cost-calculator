@@ -9,6 +9,7 @@ interface ToolbarProps {
   onSaveScenario: () => void;
   onExportCsv: () => void;
   onExportJson: () => void;
+  onExportReport: () => void;
   priceBook: PriceBook;
   asOf: string;
 }
@@ -40,6 +41,7 @@ export function Toolbar({
   onSaveScenario,
   onExportCsv,
   onExportJson,
+  onExportReport,
   priceBook,
   asOf,
 }: ToolbarProps) {
@@ -90,6 +92,10 @@ export function Toolbar({
     onExportJson();
     flash("JSON exported ✓");
   };
+  const exportReport = () => {
+    onExportReport();
+    flash("Report exported ✓");
+  };
 
   return (
     <>
@@ -108,6 +114,9 @@ export function Toolbar({
         </Btn>
         <Btn onClick={exportJson} title="Export all assumptions as JSON">
           Export JSON
+        </Btn>
+        <Btn onClick={exportReport} title="Export a full Markdown cost report (breakdown, scenarios, assumptions)">
+          Export report
         </Btn>
         <Btn onClick={() => setModal("formulas")}>Formulas</Btn>
         <Btn onClick={() => setModal("sources")}>Pricing sources</Btn>

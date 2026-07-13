@@ -54,7 +54,8 @@ function baseInputs(): CalcInputs {
       numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16,
     },
     managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
-    traffic: { queriesPerMonth: 100000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
+    ops: { networkingMonthly$: 0, observabilityMonthly$: 0, overheadPct: 0 },
+    traffic: { queriesPerMonth: 100000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30, peakFactor: 1 },
     queryTokens: 50,
   };
 }
@@ -124,9 +125,9 @@ describe("calculate — golden numbers", () => {
   it("builds a breakdown with one line per category and a correct dominant lever", () => {
     const result = calculate(baseInputs(), priceBook);
 
-    expect(result.breakdown).toHaveLength(6);
+    expect(result.breakdown).toHaveLength(7);
     const categories = result.breakdown.map((line) => line.category).sort();
-    expect(categories).toEqual(["generation", "guardrails", "ingestion", "query", "rerank", "vectorstore"].sort());
+    expect(categories).toEqual(["generation", "guardrails", "ingestion", "ops", "query", "rerank", "vectorstore"].sort());
 
     const maxLine = result.breakdown.reduce((max, line) => (line.monthly$ > max.monthly$ ? line : max));
     expect(result.dominantLever.label).toBe(maxLine.label);
@@ -412,6 +413,27 @@ describe("managed Bedrock KB — AWS published examples", () => {
       managedKb.managedSubtotal$ + managedKb.generationMonthly$ + managedKb.guardrailsMonthly$,
       6
     );
+  });
+});
+
+describe("operations & overhead", () => {
+  it("adds fixed line items + a percentage markup on all other costs", () => {
+    const base = calculate(baseInputs(), priceBook);
+    const baseTotal = base.totalMonthly$;
+
+    const withOps = baseInputs();
+    withOps.ops = { networkingMonthly$: 100, observabilityMonthly$: 50, overheadPct: 10 };
+    const r = calculate(withOps, priceBook);
+
+    const opsLine = r.breakdown.find((l) => l.category === "ops")!;
+    // ops = 100 + 50 + 10% of the base (non-ops) total.
+    expect(opsLine.monthly$).toBeCloseTo(150 + 0.1 * baseTotal, 6);
+    expect(r.totalMonthly$).toBeCloseTo(baseTotal + 150 + 0.1 * baseTotal, 6);
+  });
+
+  it("is zero by default (base model unchanged)", () => {
+    const r = calculate(baseInputs(), priceBook);
+    expect(r.breakdown.find((l) => l.category === "ops")!.monthly$).toBe(0);
   });
 });
 

@@ -168,6 +168,16 @@ export interface TrafficInputs {
   qps: number;
   hoursPerDay: number;
   daysPerMonth: number;
+  // Peak-to-average ratio: a self-hosted fleet must be provisioned for PEAK load,
+  // so the throughput-required instance count scales by this (1 = flat traffic).
+  peakFactor: number;
+}
+
+/** Production operational costs the core model doesn't otherwise capture. */
+export interface OpsInputs {
+  networkingMonthly$: number;    // data transfer / NAT / load balancers
+  observabilityMonthly$: number; // logging + monitoring (CloudWatch, dashboards)
+  overheadPct: number;           // % markup on all other costs (on-call, redundancy, misc)
 }
 
 export interface CalcInputs {
@@ -179,6 +189,7 @@ export interface CalcInputs {
   guardrails: GuardrailInputs;
   generation: GenerationInputs;
   managedKb: ManagedKbInputs;
+  ops: OpsInputs;
   traffic: TrafficInputs;
   queryTokens: number;        // user query length in tokens
 }
@@ -220,7 +231,7 @@ export interface PerQueryResult {
 export interface CostBreakdownLine {
   label: string;
   monthly$: number;
-  category: "ingestion" | "vectorstore" | "query" | "rerank" | "generation" | "guardrails";
+  category: "ingestion" | "vectorstore" | "query" | "rerank" | "generation" | "guardrails" | "ops";
 }
 
 /** Managed Bedrock KB scenario — its own independent cost tree (retrieval only;

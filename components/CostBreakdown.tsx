@@ -21,6 +21,7 @@ const COLORS: Record<CostBreakdownLine["category"], string> = {
   query: "#34d399",
   ingestion: "#38bdf8",
   guardrails: "#f87171",
+  ops: "#94a3b8",
 };
 
 function usd(value: number, decimals = 2): string {

@@ -5,6 +5,7 @@ import { loadPrices } from "@/lib/prices";
 import { calculate, defaultInputs } from "@/lib/calc-engine";
 import {
   assumptionsToJson,
+  buildReport,
   buildShareUrl,
   coerceInputs,
   downloadText,
@@ -157,6 +158,10 @@ export default function Page() {
     if (inputs && prices)
       downloadText("rag-assumptions.json", assumptionsToJson(inputs, prices.priceBook, prices.asOf), "application/json");
   }, [inputs, prices]);
+  const onExportReport = useCallback(() => {
+    if (resultA && inputs && prices)
+      downloadText("rag-cost-report.md", buildReport(inputs, resultA, prices.priceBook, prices.asOf), "text/markdown");
+  }, [resultA, inputs, prices]);
 
   return (
     <main className="mx-auto max-w-[1500px] px-4 py-6 pb-20 lg:pb-6">
@@ -183,6 +188,7 @@ export default function Page() {
             onSaveScenario={onSaveCurrent}
             onExportCsv={onExportCsv}
             onExportJson={onExportJson}
+            onExportReport={onExportReport}
             priceBook={prices.priceBook}
             asOf={prices.asOf}
           />

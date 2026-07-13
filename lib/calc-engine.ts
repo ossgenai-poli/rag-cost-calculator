@@ -11,6 +11,7 @@ import type {
   VectorStoreResult,
   PerQueryResult,
   CostBreakdownLine,
+  OpsInputs,
   RagMode,
 } from "./types";
 import { computeCrossover } from "./crossover";
@@ -145,11 +146,25 @@ function buildBreakdown(
   perQuery: PerQueryResult,
   queriesPerMonth: number,
   generationMonthly: number,
-  generationLabel: string
+  generationLabel: string,
+  ops: OpsInputs
 ): CostBreakdownLine[] {
   const guardrailsMonthly = (perQuery.guardrailIn$ + perQuery.guardrailOut$) * queriesPerMonth;
   const rerankMonthly = perQuery.rerank$ * queriesPerMonth;
   const queryOtherMonthly = (perQuery.embedQuery$ + perQuery.infraCrumbs$) * queriesPerMonth;
+
+  // Operations & overhead: fixed networking + observability line items, plus a
+  // percentage markup on every OTHER line (on-call, redundancy, misc production
+  // reality). All default to 0, so the base model is unchanged until opted in.
+  const baseCosts =
+    ingestion.embedIngestMonthly$ +
+    vectorStore.opensearchMonthly$ +
+    rerankMonthly +
+    generationMonthly +
+    guardrailsMonthly +
+    queryOtherMonthly;
+  const opsMonthly =
+    ops.networkingMonthly$ + ops.observabilityMonthly$ + (ops.overheadPct / 100) * baseCosts;
 
   return [
     { label: "Ingestion (embedding)", monthly$: ingestion.embedIngestMonthly$, category: "ingestion" },
@@ -158,6 +173,7 @@ function buildBreakdown(
     { label: generationLabel, monthly$: generationMonthly, category: "generation" },
     { label: "Guardrails", monthly$: guardrailsMonthly, category: "guardrails" },
     { label: "Query overhead (query embedding + infra)", monthly$: queryOtherMonthly, category: "query" },
+    { label: "Operations & overhead", monthly$: opsMonthly, category: "ops" },
   ];
 }
 
@@ -230,8 +246,13 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
 
   // Non-generation per-query costs (embed, rerank, guardrails, infra crumbs).
   const nonGenQueryMonthly = (perQuery.perQuery$ - perQuery.apiGen$) * queriesPerMonth;
-  const totalMonthly =
+  const baseMonthly =
     ingestion.embedIngestMonthly$ + vectorStore.opensearchMonthly$ + nonGenQueryMonthly + generationMonthly;
+  // Operations & overhead layered on top (0 by default → base model unchanged).
+  const ops = effectiveInputs.ops;
+  const opsMonthly =
+    ops.networkingMonthly$ + ops.observabilityMonthly$ + (ops.overheadPct / 100) * baseMonthly;
+  const totalMonthly = baseMonthly + opsMonthly;
   // Preserved for callers/tests: the per-query variable cost × volume (API-style).
   const queryMonthly = perQuery.perQuery$ * queriesPerMonth;
 
@@ -241,7 +262,8 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
     perQuery,
     queriesPerMonth,
     generationMonthly,
-    generationLabel
+    generationLabel,
+    ops
   );
   const dominantLever = findDominantLever(breakdown, totalMonthly);
 
@@ -369,6 +391,11 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       // it for multimodal (PDFs/images) which dominate storage.
       indexedDataGB: Math.max(1, Math.round((10000 * 800 * 4) / 1e9)),
     },
+    ops: {
+      networkingMonthly$: 0,
+      observabilityMonthly$: 0,
+      overheadPct: 0,
+    },
     traffic: {
       queriesPerMonth: 100000,
       region: priceBook.region,
@@ -376,6 +403,7 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       qps: 1,
       hoursPerDay: 24,
       daysPerMonth: 30,
+      peakFactor: 1,
     },
     queryTokens: 50,
   };

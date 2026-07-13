@@ -104,6 +104,16 @@ export function WorkloadPanel(props: {
           onChange={(v) => onChange({ ...inputs, generation: { ...inputs.generation, outTokens: v } })}
         />
       </div>
+
+      <NumberField
+        label="Peak-to-average ratio"
+        suffix="×"
+        hint="Peak QPS ÷ average QPS. A self-hosted fleet must be provisioned for the peak, so this scales the instances the throughput needs (1 = flat traffic). Doesn't change API cost."
+        value={traffic.peakFactor}
+        min={1}
+        step={0.5}
+        onChange={(v) => patchTraffic({ peakFactor: v })}
+      />
     </Section>
   );
 }
