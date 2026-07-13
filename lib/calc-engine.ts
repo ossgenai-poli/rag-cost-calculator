@@ -15,6 +15,7 @@ import type {
   RagMode,
 } from "./types";
 import { computeCrossover } from "./crossover";
+import { computeGrounding } from "./grounding";
 
 /** Fixed tiny S3/network per-query overhead ($), keeps golden tests stable. */
 export const INFRA_CRUMBS_PER_QUERY = 0.00002;
@@ -277,6 +278,7 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
     dominantLever,
     crossover,
     managedKb: computeManagedKb(effectiveInputs, priceBook, perQuery),
+    grounding: computeGrounding(effectiveInputs, priceBook, perQuery, crossover),
     mode: reportedMode,
   };
 }
@@ -385,6 +387,7 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       apiComparisonOutPricePer1K: llmModel.outPricePer1K,
       maxContextLen: 8192,
       maxConcurrentSeqs: 16,
+      interactivityTarget: 30,
     },
     managedKb: {
       retrievalMode: "standard",

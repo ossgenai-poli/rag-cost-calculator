@@ -256,6 +256,17 @@ export function GenerationPanel(props: {
         />
 
         <NumberField
+          label="Interactivity target"
+          suffix="tok/s/user"
+          hint="Per-user streaming speed you must deliver (SLA). Higher = snappier UX = fewer concurrent requests per GPU = more GPUs. Grounds fleet sizing in real InferenceX benchmarks."
+          value={generation.interactivityTarget}
+          min={1}
+          step={5}
+          disabled={!selfHosted}
+          onChange={(v) => onChange({ ...generation, interactivityTarget: v })}
+        />
+
+        <NumberField
           label="On-demand GPU price"
           suffix="$/hr"
           value={generation.gpuPricePerHr}

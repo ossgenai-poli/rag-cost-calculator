@@ -84,6 +84,7 @@ const calcInputsSchema = z.object({
     apiComparisonOutPricePer1K: nonNeg.default(0),
     maxContextLen: num.positive().default(8192),
     maxConcurrentSeqs: num.positive().default(16),
+    interactivityTarget: num.positive().default(30),
   }),
   managedKb: z
     .object({

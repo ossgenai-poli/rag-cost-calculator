@@ -50,6 +50,8 @@ const modelPriceSchema = z.object({
   paramsB: z.number().optional(),
   kvBytesPerToken: z.number().optional(),
   attentionType: z.string().optional(),
+  inferencexKey: z.string().optional(),
+  benchmarkProvenance: z.enum(["measured", "proxy", "estimate"]).optional(),
   verifiedAt: z.string(),
 });
 

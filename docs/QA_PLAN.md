@@ -124,6 +124,20 @@ Also gate: `npm run typecheck`, `npm run build`, and (for UI-affecting changes)
   saved before a field existed (e.g. `managedKb`) backfills defaults instead of
   crashing the engine. Previously only shared links were validated.
 
+### P3 — benchmark-grounded GPU sizing
+- ✅ **Benchmark-grounded fleet validation** — a new **interactivity SLA** input
+  (tok/s/user) grounds self-hosted GPU sizing in real InferenceX throughput
+  (`lib/benchmarks-data.json`, baked offline; see
+  `research/inference-benchmark-grounding.md`). `lib/grounding.ts` finds the per-GPU
+  throughput at the SLA (interpolated), computes `minInstances = max(throughput
+  floor, memory floor)`, and flags under-provisioning in a ResultsPanel banner with
+  provenance (measured / proxy=GLM-5→5.2 / estimate). The 5 OSS models map to
+  InferenceX keys (dsv4/minimaxm3 measured on B200, glm5 proxy, Kimi/Nemotron
+  unavailable → graceful heuristic). Also fixed a latent bug: **`public/prices.json`
+  was a stale committed snapshot** (old models, no B200) that the static export ships
+  — regenerated from the current catalog, and the price schema now carries the new
+  model fields.
+
 ### P2 — product quality
 - Feature-level **guardrail** pricing (input/output separate; char-based units).
 - Crossover **X-axis selector** (queries / QPS / input-tok / output-tok) and a

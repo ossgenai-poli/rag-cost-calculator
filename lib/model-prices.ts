@@ -79,6 +79,10 @@ export const MODEL_PRICES: ModelPrice[] = [
     // GQA, ~92 layers × 8 KV heads × 128 head_dim × 2 (K+V) × 2 B = 376,832 B/tok
     kvBytesPerToken: 376832,
     attentionType: "GQA",
+    // GLM-5.2 isn't benchmarked; GLM-5 is the same-family proxy (5.2's IndexShare +
+    // MTP make it ≥ as fast, esp. long-context → grounding is conservative).
+    inferencexKey: "glm5",
+    benchmarkProvenance: "proxy",
     inPricePer1K: 0.0006,
     outPricePer1K: 0.0022,
     verifiedAt: VERIFIED_AT,
@@ -94,6 +98,8 @@ export const MODEL_PRICES: ModelPrice[] = [
     // Hybrid Mamba: ~8% attention layers (~10 of ~120) × 2 KV heads × 128 × 2 × 2 B
     kvBytesPerToken: 10240,
     attentionType: "hybrid (Mamba)",
+    // Not in InferenceX (or MLPerf) — no benchmark curve; sizing falls back to the heuristic.
+    benchmarkProvenance: "estimate",
     inPricePer1K: 0.001,
     outPricePer1K: 0.003,
     verifiedAt: VERIFIED_AT,
@@ -109,6 +115,8 @@ export const MODEL_PRICES: ModelPrice[] = [
     // Hybrid lightning: ~1/8 softmax-attention layers (~10 of ~80) × 8 KV × 128 × 2 × 2 B
     kvBytesPerToken: 40960,
     attentionType: "hybrid (lightning)",
+    inferencexKey: "minimaxm3",
+    benchmarkProvenance: "measured",
     inPricePer1K: 0.0003,
     outPricePer1K: 0.0011,
     verifiedAt: VERIFIED_AT,
@@ -124,6 +132,8 @@ export const MODEL_PRICES: ModelPrice[] = [
     // MLA: ~61 layers × (kv_lora 512 + rope 64) × 2 B = 70,272 B/tok (compressed latent)
     kvBytesPerToken: 70272,
     attentionType: "MLA",
+    inferencexKey: "dsv4",
+    benchmarkProvenance: "measured",
     inPricePer1K: 0.0006,
     outPricePer1K: 0.0024,
     verifiedAt: VERIFIED_AT,
@@ -139,6 +149,8 @@ export const MODEL_PRICES: ModelPrice[] = [
     // MLA (DeepSeek-arch): ~61 layers × (512 + 64) × 2 B = 70,272 B/tok
     kvBytesPerToken: 70272,
     attentionType: "MLA",
+    // Kimi K2.6 isn't benchmarked on NVIDIA GPUs in InferenceX — no curve; heuristic fallback.
+    benchmarkProvenance: "estimate",
     inPricePer1K: 0.0006,
     outPricePer1K: 0.0025,
     verifiedAt: VERIFIED_AT,

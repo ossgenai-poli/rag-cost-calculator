@@ -70,6 +70,9 @@ export function ResultsPanel({
 
   const crossover = resultA.crossover;
   const managedKb = resultA.managedKb;
+  const grounding = resultA.grounding;
+  const selectedModelLabel =
+    priceBook.models.find((m) => m.id === inputs.generation.llmModelId)?.label ?? "This model";
   const hasGenVolume = crossover.monthlyGenTokens > 0;
   const isEfficient = crossover.verdict === "self-host efficient";
 
@@ -207,6 +210,60 @@ export function ResultsPanel({
             </div>
             <div className="mt-1 text-xs text-slate-400">{crossover.verdict}.</div>
           </div>
+        )}
+
+        {/* Benchmark-grounded GPU-sizing check (self-hosted) */}
+        {metrics.selfHosted && (
+          grounding.available ? (
+            <div
+              className={`panel border-l-4 p-4 ${
+                grounding.underProvisioned || grounding.slaAchievable === false
+                  ? "border-rose-500"
+                  : "border-emerald-500"
+              }`}
+            >
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
+                Benchmark-grounded GPU sizing
+                <span className="rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] font-medium text-teal-300">
+                  InferenceX · {grounding.provenance}
+                </span>
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-100">
+                Needs ≥ {grounding.minInstances} instance{grounding.minInstances === 1 ? "" : "s"}
+                <span className="text-sm font-normal text-slate-500">
+                  {" "}· you provisioned {grounding.provisionedInstances}
+                </span>
+                {grounding.underProvisioned && (
+                  <span className="ml-2 rounded bg-rose-500/15 px-1.5 py-0.5 text-xs font-medium text-rose-300">
+                    under-provisioned
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                At <span className="text-slate-200">{grounding.interactivityTarget} tok/s/user</span>,{" "}
+                {selectedModelLabel} sustains ~
+                <span className="text-slate-200">{Math.round(grounding.tputPerGpu ?? 0)} tok/s/GPU</span>{" "}
+                (TTFT ~{grounding.ttftAtSla?.toFixed(2)}s). Your{" "}
+                {Math.round(grounding.requiredDecodeTokPerSec ?? 0).toLocaleString()} output tok/s needs{" "}
+                <span className="text-slate-200">{grounding.minInstancesThroughput}</span> for throughput
+                and {grounding.minInstancesMemory} to fit the weights → ≥ {grounding.minInstances}.
+                {grounding.slaAchievable === false && (
+                  <span className="mt-1 block text-rose-300">
+                    ⚠ SLA not achievable: even at minimum batch, this config delivers only ~
+                    {Math.round(grounding.achievedInteractivity ?? 0)} tok/s/user. Lower the target or pick a faster GPU/precision.
+                  </span>
+                )}
+                {grounding.note && <span className="mt-1 block text-slate-500">{grounding.note}</span>}
+              </div>
+            </div>
+          ) : (
+            <div className="panel border-l-4 border-slate-600 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                Benchmark-grounded GPU sizing
+              </div>
+              <div className="mt-1 text-xs text-slate-400">{grounding.note}</div>
+            </div>
+          )
         )}
       </div>
 
