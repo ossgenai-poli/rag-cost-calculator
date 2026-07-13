@@ -230,6 +230,21 @@ export function ResultsPanel({
       {/* What moves cost most */}
       <Sensitivity rows={sensitivity} />
 
+      {/* Self-hosted fleet adequacy */}
+      {inputs.generation.mode === "self-hosted" &&
+        crossover.throughputInstances > crossover.boxes && (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            <span aria-hidden className="mt-0.5 text-amber-400">⚠</span>
+            <div className="text-amber-200/90">
+              <span className="font-medium text-amber-300">Under-provisioned for this load.</span> The
+              {" "}{crossover.boxes}-instance fleet can serve about{" "}
+              {Math.round((crossover.boxes / crossover.throughputInstances) * 100)}% of the traffic.
+              Raise <span className="text-amber-100">Number of instances</span> to at least{" "}
+              {crossover.throughputInstances} to keep up (currently billed for {crossover.boxes}).
+            </div>
+          </div>
+        )}
+
       {/* Crossover economics */}
       <CrossoverChart crossover={resultA.crossover} />
     </div>

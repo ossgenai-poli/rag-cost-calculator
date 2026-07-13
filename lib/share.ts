@@ -72,6 +72,7 @@ const calcInputsSchema = z.object({
     gpuPricePerHr: nonNeg,
     sustainedTokPerSec: num.positive(),
     utilTarget: num.min(0.01).max(1),
+    numInstances: num.min(1).default(1),
   }),
   traffic: z.object({
     queriesPerMonth: nonNeg,
