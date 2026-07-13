@@ -26,6 +26,7 @@ function pct(fraction: number): string {
 
 /** Shorten the engine's category label to a plain-language driver name. */
 function driverName(label: string): string {
+  if (/gpu/i.test(label)) return "GPU infrastructure";
   if (/generation/i.test(label)) return "LLM generation";
   if (/vector store/i.test(label)) return "Vector store";
   if (/ingestion/i.test(label)) return "Ingestion";

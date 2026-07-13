@@ -23,6 +23,8 @@ function zeroResult(
     boxes: 1,
     minInstancesToLoad: 1,
     throughputInstances: 0,
+    realizedUtil: 0,
+    breakEvenFeasible: false,
     selfHostedMonthly$: 0,
     apiBlendedPricePerToken: 0,
     apiMonthly$: 0,
@@ -67,20 +69,28 @@ export function computeCrossover(
   // We do NOT auto-scale it to demand — instead we report how many instances the
   // throughput would need, so an under-provisioned fleet is surfaced as a warning.
   const boxes = Math.max(1, generation.numInstances || 1, minInstancesToLoad);
-  const throughputInstances = Math.max(1, Math.ceil(monthlyGenTokens / capacityEff));
   const selfHostedMonthly$ = boxes * gpuMonthly$;
+
+  // Capacity is DECODE-bound: sustainedTokPerSec is output tokens/sec, so it only
+  // applies to output tokens — never to total (input + output) tokens.
+  const outputFraction = tokensPerQuery > 0 ? outTokens / tokensPerQuery : 0;
+  const monthlyOutputTokens = traffic.queriesPerMonth * outTokens;
+  const throughputInstances = Math.max(1, Math.ceil(monthlyOutputTokens / capacityEff));
+  const realizedUtil = boxes * capacity100 > 0 ? monthlyOutputTokens / (boxes * capacity100) : 0;
 
   const apiMonthly$ = apiBlendedPricePerToken * monthlyGenTokens;
   // Break-even is where the whole provisioned FLEET's fixed cost equals the API's
   // linear cost — so it scales with the number of instances the user provisions.
   const breakEvenTokens = selfHostedMonthly$ / apiBlendedPricePerToken;
   const equivalentQPS = breakEvenTokens / tokensPerQuery / SECONDS_PER_MONTH;
-  // Utilization the fleet must sustain to break even = break-even volume ÷ fleet
-  // capacity. If that's low, self-hosting pays off easily; if it exceeds ~1, the
-  // fleet physically can't process enough to beat a cheap hosted API.
-  const utilAtBreakEven = breakEvenTokens / (boxes * capacity100);
+  // Decode utilization the fleet would run at break-even volume (output tokens
+  // only). > 1 means break-even exceeds the fleet's physical capacity => not
+  // achievable, so the API wins regardless.
+  const utilAtBreakEven =
+    boxes * capacity100 > 0 ? (breakEvenTokens * outputFraction) / (boxes * capacity100) : Infinity;
+  const breakEvenFeasible = utilAtBreakEven <= 1;
   const verdict: CrossoverResult["verdict"] =
-    utilAtBreakEven <= SELF_HOST_UTIL_THRESHOLD
+    breakEvenFeasible && utilAtBreakEven <= SELF_HOST_UTIL_THRESHOLD
       ? "self-host efficient"
       : "API wins in practice below sustained load";
 
@@ -104,6 +114,8 @@ export function computeCrossover(
     boxes,
     minInstancesToLoad,
     throughputInstances,
+    realizedUtil,
+    breakEvenFeasible,
     selfHostedMonthly$,
     apiBlendedPricePerToken,
     apiMonthly$,

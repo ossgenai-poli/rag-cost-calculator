@@ -213,7 +213,9 @@ export interface CrossoverResult {
   capacity100: number;         // tokens/mo at 100% util per box
   boxes: number;               // provisioned instances actually billed (= numInstances, floored to fit the model)
   minInstancesToLoad: number;  // memory floor — min instances to hold the weights
-  throughputInstances: number; // instances the current load would need for throughput
+  throughputInstances: number; // instances the current load would need for decode throughput
+  realizedUtil: number;        // actual decode utilization of the fleet at the current workload
+  breakEvenFeasible: boolean;  // false when break-even needs > fleet capacity (not achievable)
   selfHostedMonthly$: number;
   apiBlendedPricePerToken: number;
   apiMonthly$: number;         // linear API cost at current volume

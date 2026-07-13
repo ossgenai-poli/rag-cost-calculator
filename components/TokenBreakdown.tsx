@@ -42,8 +42,9 @@ export function TokenBreakdown({ metrics }: TokenBreakdownProps) {
         Model tokens per query
       </div>
       <div className="mb-3 text-xs text-slate-500">
-        Generation is billed on these tokens — {usd(metrics.generationPerQuery)} of LLM
-        spend per query.
+        {metrics.selfHosted
+          ? `Self-hosted: generation is billed by GPU fleet time, not tokens — ~${usd(metrics.generationPerQuery)}/query at this volume. Token counts still set the required throughput.`
+          : `API: generation is billed on these tokens — ${usd(metrics.generationPerQuery)} of LLM spend per query.`}
       </div>
 
       <div className="space-y-1.5 text-sm">
