@@ -5,27 +5,31 @@
   "gpus": [
     {
       "instanceType": "p5.48xlarge",
-      "gpu": "8x H100",
+      "gpu": "8x H100 80GB",
       "pricePerHr": 55.04,
-      "sustainedTokPerSec": 2600
+      "sustainedTokPerSec": 2600,
+      "totalMemGB": 640
     },
     {
       "instanceType": "p5e.48xlarge",
-      "gpu": "8x H200",
+      "gpu": "8x H200 141GB",
       "pricePerHr": 47.76,
-      "sustainedTokPerSec": 3000
+      "sustainedTokPerSec": 3000,
+      "totalMemGB": 1128
     },
     {
       "instanceType": "p4d.24xlarge",
-      "gpu": "8x A100",
+      "gpu": "8x A100 40GB",
       "pricePerHr": 32.77,
-      "sustainedTokPerSec": 1500
+      "sustainedTokPerSec": 1500,
+      "totalMemGB": 320
     },
     {
       "instanceType": "g5.12xlarge",
-      "gpu": "4x A10G",
+      "gpu": "4x A10G 24GB",
       "pricePerHr": 5.672,
-      "sustainedTokPerSec": 350
+      "sustainedTokPerSec": 350,
+      "totalMemGB": 96
     }
   ],
   "opensearch": {
@@ -103,6 +107,54 @@
       "kind": "llm",
       "inPricePer1K": 0.00175,
       "outPricePer1K": 0.014,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "deepseek-r1-oss",
+      "label": "DeepSeek-R1 671B (open weights)",
+      "provider": "oss",
+      "bedrock": false,
+      "kind": "llm",
+      "selfHostable": true,
+      "paramsB": 671,
+      "inPricePer1K": 0.00055,
+      "outPricePer1K": 0.00219,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "llama-3.1-405b-oss",
+      "label": "Llama 3.1 405B (open weights)",
+      "provider": "oss",
+      "bedrock": false,
+      "kind": "llm",
+      "selfHostable": true,
+      "paramsB": 405,
+      "inPricePer1K": 0.0008,
+      "outPricePer1K": 0.0008,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "glm-4.5-oss",
+      "label": "GLM-4.5 355B (open weights)",
+      "provider": "oss",
+      "bedrock": false,
+      "kind": "llm",
+      "selfHostable": true,
+      "paramsB": 355,
+      "inPricePer1K": 0.0006,
+      "outPricePer1K": 0.0022,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "qwen3-235b-oss",
+      "label": "Qwen3 235B (open weights)",
+      "provider": "oss",
+      "bedrock": false,
+      "kind": "llm",
+      "selfHostable": true,
+      "paramsB": 235,
+      "inPricePer1K": 0.0002,
+      "outPricePer1K": 0.0006,
       "verifiedAt": "2026-07-10"
     },
     {

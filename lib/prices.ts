@@ -18,6 +18,9 @@ const gpuInstancePriceSchema = z.object({
   gpu: z.string(),
   pricePerHr: z.number(),
   sustainedTokPerSec: z.number(),
+  // Optional-with-default so a stale committed prices.json still parses; the
+  // hardcoded defaults always carry a real value.
+  totalMemGB: z.number().default(0),
 });
 
 const openSearchPriceSchema = z.object({
@@ -36,6 +39,8 @@ const modelPriceSchema = z.object({
   inPricePer1K: z.number(),
   outPricePer1K: z.number(),
   dim: z.number().optional(),
+  selfHostable: z.boolean().optional(),
+  paramsB: z.number().optional(),
   verifiedAt: z.string(),
 });
 

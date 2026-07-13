@@ -14,6 +14,8 @@ export interface GpuInstancePrice {
   pricePerHr: number;        // on-demand USD/hr, us-east-1
   /** rough sustained generation throughput for a 70B-class model, tok/s */
   sustainedTokPerSec: number;
+  /** aggregate GPU HBM across the instance, GB (e.g. 8×80 = 640 for p5) */
+  totalMemGB: number;
 }
 
 /** OpenSearch Serverless pricing (from live Price List API). */
@@ -31,9 +33,13 @@ export interface ModelPrice {
   provider: "bedrock" | "gemini" | "grok" | "openai" | "self-hosted" | "oss";
   bedrock: boolean;          // true => runs in-VPC via Bedrock (no egress note)
   kind: "llm" | "embedding" | "rerank" | "guardrail";
-  inPricePer1K: number;      // USD per 1K input tokens
+  inPricePer1K: number;      // USD per 1K input tokens (hosted/API price; for OSS this is a serving-provider price)
   outPricePer1K: number;     // USD per 1K output tokens (0 for embed/rerank/guardrail)
   dim?: number;              // embedding dimension (embedding models only)
+  /** true => open weights that can run on your own GPUs (self-hosted mode). */
+  selfHostable?: boolean;
+  /** total parameter count in billions — drives GPU memory sizing for self-hosting. */
+  paramsB?: number;
   verifiedAt: string;        // ISO date the price was validated against vendor page
 }
 

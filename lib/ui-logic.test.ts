@@ -10,7 +10,7 @@ const priceBook: PriceBook = {
   updatedAt: "2026-01-01T00:00:00.000Z",
   source: "fallback",
   region: "us-east-1",
-  gpus: [{ instanceType: "p5.48xlarge", gpu: "8x H100", pricePerHr: 55.04, sustainedTokPerSec: 2600 }],
+  gpus: [{ instanceType: "p5.48xlarge", gpu: "8x H100", pricePerHr: 55.04, sustainedTokPerSec: 2600, totalMemGB: 640 }],
   opensearch: { ocuPricePerHr: 0.24, storagePricePerGBmo: 0.024, gbRamPerOcu: 6, minOCU: 2 },
   models: [
     { id: "embed-1", label: "Embed 1", provider: "bedrock", bedrock: true, kind: "embedding", inPricePer1K: 0.00002, outPricePer1K: 0, dim: 1024, verifiedAt: "2026-01-01" },
