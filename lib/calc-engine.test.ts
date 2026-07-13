@@ -39,7 +39,7 @@ function baseInputs(): CalcInputs {
       qpsPerOcu: 2,
     },
     retrieval: { topK: 20, rerankEnabled: true, rerankModelId: "rerank-1", rerankPricePer1K: 2.0, topN: 5 },
-    guardrails: { inputEnabled: true, outputEnabled: true, unitPricePer1K: 0.75, unitsPerQuery: 1 },
+    guardrails: { inputEnabled: true, outputEnabled: true, inputPricePer1KUnits: 0.75, outputPricePer1KUnits: 0.75, charsPerTextUnit: 400, charsPerToken: 4 },
     generation: {
       mode: "api",
       llmModelId: "llm-1",
@@ -96,8 +96,11 @@ describe("calculate — golden numbers", () => {
     expect(result.vectorStore.opensearchFloor$).toBeCloseTo(350.4, 8);
 
     // Per-query
-    // guardrailIn$ = 1*0.00075 = 0.00075
-    expect(result.perQuery.guardrailIn$).toBeCloseTo(0.00075, 10);
+    // llmInputTok = 5*500 + 300 + 50 = 2850 (computed below, referenced here)
+    // Guardrails are char/text-unit based: chars = tokens*4, units = chars/400.
+    // Input policy scans the whole prompt: 2850*4/400 = 28.5 units.
+    //   guardrailIn$ = 28.5/1000 * 0.75 = 0.0213750
+    expect(result.perQuery.guardrailIn$).toBeCloseTo(0.021375, 10);
     // embedQuery$ = 50/1000*0.0001 = 0.000005
     expect(result.perQuery.embedQuery$).toBeCloseTo(0.000005, 10);
     // rerank$ = per search request = 2.0/1000 = 0.002 (one request per query)
@@ -106,17 +109,18 @@ describe("calculate — golden numbers", () => {
     expect(result.perQuery.llmInputTok).toBe(2850);
     // apiGen$ = 2850/1000*0.003 + 500/1000*0.015 = 0.00855 + 0.0075 = 0.01605
     expect(result.perQuery.apiGen$).toBeCloseTo(0.01605, 10);
-    // guardrailOut$ = 1*0.00075 = 0.00075
-    expect(result.perQuery.guardrailOut$).toBeCloseTo(0.00075, 10);
+    // Output policy scans the response: 500*4/400 = 5 units.
+    //   guardrailOut$ = 5/1000 * 0.75 = 0.00375
+    expect(result.perQuery.guardrailOut$).toBeCloseTo(0.00375, 10);
     expect(result.perQuery.infraCrumbs$).toBe(INFRA_CRUMBS_PER_QUERY);
-    // perQuery$ = 0.00075+0.000005+0.002+0.01605+0.00075+0.00002 = 0.019575
-    expect(result.perQuery.perQuery$).toBeCloseTo(0.019575, 10);
+    // perQuery$ = 0.021375+0.000005+0.002+0.01605+0.00375+0.00002 = 0.0432
+    expect(result.perQuery.perQuery$).toBeCloseTo(0.0432, 10);
 
     // Totals
-    // queryMonthly$ = 0.019575 * 100000 = 1957.5
-    expect(result.queryMonthly$).toBeCloseTo(1957.5, 6);
-    // totalMonthly$ = 0.125 + 352.80024576 + 1957.5 = 2310.42524576
-    expect(result.totalMonthly$).toBeCloseTo(2310.42524576, 5);
+    // queryMonthly$ = 0.0432 * 100000 = 4320
+    expect(result.queryMonthly$).toBeCloseTo(4320, 6);
+    // totalMonthly$ = 0.125 + 352.80024576 + 4320 = 4672.92524576
+    expect(result.totalMonthly$).toBeCloseTo(4672.92524576, 5);
 
     expect(result.mode).toBe("A");
   });
@@ -243,6 +247,25 @@ describe("guardrails and rerank toggles", () => {
     expect(result.perQuery.guardrailIn$).toBe(0);
     expect(result.perQuery.guardrailOut$).toBe(0);
     expect(result.perQuery.rerank$).toBe(0);
+  });
+
+  it("guardrail cost is char/text-unit based: input scales with prompt, output with response", () => {
+    const base = baseInputs();
+    const r = calculate(base, priceBook);
+    // Doubling the retrieved context (topN) roughly doubles the input prompt, so
+    // the INPUT guardrail cost rises while the OUTPUT guardrail cost is unchanged.
+    const moreContext = baseInputs();
+    moreContext.retrieval.topN = base.retrieval.topN * 2;
+    const r2 = calculate(moreContext, priceBook);
+    expect(r2.perQuery.guardrailIn$).toBeGreaterThan(r.perQuery.guardrailIn$);
+    expect(r2.perQuery.guardrailOut$).toBeCloseTo(r.perQuery.guardrailOut$, 12);
+
+    // Doubling the response length doubles the OUTPUT guardrail cost, input fixed.
+    const moreOutput = baseInputs();
+    moreOutput.generation.outTokens = base.generation.outTokens * 2;
+    const r3 = calculate(moreOutput, priceBook);
+    expect(r3.perQuery.guardrailOut$).toBeCloseTo(r.perQuery.guardrailOut$ * 2, 12);
+    expect(r3.perQuery.guardrailIn$).toBeCloseTo(r.perQuery.guardrailIn$, 12);
   });
 });
 
@@ -438,7 +461,9 @@ describe("defaultInputs", () => {
     expect(inputs.retrieval.rerankModelId).toBe("rerank-1");
     expect(inputs.retrieval.rerankPricePer1K).toBe(2.0);
 
-    expect(inputs.guardrails.unitPricePer1K).toBe(0.75);
+    expect(inputs.guardrails.inputPricePer1KUnits).toBe(0.75);
+    expect(inputs.guardrails.outputPricePer1KUnits).toBe(0.75);
+    expect(inputs.guardrails.charsPerTextUnit).toBe(400);
 
     expect(inputs.vectorStore.minOCU).toBe(priceBook.opensearch.minOCU);
     expect(inputs.vectorStore.ocuPricePerHr).toBe(priceBook.opensearch.ocuPricePerHr);
@@ -466,7 +491,8 @@ describe("defaultInputs", () => {
     expect(inputs.retrieval.rerankEnabled).toBe(false);
     expect(inputs.retrieval.rerankModelId).toBe("");
     expect(inputs.retrieval.rerankPricePer1K).toBe(0);
-    expect(inputs.guardrails.unitPricePer1K).toBe(0);
+    expect(inputs.guardrails.inputPricePer1KUnits).toBe(0);
+    expect(inputs.guardrails.outputPricePer1KUnits).toBe(0);
 
     expect(() => calculate(inputs, minimalBook)).not.toThrow();
   });

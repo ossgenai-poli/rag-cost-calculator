@@ -125,7 +125,11 @@ Also gate: `npm run typecheck`, `npm run build`, and (for UI-affecting changes)
   crashing the engine. Previously only shared links were validated.
 
 ### P2 — product quality
-- Feature-level **guardrail** pricing (input/output separate; char-based units).
+- ✅ **Feature-level guardrail pricing** — input and output are separate policies
+  with their own price per 1,000 text units; text units are derived from the actual
+  prompt/response character counts (chars ≈ tokens × 4; Bedrock text unit = 400
+  chars for content filters / denied topics / PII). A long RAG prompt is now charged
+  for the ~30 text units it really is, not a flat "1 unit/query".
 - Crossover **X-axis selector** (queries / QPS / input-tok / output-tok) and a
   "no feasible crossover" state; per-point tooltip with instances + utilization.
 - **Reserved / Spot / Savings Plan** GPU pricing + uptime schedule.

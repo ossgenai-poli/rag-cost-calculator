@@ -35,7 +35,7 @@ function makeInputs(overrides: {
       qpsPerOcu: 2,
     },
     retrieval: { topK: 10, rerankEnabled: false, rerankModelId: "", rerankPricePer1K: 0, topN: 5 },
-    guardrails: { inputEnabled: false, outputEnabled: false, unitPricePer1K: 0, unitsPerQuery: 0 },
+    guardrails: { inputEnabled: false, outputEnabled: false, inputPricePer1KUnits: 0, outputPricePer1KUnits: 0, charsPerTextUnit: 400, charsPerToken: 4 },
     generation: {
       mode: "self-hosted",
       llmModelId: "test-llm",

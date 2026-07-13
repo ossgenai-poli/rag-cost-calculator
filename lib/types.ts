@@ -119,10 +119,15 @@ export interface RetrievalInputs {
 }
 
 export interface GuardrailInputs {
-  inputEnabled: boolean;
-  outputEnabled: boolean;
-  unitPricePer1K: number;     // guardrail price per 1K units
-  unitsPerQuery: number;      // guardrail units charged per query text (approx)
+  inputEnabled: boolean;       // guard the input prompt (retrieved context + query)
+  outputEnabled: boolean;      // guard the model response
+  // Bedrock Guardrails bill per "text unit" — a fixed block of characters — per
+  // configured policy. Input and output are separate evaluations, so each side
+  // has its own price (you can run different policy sets on each).
+  inputPricePer1KUnits: number;   // USD per 1,000 text units, input policy
+  outputPricePer1KUnits: number;  // USD per 1,000 text units, output policy
+  charsPerTextUnit: number;    // characters per text unit (400 for content filters / denied topics / PII; 600 for contextual grounding)
+  charsPerToken: number;       // token→character conversion to estimate text units (~4 for English)
 }
 
 export interface GenerationInputs {
