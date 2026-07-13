@@ -126,6 +126,11 @@ export interface GenerationInputs {
   utilTarget: number;         // (0,1] target GPU utilization
   numInstances: number;       // provisioned GPU instances; defaults to the min needed to load the model
   weightBits: number;         // weight precision: 16 (BF16/FP16), 8 (FP8/INT8), 4 (INT4) — drives memory
+  // API cost COMPARISON model (crossover + "Self-built + API" row). Defaults to
+  // the selected model (apples-to-apples); can be a different model as a proxy.
+  apiComparisonModelId: string;
+  apiComparisonInPricePer1K: number;
+  apiComparisonOutPricePer1K: number;
 }
 
 export type TrafficMethod = "monthly" | "qps";
@@ -180,7 +185,8 @@ export interface PerQueryResult {
   embedQuery$: number;
   rerank$: number;
   llmInputTok: number;
-  apiGen$: number;
+  apiGen$: number;            // API generation for the SELECTED model (headline in API mode)
+  apiComparisonGen$: number;  // API generation for the comparison model (crossover/scenario baseline)
   guardrailOut$: number;
   infraCrumbs$: number;
   perQuery$: number;

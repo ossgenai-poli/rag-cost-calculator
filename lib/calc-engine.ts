@@ -112,6 +112,11 @@ function computePerQuery(inputs: CalcInputs): PerQueryResult {
   const rerank = retrieval.rerankEnabled ? retrieval.rerankPricePer1K / 1000 : 0;
   const llmInputTok = retrieval.topN * chunking.chunkSize + generation.promptOverhead + queryTokens;
   const apiGen = (llmInputTok / 1000) * generation.llmInPricePer1K + (generation.outTokens / 1000) * generation.llmOutPricePer1K;
+  // API generation cost for the COMPARISON model (falls back to the selected
+  // model's price when unset, so old links / same-model comparisons match apiGen).
+  const compIn = generation.apiComparisonInPricePer1K || generation.llmInPricePer1K;
+  const compOut = generation.apiComparisonOutPricePer1K || generation.llmOutPricePer1K;
+  const apiComparisonGen = (llmInputTok / 1000) * compIn + (generation.outTokens / 1000) * compOut;
   const guardrailOut = guardrails.outputEnabled ? guardrailUnit : 0;
   const infraCrumbs = INFRA_CRUMBS_PER_QUERY;
 
@@ -123,6 +128,7 @@ function computePerQuery(inputs: CalcInputs): PerQueryResult {
     rerank$: rerank,
     llmInputTok,
     apiGen$: apiGen,
+    apiComparisonGen$: apiComparisonGen,
     guardrailOut$: guardrailOut,
     infraCrumbs$: infraCrumbs,
     perQuery$: perQuery,
@@ -313,6 +319,9 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       utilTarget: 0.7,
       numInstances: 1,
       weightBits: 16,
+      apiComparisonModelId: llmModel.id,
+      apiComparisonInPricePer1K: llmModel.inPricePer1K,
+      apiComparisonOutPricePer1K: llmModel.outPricePer1K,
     },
     traffic: {
       queriesPerMonth: 100000,

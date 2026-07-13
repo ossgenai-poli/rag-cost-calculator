@@ -47,7 +47,7 @@ function makeInputs(overrides: {
       gpuPricePerHr: overrides.gpuPricePerHr,
       sustainedTokPerSec: overrides.sustainedTokPerSec,
       utilTarget: overrides.utilTarget ?? 0.5,
-      numInstances: overrides.numInstances ?? 1, weightBits: 16,
+      numInstances: overrides.numInstances ?? 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0,
     },
     traffic: {
       queriesPerMonth: overrides.queriesPerMonth,
@@ -68,6 +68,7 @@ function makePerQuery(llmInputTok: number, apiGen$: number): PerQueryResult {
     rerank$: 0,
     llmInputTok,
     apiGen$,
+    apiComparisonGen$: apiGen$,
     guardrailOut$: 0,
     infraCrumbs$: 0,
     perQuery$: 0,

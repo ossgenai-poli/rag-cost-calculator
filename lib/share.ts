@@ -74,6 +74,9 @@ const calcInputsSchema = z.object({
     utilTarget: num.min(0.01).max(1),
     numInstances: num.min(1).default(1),
     weightBits: num.min(1).default(16),
+    apiComparisonModelId: z.string().default(""),
+    apiComparisonInPricePer1K: nonNeg.default(0),
+    apiComparisonOutPricePer1K: nonNeg.default(0),
   }),
   traffic: z.object({
     queriesPerMonth: nonNeg,

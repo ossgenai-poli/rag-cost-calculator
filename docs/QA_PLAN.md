@@ -105,10 +105,10 @@ Also gate: `npm run typecheck`, `npm run build`, and (for UI-affecting changes)
   throughput-instances, and break-even reflect it.
 - ✅ **Price provenance** — Sources modal shows source badges (live / reference /
   typed config / estimate) with a legend and per-section provenance.
-- Still open:
-  - Model comparison **currently uses the same model's hosted price** (apples-to-apples
-    for OSS models). Add an explicit **API comparison-model selector** + proxy
-    disclosure for cross-model comparisons.
+- ✅ **API comparison-model selector** — self-hosted mode can price the API rows
+  against a *different* model (default = same model, apples-to-apples), with a
+  proxy-comparison warning when they differ.
+- Still open (pending data / to discuss):
   - Fuller **model-memory model** (active vs total params, explicit KV-cache from
     context length × concurrency, TP/PP overhead, safety margin) + "does not fit".
     The current model uses a documented 1.2× overhead over precision-aware weights.

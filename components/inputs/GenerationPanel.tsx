@@ -37,6 +37,10 @@ export function GenerationPanel(props: {
       next.llmModelId = model.id;
       next.llmInPricePer1K = model.inPricePer1K;
       next.llmOutPricePer1K = model.outPricePer1K;
+      // Default the API comparison to the same model (user can override).
+      next.apiComparisonModelId = model.id;
+      next.apiComparisonInPricePer1K = model.inPricePer1K;
+      next.apiComparisonOutPricePer1K = model.outPricePer1K;
     }
     // Reset the fleet to the minimum needed to load the (new) model on the GPU.
     if ((extra?.mode ?? generation.mode) === "self-hosted") {
@@ -58,10 +62,22 @@ export function GenerationPanel(props: {
   function selectGpu(instanceType: string) {
     const g = priceBook.gpus.find((x) => x.instanceType === instanceType);
     if (!g) return;
-    patchModel(selectedModel, g, {
+    // GPU change must NOT reset the comparison model, so pass undefined.
+    patchModel(undefined, g, {
       gpuInstanceType: g.instanceType,
       gpuPricePerHr: g.pricePerHr,
       sustainedTokPerSec: g.sustainedTokPerSec,
+    });
+  }
+
+  function selectApiComparison(id: string) {
+    const m = llmModels.find((x) => x.id === id);
+    if (!m) return;
+    onChange({
+      ...generation,
+      apiComparisonModelId: m.id,
+      apiComparisonInPricePer1K: m.inPricePer1K,
+      apiComparisonOutPricePer1K: m.outPricePer1K,
     });
   }
 
@@ -95,6 +111,24 @@ export function GenerationPanel(props: {
         options={(selfHosted ? selfHostModels : apiModels).map((m) => ({ value: m.id, label: m.label }))}
         onChange={selectLlmModel}
       />
+
+      {selfHosted && (
+        <>
+          <SelectField
+            label="API comparison model"
+            hint="Model priced in the API-vs-self-hosted comparison. Defaults to the same model (apples-to-apples)."
+            value={generation.apiComparisonModelId || generation.llmModelId}
+            options={llmModels.map((m) => ({ value: m.id, label: m.label }))}
+            onChange={selectApiComparison}
+          />
+          {generation.apiComparisonModelId && generation.apiComparisonModelId !== generation.llmModelId && (
+            <p className="text-xs text-amber-400">
+              ⚠ Proxy comparison — API uses a different model than the self-hosted one. Quality,
+              context length, and throughput may differ.
+            </p>
+          )}
+        </>
+      )}
 
       <NumberField
         label="System prompt & formatting"

@@ -50,7 +50,7 @@ function baseInputs(): CalcInputs {
       gpuPricePerHr: 50,
       sustainedTokPerSec: 2000,
       utilTarget: 0.7,
-      numInstances: 1, weightBits: 16,
+      numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0,
     },
     traffic: { queriesPerMonth: 100000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
     queryTokens: 50,
@@ -277,6 +277,28 @@ describe("generation mode affects the total, breakdown, and dominant lever", () 
     const genLine = api.breakdown.find((l) => l.category === "generation")!;
     expect(genLine.monthly$).toBeCloseTo(api.perQuery.apiGen$ * 100000, 6);
     expect(genLine.label).toMatch(/API/i);
+  });
+
+  it("API comparison model prices the comparison line, falling back to the selected model", () => {
+    // Default (unset comparison) falls back to the selected model -> same as apiGen.
+    const same = calculate(baseInputs(), priceBook);
+    expect(same.perQuery.apiComparisonGen$).toBeCloseTo(same.perQuery.apiGen$, 12);
+
+    // A pricier comparison model raises only the comparison figure, not apiGen.
+    const proxy: CalcInputs = {
+      ...baseInputs(),
+      generation: {
+        ...baseInputs().generation,
+        apiComparisonModelId: "proxy",
+        apiComparisonInPricePer1K: 0.03,
+        apiComparisonOutPricePer1K: 0.06,
+      },
+    };
+    const r = calculate(proxy, priceBook);
+    const expected = (r.perQuery.llmInputTok / 1000) * 0.03 + (proxy.generation.outTokens / 1000) * 0.06;
+    expect(r.perQuery.apiComparisonGen$).toBeCloseTo(expected, 10);
+    expect(r.perQuery.apiComparisonGen$).toBeGreaterThan(r.perQuery.apiGen$);
+    expect(r.perQuery.apiGen$).toBeCloseTo(same.perQuery.apiGen$, 12); // selected model unchanged
   });
 });
 

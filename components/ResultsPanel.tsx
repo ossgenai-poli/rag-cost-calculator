@@ -79,6 +79,16 @@ export function ResultsPanel({
     ? `Self-hosted ${genModelName} · ${inputs.generation.numInstances} × ${inputs.generation.gpuInstanceType}`
     : `${activeProvider.modelApi} API · ${genModelName}`;
 
+  // Proxy-comparison disclosure: the API column uses a different model.
+  const isProxyComparison =
+    metrics.selfHosted &&
+    !!inputs.generation.apiComparisonModelId &&
+    inputs.generation.apiComparisonModelId !== inputs.generation.llmModelId;
+  const compModelName =
+    priceBook.models
+      .find((m) => m.id === inputs.generation.apiComparisonModelId)
+      ?.label?.replace(/\s*\(.*\)\s*$/, "") ?? inputs.generation.apiComparisonModelId;
+
   return (
     <div className="flex flex-col gap-6">
       {/* Sticky summary strip — stays visible while editing inputs */}
@@ -257,6 +267,18 @@ export function ResultsPanel({
           </div>
         </div>
       </div>
+
+      {isProxyComparison && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <span aria-hidden className="mt-0.5 text-amber-400">⚠</span>
+          <div className="text-amber-200/90">
+            <span className="font-medium text-amber-300">Proxy comparison.</span> The API rows price{" "}
+            <span className="text-amber-100">{compModelName}</span>, but you&apos;re self-hosting{" "}
+            <span className="text-amber-100">{genModelName}</span> — a different model. Quality,
+            context length, throughput, and output behavior may differ.
+          </div>
+        </div>
+      )}
 
       {/* Central comparison + saved scenarios */}
       <ScenarioComparison
