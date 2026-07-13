@@ -109,7 +109,12 @@ function computePerQuery(inputs: CalcInputs): PerQueryResult {
   // Reranking is billed per search REQUEST (one per query), not per token.
   // rerankPricePer1K is $ per 1,000 rerank requests.
   const rerank = retrieval.rerankEnabled ? retrieval.rerankPricePer1K / 1000 : 0;
-  const llmInputTok = retrieval.topN * chunking.chunkSize + generation.promptOverhead + queryTokens;
+  // Enforce the retrieval invariant at the calc boundary: you can't send more
+  // chunks to the LLM than you retrieved (topN ≤ topK). This guards every input
+  // path (UI, shared link, saved scenario) against billing an impossible config;
+  // the panel also shows a warning when the raw input violates it.
+  const effectiveTopN = Math.min(retrieval.topN, retrieval.topK);
+  const llmInputTok = effectiveTopN * chunking.chunkSize + generation.promptOverhead + queryTokens;
   const apiGen = (llmInputTok / 1000) * generation.llmInPricePer1K + (generation.outTokens / 1000) * generation.llmOutPricePer1K;
   // API generation cost for the COMPARISON model (falls back to the selected
   // model's price when unset, so old links / same-model comparisons match apiGen).

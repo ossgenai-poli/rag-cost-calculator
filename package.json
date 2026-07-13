@@ -13,8 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "refresh-prices": "node scripts/refresh-prices.mjs",
-    "serve:static": "npx serve out -l 3100"
+    "refresh-prices": "tsx scripts/refresh-prices.ts",
+    "serve:static": "npx serve out -l 3100",
+    "test:e2e": "node scripts/verify-e2e.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-pricing": "^3.700.0",
@@ -32,7 +33,9 @@
     "autoprefixer": "^10.4.20",
     "cross-env": "^7.0.3",
     "postcss": "^8.5.17",
+    "puppeteer-core": "^23.11.1",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.1",
     "typescript": "^5.6.3",
     "vitest": "^4.1.10"
   },
