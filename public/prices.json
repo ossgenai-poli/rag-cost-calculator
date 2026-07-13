@@ -1,28 +1,31 @@
 {
-  "updatedAt": "2026-07-12T08:04:30.355Z",
+  "updatedAt": "2026-07-13T08:54:49.534Z",
   "source": "fallback",
   "region": "us-east-1",
   "gpus": [
     {
       "instanceType": "p5.48xlarge",
-      "gpu": "8x H100 80GB",
+      "gpu": "8x H100",
       "pricePerHr": 55.04,
-      "sustainedTokPerSec": 2600,
-      "totalMemGB": 640
+      "sustainedTokPerSec": 2600
     },
     {
       "instanceType": "p5e.48xlarge",
-      "gpu": "8x H200 141GB",
-      "pricePerHr": 63.29,
-      "sustainedTokPerSec": 3000,
-      "totalMemGB": 1128
+      "gpu": "8x H200",
+      "pricePerHr": 47.76,
+      "sustainedTokPerSec": 3000
     },
     {
-      "instanceType": "p6-b200.48xlarge",
-      "gpu": "8x B200 192GB",
-      "pricePerHr": 113,
-      "sustainedTokPerSec": 5200,
-      "totalMemGB": 1536
+      "instanceType": "p4d.24xlarge",
+      "gpu": "8x A100",
+      "pricePerHr": 32.77,
+      "sustainedTokPerSec": 1500
+    },
+    {
+      "instanceType": "g5.12xlarge",
+      "gpu": "4x A10G",
+      "pricePerHr": 5.672,
+      "sustainedTokPerSec": 350
     }
   ],
   "opensearch": {
@@ -31,33 +34,7 @@
     "gbRamPerOcu": 6,
     "minOCU": 2
   },
-  "managedKb": {
-    "indexStoragePerGBmo": 5,
-    "retrievePer1k": 1,
-    "agenticRetrievePer1k": 4,
-    "verifiedAt": "2026-07-12"
-  },
   "models": [
-    {
-      "id": "claude-fable-5",
-      "label": "Claude Fable 5 (Bedrock)",
-      "provider": "bedrock",
-      "bedrock": true,
-      "kind": "llm",
-      "inPricePer1K": 0.006,
-      "outPricePer1K": 0.03,
-      "verifiedAt": "2026-07-10"
-    },
-    {
-      "id": "gpt-5.5-bedrock",
-      "label": "OpenAI GPT-5.5 (Bedrock)",
-      "provider": "openai",
-      "bedrock": true,
-      "kind": "llm",
-      "inPricePer1K": 0.002,
-      "outPricePer1K": 0.016,
-      "verifiedAt": "2026-07-10"
-    },
     {
       "id": "claude-opus-4-8",
       "label": "Claude Opus 4.8 (Bedrock)",
@@ -69,8 +46,8 @@
       "verifiedAt": "2026-07-10"
     },
     {
-      "id": "claude-sonnet-4-6",
-      "label": "Claude Sonnet 4.6 (Bedrock)",
+      "id": "claude-sonnet-4",
+      "label": "Claude Sonnet 4 (Bedrock)",
       "provider": "bedrock",
       "bedrock": true,
       "kind": "llm",
@@ -79,84 +56,54 @@
       "verifiedAt": "2026-07-10"
     },
     {
-      "id": "gpt-5.4-bedrock",
-      "label": "OpenAI GPT-5.4 (Bedrock)",
-      "provider": "openai",
+      "id": "qwen2.5-72b-bedrock",
+      "label": "Qwen2.5-72B (Bedrock)",
+      "provider": "bedrock",
       "bedrock": true,
+      "kind": "llm",
+      "inPricePer1K": 0.0009,
+      "outPricePer1K": 0.0009,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "deepseek-r1-bedrock",
+      "label": "DeepSeek-R1 (Bedrock)",
+      "provider": "bedrock",
+      "bedrock": true,
+      "kind": "llm",
+      "inPricePer1K": 0.00135,
+      "outPricePer1K": 0.0054,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "gemini-3.1-pro",
+      "label": "Gemini 3.1 Pro (non-Bedrock)",
+      "provider": "gemini",
+      "bedrock": false,
+      "kind": "llm",
+      "inPricePer1K": 0.002,
+      "outPricePer1K": 0.012,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "grok-4.20",
+      "label": "Grok 4.20 (non-Bedrock)",
+      "provider": "grok",
+      "bedrock": false,
+      "kind": "llm",
+      "inPricePer1K": 0.002,
+      "outPricePer1K": 0.006,
+      "verifiedAt": "2026-07-10"
+    },
+    {
+      "id": "gpt-5.2",
+      "label": "GPT-5.2 (non-Bedrock)",
+      "provider": "openai",
+      "bedrock": false,
       "kind": "llm",
       "inPricePer1K": 0.00175,
       "outPricePer1K": 0.014,
       "verifiedAt": "2026-07-10"
-    },
-    {
-      "id": "glm-5.2-oss",
-      "label": "GLM-5.2 (open weights)",
-      "provider": "oss",
-      "bedrock": false,
-      "kind": "llm",
-      "selfHostable": true,
-      "paramsB": 400,
-      "inPricePer1K": 0.0006,
-      "outPricePer1K": 0.0022,
-      "verifiedAt": "2026-07-10",
-      "kvBytesPerToken": 376832,
-      "attentionType": "GQA"
-    },
-    {
-      "id": "nemotron-3-ultra-oss",
-      "label": "NVIDIA Nemotron 3 Ultra 550B-A55B (open weights)",
-      "provider": "oss",
-      "bedrock": false,
-      "kind": "llm",
-      "selfHostable": true,
-      "paramsB": 550,
-      "inPricePer1K": 0.001,
-      "outPricePer1K": 0.003,
-      "verifiedAt": "2026-07-10",
-      "kvBytesPerToken": 10240,
-      "attentionType": "hybrid (Mamba)"
-    },
-    {
-      "id": "minimax-m3-oss",
-      "label": "MiniMax M3 (open weights)",
-      "provider": "oss",
-      "bedrock": false,
-      "kind": "llm",
-      "selfHostable": true,
-      "paramsB": 480,
-      "inPricePer1K": 0.0003,
-      "outPricePer1K": 0.0011,
-      "verifiedAt": "2026-07-10",
-      "kvBytesPerToken": 40960,
-      "attentionType": "hybrid (lightning)"
-    },
-    {
-      "id": "deepseek-v4-pro-oss",
-      "label": "DeepSeek-V4-Pro (open weights)",
-      "provider": "oss",
-      "bedrock": false,
-      "kind": "llm",
-      "selfHostable": true,
-      "paramsB": 720,
-      "inPricePer1K": 0.0006,
-      "outPricePer1K": 0.0024,
-      "verifiedAt": "2026-07-10",
-      "kvBytesPerToken": 70272,
-      "attentionType": "MLA"
-    },
-    {
-      "id": "kimi-k2.6-oss",
-      "label": "Kimi K2.6 (open weights)",
-      "provider": "oss",
-      "bedrock": false,
-      "kind": "llm",
-      "selfHostable": true,
-      "paramsB": 1000,
-      "inPricePer1K": 0.0006,
-      "outPricePer1K": 0.0025,
-      "verifiedAt": "2026-07-10",
-      "kvBytesPerToken": 70272,
-      "attentionType": "MLA"
     },
     {
       "id": "titan-embed-v2",
@@ -186,7 +133,7 @@
       "provider": "bedrock",
       "bedrock": true,
       "kind": "rerank",
-      "inPricePer1K": 2,
+      "inPricePer1K": 0.001,
       "outPricePer1K": 0,
       "verifiedAt": "2026-07-10"
     },
@@ -196,7 +143,7 @@
       "provider": "bedrock",
       "bedrock": true,
       "kind": "guardrail",
-      "inPricePer1K": 0.75,
+      "inPricePer1K": 0.00075,
       "outPricePer1K": 0,
       "verifiedAt": "2026-07-10"
     }
