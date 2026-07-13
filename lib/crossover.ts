@@ -14,7 +14,9 @@ const SELF_HOST_UTIL_THRESHOLD = 0.7;
 function zeroResult(
   monthlyGenTokens: number,
   gpuMonthly$: number,
-  capacity100: number
+  capacity100: number,
+  tokensPerQuery = 0,
+  outputFraction = 0
 ): CrossoverResult {
   return {
     monthlyGenTokens,
@@ -31,6 +33,8 @@ function zeroResult(
     breakEvenTokens: 0,
     equivalentQPS: 0,
     utilAtBreakEven: 0,
+    tokensPerQuery,
+    outputFraction,
     verdict: "API wins in practice below sustained load",
     curve: [],
   };
@@ -45,6 +49,9 @@ export function computeCrossover(
   const llmInputTok = perQuery.llmInputTok;
   const outTokens = generation.outTokens;
   const tokensPerQuery = llmInputTok + outTokens;
+  // Fraction of each query's tokens that are decode (output) — used to convert the
+  // token axis to output/input tokens and to derive decode utilization per point.
+  const outputFraction = tokensPerQuery > 0 ? outTokens / tokensPerQuery : 0;
 
   const monthlyGenTokens = traffic.queriesPerMonth * tokensPerQuery;
   // Fleet cost reflects the commitment model (discount off on-demand) and how many
@@ -63,7 +70,7 @@ export function computeCrossover(
     tokensPerQuery > 0 ? perQuery.apiComparisonGen$ / tokensPerQuery : 0;
 
   if (apiBlendedPricePerToken <= 0 || capacity100 <= 0) {
-    return zeroResult(monthlyGenTokens, gpuMonthly$, capacity100);
+    return zeroResult(monthlyGenTokens, gpuMonthly$, capacity100, tokensPerQuery, outputFraction);
   }
 
   const utilTarget = generation.utilTarget > 0 ? generation.utilTarget : 1;
@@ -90,7 +97,6 @@ export function computeCrossover(
 
   // Capacity is DECODE-bound: sustainedTokPerSec is output tokens/sec, so it only
   // applies to output tokens — never to total (input + output) tokens.
-  const outputFraction = tokensPerQuery > 0 ? outTokens / tokensPerQuery : 0;
   const monthlyOutputTokens = traffic.queriesPerMonth * outTokens;
   const throughputInstances = Math.max(1, Math.ceil(monthlyOutputTokens / capacityEff));
   const realizedUtil = boxes * capacity100 > 0 ? monthlyOutputTokens / (boxes * capacity100) : 0;
@@ -139,6 +145,8 @@ export function computeCrossover(
     breakEvenTokens,
     equivalentQPS,
     utilAtBreakEven,
+    tokensPerQuery,
+    outputFraction,
     verdict,
     curve,
   };
