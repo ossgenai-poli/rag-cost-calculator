@@ -21,6 +21,8 @@ function zeroResult(
     gpuMonthly$,
     capacity100,
     boxes: 1,
+    minInstancesToLoad: 1,
+    throughputInstances: 0,
     selfHostedMonthly$: 0,
     apiBlendedPricePerToken: 0,
     apiMonthly$: 0,
@@ -59,9 +61,13 @@ export function computeCrossover(
   // need at least this many boxes just to load it — regardless of throughput.
   const model = priceBook.models?.find((m) => m.id === generation.llmModelId);
   const gpu = priceBook.gpus?.find((g) => g.instanceType === generation.gpuInstanceType);
-  const memInstances = instancesToLoad(model?.paramsB, gpu?.totalMemGB ?? 0);
+  const minInstancesToLoad = instancesToLoad(model?.paramsB, gpu?.totalMemGB ?? 0);
 
-  const boxes = Math.max(1, Math.ceil(monthlyGenTokens / capacityEff), memInstances);
+  // The billed fleet is what the user provisioned, never below the memory floor.
+  // We do NOT auto-scale it to demand — instead we report how many instances the
+  // throughput would need, so an under-provisioned fleet is surfaced as a warning.
+  const boxes = Math.max(1, generation.numInstances || 1, minInstancesToLoad);
+  const throughputInstances = Math.max(1, Math.ceil(monthlyGenTokens / capacityEff));
   const selfHostedMonthly$ = boxes * gpuMonthly$;
 
   const apiMonthly$ = apiBlendedPricePerToken * monthlyGenTokens;
@@ -80,7 +86,8 @@ export function computeCrossover(
     for (let i = 0; i < CURVE_POINTS; i++) {
       const tokens = step * i;
       const api$ = apiBlendedPricePerToken * tokens;
-      const stepBoxes = Math.max(1, Math.ceil(tokens / capacityEff), memInstances);
+      // Curve reflects the provisioned fleet (flat) until demand outgrows it.
+      const stepBoxes = Math.max(1, boxes, Math.ceil(tokens / capacityEff), minInstancesToLoad);
       const selfHosted$ = stepBoxes * gpuMonthly$;
       curve.push({ tokens, api$, selfHosted$ });
     }
@@ -91,6 +98,8 @@ export function computeCrossover(
     gpuMonthly$,
     capacity100,
     boxes,
+    minInstancesToLoad,
+    throughputInstances,
     selfHostedMonthly$,
     apiBlendedPricePerToken,
     apiMonthly$,

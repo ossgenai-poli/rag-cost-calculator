@@ -124,6 +124,7 @@ export interface GenerationInputs {
   gpuPricePerHr: number;      // patched from instance
   sustainedTokPerSec: number; // patched from instance (editable)
   utilTarget: number;         // (0,1] target GPU utilization
+  numInstances: number;       // provisioned GPU instances; defaults to the min needed to load the model
 }
 
 export type TrafficMethod = "monthly" | "qps";
@@ -210,7 +211,9 @@ export interface CrossoverResult {
   monthlyGenTokens: number;
   gpuMonthly$: number;
   capacity100: number;         // tokens/mo at 100% util per box
-  boxes: number;
+  boxes: number;               // provisioned instances actually billed (= numInstances, floored to fit the model)
+  minInstancesToLoad: number;  // memory floor — min instances to hold the weights
+  throughputInstances: number; // instances the current load would need for throughput
   selfHostedMonthly$: number;
   apiBlendedPricePerToken: number;
   apiMonthly$: number;         // linear API cost at current volume
