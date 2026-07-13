@@ -69,6 +69,7 @@ export function ResultsPanel({
   const sensitivity = computeSensitivity(inputs, priceBook);
 
   const crossover = resultA.crossover;
+  const managedKb = resultA.managedKb;
   const hasGenVolume = crossover.monthlyGenTokens > 0;
   const isEfficient = crossover.verdict === "self-host efficient";
 
@@ -209,17 +210,7 @@ export function ResultsPanel({
         )}
       </div>
 
-      {/* Amber banner: an important price is estimated / unavailable */}
-      <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-        <span aria-hidden className="mt-0.5 text-amber-400">⚠</span>
-        <div className="text-amber-200/90">
-          <span className="font-medium text-amber-300">Some figures are estimated or unavailable.</span>{" "}
-          {activeProvider.managedService} managed pricing could not be verified, so any comparison
-          involving it is marked incomplete rather than shown as a dollar figure.
-        </div>
-      </div>
-
-      {/* Two build strategies — honest about unknown managed pricing */}
+      {/* Two build strategies — both now fully priced */}
       <div className="flex flex-col gap-2">
         <div className="text-sm font-medium text-slate-300">Two ways to build this</div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -232,37 +223,43 @@ export function ResultsPanel({
             <div className="text-xs text-slate-500">per month · fully priced</div>
           </div>
 
-          <div className="panel border border-amber-500/30 p-4">
+          <div className="panel p-4">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-slate-200">{activeProvider.managedName}</span>
-              <span
-                className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400"
-                title="The engine currently models managed retrieval infra as identical to self-built; only the managed service fee is unknown."
-              >
-                not directly comparable
+              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                verified pricing
               </span>
             </div>
             <div className="mb-2 text-xs text-slate-500">{activeProvider.managedDesc}</div>
-            <div className="space-y-1 text-sm">
+            <div className="space-y-0.5 text-xs">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-slate-400">
-                  Known components{" "}
-                  <span className="text-slate-600">(retrieval + embeddings + model API)</span>
+                  Index storage <span className="text-slate-600">({inputs.managedKb.indexedDataGB} GB × $5)</span>
                 </span>
-                <span className="font-semibold tabular-nums text-slate-100">
-                  ≥ {usd(resultB.totalMonthly$)}<span className="text-xs font-normal text-slate-500">/mo</span>
-                </span>
+                <span className="tabular-nums text-slate-300">{usd(managedKb.storageMonthly$, 2)}</span>
               </div>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-slate-400">
-                  + {activeProvider.managedServiceShort} service fee
+                  {inputs.managedKb.retrievalMode === "agentic" ? "Agentic retrieval" : "Standard retrieval"}
                 </span>
-                <span className="text-amber-300">not published</span>
+                <span className="tabular-nums text-slate-300">{usd(managedKb.retrievalMonthly$, 2)}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-slate-500">Parsing · embeddings · reranking</span>
+                <span className="text-slate-500">included</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-slate-400">LLM generation (API)</span>
+                <span className="tabular-nums text-slate-300">{usd(managedKb.generationMonthly$, 2)}</span>
               </div>
             </div>
-            <div className="mt-2 border-t border-slate-800 pt-2 text-xs text-slate-500">
-              Reuses the self-built estimate for shared infra; the managed markup needs a vendor
-              quote, so this can&apos;t be totaled.
+            <div className="mt-2 flex items-baseline justify-between border-t border-slate-800 pt-2">
+              <span className="text-sm font-medium text-slate-300">Total</span>
+              <FlashValue className="text-2xl font-bold text-slate-100">{usd(managedKb.total$)}</FlashValue>
+            </div>
+            <div className="mt-1 text-[11px] text-slate-500">
+              AWS published rates (verified {formatDate(priceBook.managedKb.verifiedAt)}) — independent
+              of the self-built vector store.
             </div>
           </div>
         </div>

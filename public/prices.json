@@ -31,6 +31,12 @@
     "gbRamPerOcu": 6,
     "minOCU": 2
   },
+  "managedKb": {
+    "indexStoragePerGBmo": 5,
+    "retrievePer1k": 1,
+    "agenticRetrievePer1k": 4,
+    "verifiedAt": "2026-07-12"
+  },
   "models": [
     {
       "id": "claude-fable-5",

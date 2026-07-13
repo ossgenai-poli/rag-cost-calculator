@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { calculate, defaultInputs } from "./calc-engine";
 import { deriveDisplayMetrics } from "./derived";
 import { buildScenarios } from "./scenarios";
-import { encodeInputs, decodeInputs } from "./share";
+import { encodeInputs, decodeInputs, coerceInputs } from "./share";
 import { computeSensitivity } from "./sensitivity";
 import type { CalcInputs, PriceBook } from "./types";
 
@@ -12,6 +12,7 @@ const priceBook: PriceBook = {
   region: "us-east-1",
   gpus: [{ instanceType: "p5.48xlarge", gpu: "8x H100", pricePerHr: 55.04, sustainedTokPerSec: 2600, totalMemGB: 640 }],
   opensearch: { ocuPricePerHr: 0.24, storagePricePerGBmo: 0.024, gbRamPerOcu: 6, minOCU: 2 },
+  managedKb: { indexStoragePerGBmo: 5, retrievePer1k: 1, agenticRetrievePer1k: 4, verifiedAt: "2026-01-01" },
   models: [
     { id: "embed-1", label: "Embed 1", provider: "bedrock", bedrock: true, kind: "embedding", inPricePer1K: 0.00002, outPricePer1K: 0, dim: 1024, verifiedAt: "2026-01-01" },
     { id: "llm-1", label: "LLM 1", provider: "bedrock", bedrock: true, kind: "llm", inPricePer1K: 0.015, outPricePer1K: 0.075, verifiedAt: "2026-01-01" },
@@ -66,7 +67,7 @@ describe("deriveDisplayMetrics", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildScenarios", () => {
-  it("baseline is complete; managed KB is incomplete; GPU carries a diff", () => {
+  it("baseline is complete; managed KB is now priced; GPU carries a diff", () => {
     const inputs = base();
     const result = calculate(inputs, priceBook);
     const scenarios = buildScenarios(result, inputs);
@@ -75,9 +76,11 @@ describe("buildScenarios", () => {
     expect(byId["self-built-api"].monthly).toBeCloseTo(result.totalMonthly$, 6);
     expect(byId["self-built-api"].complete).toBe(true);
 
-    expect(byId["bedrock-kb-api"].monthly).toBeNull();
-    expect(byId["bedrock-kb-api"].complete).toBe(false);
+    // Managed Bedrock KB is now priced from AWS's published rates.
+    expect(byId["bedrock-kb-api"].monthly).toBeCloseTo(result.managedKb.total$, 6);
+    expect(byId["bedrock-kb-api"].complete).toBe(true);
     expect(byId["bedrock-kb-api"].highlight).toBe(false);
+    expect(byId["bedrock-kb-api"].difference).toMatch(/^[+-]\d+%$/);
 
     // Self-built + GPU = infra (non-generation) + self-hosted box cost
     const generationMonthly = result.perQuery.apiGen$ * inputs.traffic.queriesPerMonth;
@@ -123,6 +126,18 @@ describe("share encode/decode", () => {
     expect(decoded!.traffic.method).toBe("monthly");
     expect(decoded!.traffic.qps).toBe(1);
     expect(decoded!.vectorStore.qpsPerOcu).toBe(2);
+  });
+
+  it("coerceInputs backfills a scenario saved before managedKb existed (no engine crash)", () => {
+    // A saved scenario (localStorage) persisted before the managedKb field.
+    const { managedKb: _drop, ...legacy } = base();
+    void _drop;
+    const coerced = coerceInputs(legacy);
+    expect(coerced).not.toBeNull();
+    expect(coerced!.managedKb.retrievalMode).toBe("standard");
+    expect(coerced!.managedKb.indexedDataGB).toBe(1);
+    // The engine must not throw on the upgraded inputs.
+    expect(() => calculate(coerced!, priceBook)).not.toThrow();
   });
 });
 

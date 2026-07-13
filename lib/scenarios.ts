@@ -64,16 +64,17 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
     highlight: !selfHostedMode, // highlighted when it's the selected scenario
   };
 
-  // --- Bedrock Knowledge Bases + API — managed pricing not verifiable ---
+  // --- Bedrock Knowledge Bases + API — now priced from AWS's published rates ---
+  const mkbTotal = result.managedKb.total$;
   const bedrockKb: Scenario = {
     id: "bedrock-kb-api",
     label: "Bedrock KB + API",
-    monthly: null,
-    per1000: null,
-    diffPct: null,
-    difference: "Pricing unavailable",
-    note: "Managed KB charges not included — published pricing unverified",
-    complete: false,
+    monthly: mkbTotal,
+    per1000: per1000(mkbTotal),
+    diffPct: diffOf(mkbTotal),
+    difference: formatDiff(diffOf(mkbTotal)),
+    note: `${inputs.managedKb.retrievalMode} retrieval + managed parsing/embed/rerank (incl.) + LLM`,
+    complete: true,
     highlight: false,
   };
 

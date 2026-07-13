@@ -12,6 +12,7 @@ const priceBook: PriceBook = {
   region: "us-east-1",
   gpus: [{ instanceType: "p5.48xlarge", gpu: "8x H100", pricePerHr: 50, sustainedTokPerSec: 2000, totalMemGB: 640 }],
   opensearch: { ocuPricePerHr: 0.24, storagePricePerGBmo: 0.024, gbRamPerOcu: 6, minOCU: 2 },
+    managedKb: { indexStoragePerGBmo: 5, retrievePer1k: 1, agenticRetrievePer1k: 4, verifiedAt: "2026-01-01" },
   models: [
     { id: "embed-1", label: "Embed 1", provider: "bedrock", bedrock: true, kind: "embedding", inPricePer1K: 0.0001, outPricePer1K: 0, dim: 1024, verifiedAt: "2026-01-01" },
     { id: "llm-1", label: "LLM 1", provider: "bedrock", bedrock: true, kind: "llm", inPricePer1K: 0.003, outPricePer1K: 0.015, verifiedAt: "2026-01-01" },
@@ -52,6 +53,7 @@ function baseInputs(): CalcInputs {
       utilTarget: 0.7,
       numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16,
     },
+    managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
     traffic: { queriesPerMonth: 100000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
     queryTokens: 50,
   };
@@ -375,6 +377,41 @@ describe("edge cases", () => {
     expect(result.totalMonthly$).toBe(0);
     expect(result.dominantLever.share).toBe(0);
     expect(Number.isNaN(result.dominantLever.share)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Managed Bedrock Knowledge Bases — reproduces AWS's own published examples
+// (https://aws.amazon.com/bedrock/pricing/): 50 GB indexed data + 100k queries.
+// ---------------------------------------------------------------------------
+
+describe("managed Bedrock KB — AWS published examples", () => {
+  it("standard retrieval: 50 GB × $5 + 100k/1k × $1 = $350 managed subtotal", () => {
+    const inputs = baseInputs(); // 100k queries, 50 GB indexed, standard mode
+    const { managedKb } = calculate(inputs, priceBook);
+    expect(managedKb.storageMonthly$).toBeCloseTo(250, 6); // 50 × 5
+    expect(managedKb.retrievalMonthly$).toBeCloseTo(100, 6); // 100k/1k × 1
+    expect(managedKb.managedSubtotal$).toBeCloseTo(350, 6);
+  });
+
+  it("agentic retrieval: adds planning $4/1k + underlying retrievals $1/1k → $850 subtotal", () => {
+    const inputs = baseInputs();
+    inputs.managedKb.retrievalMode = "agentic";
+    inputs.managedKb.underlyingRetrievalsPerCall = 2;
+    const { managedKb } = calculate(inputs, priceBook);
+    // storage 250 + planning 100k/1k×4 (=400) + underlying 200k/1k×1 (=200) = 850
+    expect(managedKb.storageMonthly$).toBeCloseTo(250, 6);
+    expect(managedKb.retrievalMonthly$).toBeCloseTo(600, 6);
+    expect(managedKb.managedSubtotal$).toBeCloseTo(850, 6);
+  });
+
+  it("total layers LLM generation + guardrails on top of the managed subtotal", () => {
+    const inputs = baseInputs();
+    const { managedKb } = calculate(inputs, priceBook);
+    expect(managedKb.total$).toBeCloseTo(
+      managedKb.managedSubtotal$ + managedKb.generationMonthly$ + managedKb.guardrailsMonthly$,
+      6
+    );
   });
 });
 

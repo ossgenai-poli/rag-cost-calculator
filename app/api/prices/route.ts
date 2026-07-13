@@ -12,7 +12,7 @@ export const revalidate = 3600;
 
 import { PricingClient, GetProductsCommand } from "@aws-sdk/client-pricing";
 import type { PriceBook, GpuInstancePrice, OpenSearchPrice } from "@/lib/types";
-import { MODEL_PRICES, OPENSEARCH_DEFAULTS, GPU_DEFAULTS } from "@/lib/model-prices";
+import { MODEL_PRICES, OPENSEARCH_DEFAULTS, GPU_DEFAULTS, MANAGED_KB_PRICING } from "@/lib/model-prices";
 import { priceBookSchema } from "@/lib/prices";
 
 const REGION = process.env.AWS_REGION || "us-east-1";
@@ -134,6 +134,7 @@ function fallbackPriceBook(): PriceBook {
     region: REGION,
     gpus: GPU_DEFAULTS,
     opensearch: OPENSEARCH_DEFAULTS,
+    managedKb: MANAGED_KB_PRICING,
     models: MODEL_PRICES,
   };
 }
@@ -172,6 +173,7 @@ export async function GET() {
     region: REGION,
     gpus,
     opensearch,
+    managedKb: MANAGED_KB_PRICING,
     models: MODEL_PRICES,
   };
 

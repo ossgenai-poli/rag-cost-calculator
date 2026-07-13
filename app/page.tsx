@@ -6,6 +6,7 @@ import { calculate, defaultInputs } from "@/lib/calc-engine";
 import {
   assumptionsToJson,
   buildShareUrl,
+  coerceInputs,
   downloadText,
   inputsToCsv,
   readInputsFromLocation,
@@ -49,7 +50,18 @@ export default function Page() {
       .catch((e) => alive && setError(String(e)));
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setSaved(JSON.parse(raw));
+      if (raw) {
+        // Upgrade each stored scenario through the schema so scenarios saved
+        // before newer fields (e.g. managedKb) existed backfill defaults instead
+        // of crashing the engine. Drop any that can't be coerced.
+        const restored: SavedScenario[] = (JSON.parse(raw) as SavedScenario[])
+          .map((s) => {
+            const inputs = coerceInputs(s.inputs);
+            return inputs ? { ...s, inputs } : null;
+          })
+          .filter((s): s is SavedScenario => s !== null);
+        setSaved(restored);
+      }
     } catch {
       /* ignore malformed storage */
     }

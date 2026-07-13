@@ -4,7 +4,7 @@
 // hardcoded price book. NEVER throws — callers always get a usable PriceBook.
 import { z } from "zod";
 import type { LoadPricesResult, PriceBook } from "./types";
-import { MODEL_PRICES, OPENSEARCH_DEFAULTS, GPU_DEFAULTS } from "./model-prices";
+import { MODEL_PRICES, OPENSEARCH_DEFAULTS, GPU_DEFAULTS, MANAGED_KB_PRICING } from "./model-prices";
 
 const FETCH_TIMEOUT_MS = 2000;
 
@@ -30,6 +30,13 @@ const openSearchPriceSchema = z.object({
   minOCU: z.number(),
 });
 
+const managedKbPriceSchema = z.object({
+  indexStoragePerGBmo: z.number(),
+  retrievePer1k: z.number(),
+  agenticRetrievePer1k: z.number(),
+  verifiedAt: z.string(),
+});
+
 const modelPriceSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -52,6 +59,8 @@ export const priceBookSchema = z.object({
   region: z.string(),
   gpus: z.array(gpuInstancePriceSchema),
   opensearch: openSearchPriceSchema,
+  // Default so a stale committed prices.json (pre-managed-KB) still parses.
+  managedKb: managedKbPriceSchema.default(MANAGED_KB_PRICING),
   models: z.array(modelPriceSchema),
 });
 
@@ -76,6 +85,7 @@ function hardcodedFallback(): PriceBook {
     region: "us-east-1",
     gpus: GPU_DEFAULTS,
     opensearch: OPENSEARCH_DEFAULTS,
+    managedKb: MANAGED_KB_PRICING,
     models: MODEL_PRICES,
   };
 }
