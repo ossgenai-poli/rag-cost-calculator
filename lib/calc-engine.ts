@@ -135,16 +135,17 @@ function buildBreakdown(
   ingestion: IngestionResult,
   vectorStore: VectorStoreResult,
   perQuery: PerQueryResult,
-  queriesPerMonth: number
+  queriesPerMonth: number,
+  generationMonthly: number,
+  generationLabel: string
 ): CostBreakdownLine[] {
-  const generationMonthly = perQuery.apiGen$ * queriesPerMonth;
   const guardrailsMonthly = (perQuery.guardrailIn$ + perQuery.guardrailOut$) * queriesPerMonth;
   const queryOtherMonthly = (perQuery.embedQuery$ + perQuery.rerank$ + perQuery.infraCrumbs$) * queriesPerMonth;
 
   return [
     { label: "Ingestion (embedding)", monthly$: ingestion.embedIngestMonthly$, category: "ingestion" },
     { label: "Vector store (OpenSearch Serverless)", monthly$: vectorStore.opensearchMonthly$, category: "vectorstore" },
-    { label: "Generation (LLM)", monthly$: generationMonthly, category: "generation" },
+    { label: generationLabel, monthly$: generationMonthly, category: "generation" },
     { label: "Guardrails", monthly$: guardrailsMonthly, category: "guardrails" },
     { label: "Query overhead (embed + rerank + infra)", monthly$: queryOtherMonthly, category: "query" },
   ];
@@ -167,14 +168,36 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
   const ingestion = computeIngestion(effectiveInputs);
   const vectorStore = computeVectorStore(effectiveInputs, ingestion.numVectors);
   const perQuery = computePerQuery(effectiveInputs);
+  // Crossover is computed first so self-hosted mode can bill the GPU fleet.
+  const crossover = computeCrossover(effectiveInputs, priceBook, perQuery);
 
   const queriesPerMonth = effectiveInputs.traffic.queriesPerMonth;
-  const queryMonthly = perQuery.perQuery$ * queriesPerMonth;
-  const totalMonthly = ingestion.embedIngestMonthly$ + vectorStore.opensearchMonthly$ + queryMonthly;
+  const selfHosted = effectiveInputs.generation.mode === "self-hosted";
 
-  const breakdown = buildBreakdown(ingestion, vectorStore, perQuery, queriesPerMonth);
+  // Generation is billed by tokens (API) OR by the provisioned GPU fleet
+  // (self-hosted). THIS is what makes the headline reflect the selected mode.
+  const apiGenMonthly = perQuery.apiGen$ * queriesPerMonth;
+  const generationMonthly = selfHosted ? crossover.selfHostedMonthly$ : apiGenMonthly;
+  const generationLabel = selfHosted
+    ? "GPU infrastructure (self-hosted LLM)"
+    : "Generation (LLM API)";
+
+  // Non-generation per-query costs (embed, rerank, guardrails, infra crumbs).
+  const nonGenQueryMonthly = (perQuery.perQuery$ - perQuery.apiGen$) * queriesPerMonth;
+  const totalMonthly =
+    ingestion.embedIngestMonthly$ + vectorStore.opensearchMonthly$ + nonGenQueryMonthly + generationMonthly;
+  // Preserved for callers/tests: the per-query variable cost × volume (API-style).
+  const queryMonthly = perQuery.perQuery$ * queriesPerMonth;
+
+  const breakdown = buildBreakdown(
+    ingestion,
+    vectorStore,
+    perQuery,
+    queriesPerMonth,
+    generationMonthly,
+    generationLabel
+  );
   const dominantLever = findDominantLever(breakdown, totalMonthly);
-  const crossover = computeCrossover(effectiveInputs, priceBook, perQuery);
 
   return {
     ingestion,

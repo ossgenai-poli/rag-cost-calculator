@@ -104,19 +104,25 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
         highlight: false,
       };
 
-  // --- GPU at break-even traffic (generation economics only) ---
+  // --- GPU at break-even traffic (the provisioned fleet's own break-even) ---
   const breakEvenQueries = tokensPerQuery > 0 ? cx.breakEvenTokens / tokensPerQuery : 0;
-  const breakEvenPer1000 = breakEvenQueries > 0 ? (cx.gpuMonthly$ / breakEvenQueries) * 1000 : null;
+  const breakEvenPer1000 =
+    breakEvenQueries > 0 ? (cx.selfHostedMonthly$ / breakEvenQueries) * 1000 : null;
+  const tokFmt = (t: number) =>
+    t >= 1e9 ? `${(t / 1e9).toFixed(1)}B` : `${(t / 1e6).toFixed(0)}M`;
   const gpuBreakEven: Scenario = hasVolume
     ? {
         id: "gpu-break-even",
         label: "GPU at break-even traffic",
-        monthly: cx.gpuMonthly$, // one box, fixed
-        per1000: breakEvenPer1000,
+        // The fleet cost is fixed; per-1k is what it would be at break-even volume.
+        monthly: cx.selfHostedMonthly$,
+        per1000: cx.breakEvenFeasible ? breakEvenPer1000 : null,
         diffPct: null,
-        difference: "Break-even",
-        note: `One box fully fed at ${cx.breakEvenTokens >= 1e9 ? (cx.breakEvenTokens / 1e9).toFixed(1) + "B" : (cx.breakEvenTokens / 1e6).toFixed(0) + "M"} tokens/mo (~${cx.equivalentQPS.toFixed(2)} QPS)`,
-        complete: true,
+        difference: cx.breakEvenFeasible ? "Break-even" : "Not achievable",
+        note: cx.breakEvenFeasible
+          ? `${cx.boxes}-instance fleet breaks even at ${tokFmt(cx.breakEvenTokens)} tokens/mo (~${cx.equivalentQPS.toFixed(2)} QPS)`
+          : `Break-even (${tokFmt(cx.breakEvenTokens)} tok/mo) exceeds the ${cx.boxes}-instance fleet's decode capacity`,
+        complete: cx.breakEvenFeasible,
         highlight: false, // informational reference, not a recommendation
       }
     : {

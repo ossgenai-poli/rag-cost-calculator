@@ -48,6 +48,11 @@ export interface DisplayMetrics {
   breakdown: BreakdownRow[];
 
   dominant: { label: string; monthly: number; share: number };
+
+  /** Selected generation strategy — self-hosted bills the GPU fleet, not tokens. */
+  selfHosted: boolean;
+  /** Monthly generation cost for the ACTIVE mode (GPU fleet or API tokens). */
+  generationMonthly: number;
 }
 
 /**
@@ -57,8 +62,15 @@ export interface DisplayMetrics {
 export function deriveDisplayMetrics(result: CalcResult, inputs: CalcInputs): DisplayMetrics {
   const queries = inputs.traffic.queriesPerMonth;
   const total = result.totalMonthly$;
+  const selfHosted = inputs.generation.mode === "self-hosted";
 
   const costPerQuery = queries > 0 ? total / queries : 0;
+
+  // Active-mode generation cost: GPU fleet (self-hosted) or API tokens.
+  const generationMonthly = selfHosted
+    ? result.crossover.selfHostedMonthly$
+    : result.perQuery.apiGen$ * queries;
+  const generationPerQuery = queries > 0 ? generationMonthly / queries : 0;
 
   const monthlyInputTokens = result.perQuery.llmInputTok * queries;
   const monthlyOutputTokens = inputs.generation.outTokens * queries;
@@ -90,7 +102,7 @@ export function deriveDisplayMetrics(result: CalcResult, inputs: CalcInputs): Di
     costPerQuery,
     costPer1000: costPerQuery * 1000,
     annualized: total * 12,
-    generationPerQuery: result.perQuery.apiGen$,
+    generationPerQuery,
     monthlyLlmTokens: result.crossover.monthlyGenTokens,
     monthlyInputTokens,
     monthlyOutputTokens,
@@ -103,5 +115,7 @@ export function deriveDisplayMetrics(result: CalcResult, inputs: CalcInputs): Di
       monthly: result.dominantLever.monthly$,
       share: result.dominantLever.share,
     },
+    selfHosted,
+    generationMonthly,
   };
 }

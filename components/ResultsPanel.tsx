@@ -72,6 +72,13 @@ export function ResultsPanel({
   const hasGenVolume = crossover.monthlyGenTokens > 0;
   const isEfficient = crossover.verdict === "self-host efficient";
 
+  // Human description of the ACTIVE scenario the headline numbers represent.
+  const genModel = priceBook.models.find((m) => m.id === inputs.generation.llmModelId);
+  const genModelName = genModel?.label?.replace(/\s*\(.*\)\s*$/, "") ?? inputs.generation.llmModelId;
+  const scenarioLabel = metrics.selfHosted
+    ? `Self-hosted ${genModelName} · ${inputs.generation.numInstances} × ${inputs.generation.gpuInstanceType}`
+    : `${activeProvider.modelApi} API · ${genModelName}`;
+
   return (
     <div className="flex flex-col gap-6">
       {/* Sticky summary strip — stays visible while editing inputs */}
@@ -103,6 +110,20 @@ export function ResultsPanel({
         </div>
       </div>
 
+      {/* Selected scenario — what the headline numbers represent */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-sm">
+        <span className="text-xs uppercase tracking-wide text-accent">Selected scenario</span>
+        <span className="font-medium text-slate-100">{scenarioLabel}</span>
+        <span className="text-slate-500">· {metrics.queries.toLocaleString()} queries/mo</span>
+        <span
+          className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-medium ${
+            metrics.selfHosted ? "bg-amber-500/15 text-amber-300" : "bg-sky-500/15 text-sky-300"
+          }`}
+        >
+          {metrics.selfHosted ? "Self-hosted GPU" : "API"}
+        </span>
+      </div>
+
       {/* Headline metrics */}
       <MetricCards metrics={metrics} crossover={crossover} />
 
@@ -127,28 +148,53 @@ export function ResultsPanel({
           </div>
         </div>
 
-        {hasGenVolume ? (
-          <div className={`panel border-l-4 p-4 ${isEfficient ? "border-emerald-500" : "border-amber-500"}`}>
-            <div className={`text-xs uppercase tracking-wide ${isEfficient ? "text-emerald-400" : "text-amber-400"}`}>
-              Utilization reality check
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-100">
-              {crossover.utilAtBreakEven <= 1
-                ? `${formatPercent(crossover.utilAtBreakEven)} fleet utilization needed to break even`
-                : `break-even needs ${crossover.utilAtBreakEven.toFixed(1)}× the fleet's capacity`}{" "}
-              — {crossover.verdict}
-            </div>
-            <div className="mt-1 text-xs text-slate-400">
-              GPU idle time below break-even utilization means the API often wins in practice,
-              even when self-hosting looks cheaper on paper.
-            </div>
-          </div>
-        ) : (
+        {!hasGenVolume ? (
           <div className="panel border-l-4 border-slate-600 p-4">
             <div className="text-xs uppercase tracking-wide text-slate-400">Utilization reality check</div>
             <div className="mt-1 text-sm text-slate-400">
-              No generation volume yet — break-even projection unavailable.
+              No generation volume yet — utilization projection unavailable.
             </div>
+          </div>
+        ) : metrics.selfHosted ? (
+          // Self-hosted: what utilization is the provisioned fleet ACTUALLY running?
+          <div
+            className={`panel border-l-4 p-4 ${
+              crossover.realizedUtil < 0.1 ? "border-amber-500" : "border-emerald-500"
+            }`}
+          >
+            <div
+              className={`text-xs uppercase tracking-wide ${
+                crossover.realizedUtil < 0.1 ? "text-amber-400" : "text-emerald-400"
+              }`}
+            >
+              GPU utilization at this workload
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-100">
+              ~{formatPercent(crossover.realizedUtil)} realized{" "}
+              <span className="text-sm font-normal text-slate-500">
+                (target {formatPercent(inputs.generation.utilTarget)})
+              </span>
+            </div>
+            <div className="mt-1 text-xs text-slate-400">
+              {crossover.realizedUtil < 0.1
+                ? `The fleet is heavily underutilized — you're paying for ${crossover.boxes} instance(s) to serve a fraction of their decode capacity. An API is usually cheaper at this load.`
+                : `Decode demand ≈ ${Math.round(metrics.monthlyOutputTokens / (730 * 3600)).toLocaleString()} output tok/s vs ${Math.round((crossover.boxes * crossover.capacity100) / (730 * 3600)).toLocaleString()} provisioned.`}
+              {crossover.throughputInstances > crossover.boxes &&
+                ` Capacity exceeded: needs ≥ ${crossover.throughputInstances} instances.`}
+            </div>
+          </div>
+        ) : (
+          // API mode: is self-hosting the same model even feasible?
+          <div className={`panel border-l-4 p-4 ${isEfficient ? "border-emerald-500" : "border-amber-500"}`}>
+            <div className={`text-xs uppercase tracking-wide ${isEfficient ? "text-emerald-400" : "text-amber-400"}`}>
+              Self-hosting reality check
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-100">
+              {crossover.breakEvenFeasible
+                ? `${formatPercent(crossover.utilAtBreakEven)} fleet utilization needed to break even`
+                : `break-even needs ${crossover.utilAtBreakEven.toFixed(1)}× the fleet's capacity — not achievable`}
+            </div>
+            <div className="mt-1 text-xs text-slate-400">{crossover.verdict}.</div>
           </div>
         )}
       </div>

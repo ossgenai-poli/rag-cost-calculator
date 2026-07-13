@@ -96,15 +96,17 @@ describe("computeCrossover", () => {
     expect(result.selfHostedMonthly$).toBeCloseTo(1 * 2190, 6);
     expect(result.apiBlendedPricePerToken).toBeCloseTo(5e-7, 12);
     expect(result.breakEvenTokens).toBeCloseTo(4_380_000_000, 3); // 1 box × 2190 / 5e-7
-    expect(result.utilAtBreakEven).toBeCloseTo(0.333333, 5); // 4.38B / (1 × 13.14B)
-    // Break-even at 33% of capacity is easily sustained -> self-hosting wins.
+    // Decode util = break-even OUTPUT tokens / fleet output capacity.
+    // outputFraction = 200/1000 = 0.2 -> (4.38B × 0.2) / (1 × 13.14B) = 0.0667.
+    expect(result.utilAtBreakEven).toBeCloseTo(0.066667, 5);
+    expect(result.breakEvenFeasible).toBe(true);
     expect(result.verdict).toBe("self-host efficient");
   });
 
-  it("golden numbers: pricey box needs >capacity to break even -> 'API wins'", () => {
+  it("golden numbers: break-even output exceeds capacity -> infeasible, 'API wins'", () => {
     const inputs = makeInputs({
       outTokens: 200,
-      gpuPricePerHr: 30, // 10x pricier/larger box than the 'API wins' case
+      gpuPricePerHr: 100, // pricey box: break-even output > box capacity
       sustainedTokPerSec: 5000,
       utilTarget: 0.5,
       queriesPerMonth: 100_000,
@@ -113,10 +115,11 @@ describe("computeCrossover", () => {
 
     const result = computeCrossover(inputs, priceBook, perQuery);
 
-    expect(result.gpuMonthly$).toBeCloseTo(21_900, 6); // 30 * 730
-    expect(result.breakEvenTokens).toBeCloseTo(43_800_000_000, 2); // 1 box × 21900 / 5e-7
-    expect(result.utilAtBreakEven).toBeCloseTo(3.333333, 5); // 43.8B / (1 × 13.14B) > 1 => unreachable
-    // Break-even needs 3.3× the box's capacity — impossible, so the API wins.
+    expect(result.gpuMonthly$).toBeCloseTo(73_000, 6); // 100 * 730
+    expect(result.breakEvenTokens).toBeCloseTo(146_000_000_000, 2); // 73000 / 5e-7
+    // (146B × 0.2) / (1 × 13.14B) = 2.222 > 1 => break-even not reachable.
+    expect(result.utilAtBreakEven).toBeCloseTo(2.222222, 4);
+    expect(result.breakEvenFeasible).toBe(false);
     expect(result.verdict).toBe("API wins in practice below sustained load");
   });
 

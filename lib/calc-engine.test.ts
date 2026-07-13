@@ -245,6 +245,42 @@ describe("guardrails and rerank toggles", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Generation mode drives the total (self-hosted GPU vs API tokens)
+// ---------------------------------------------------------------------------
+
+describe("generation mode affects the total, breakdown, and dominant lever", () => {
+  it("self-hosted bills the GPU fleet (boxes × GPU $/mo), not API tokens", () => {
+    const api = calculate(baseInputs(), priceBook);
+
+    const shInputs: CalcInputs = {
+      ...baseInputs(),
+      generation: { ...baseInputs().generation, mode: "self-hosted", numInstances: 2 },
+    };
+    const sh = calculate(shInputs, priceBook);
+
+    const gpuMonthly = 50 * 730; // fixture gpuPricePerHr 50 × 730 = 36,500
+    const generationLine = sh.breakdown.find((l) => l.category === "generation")!;
+
+    // generation line = 2 instances × GPU $/mo, labeled as GPU infra
+    expect(generationLine.monthly$).toBeCloseTo(2 * gpuMonthly, 4); // 73,000
+    expect(generationLine.label).toMatch(/GPU/i);
+    expect(sh.dominantLever.label).toMatch(/GPU/i);
+
+    // total swaps API generation for the GPU fleet; non-generation costs identical
+    const apiGenMonthly = api.perQuery.apiGen$ * baseInputs().traffic.queriesPerMonth;
+    expect(sh.totalMonthly$).toBeCloseTo(api.totalMonthly$ - apiGenMonthly + 2 * gpuMonthly, 3);
+    expect(sh.totalMonthly$).toBeGreaterThan(api.totalMonthly$); // GPU >> tokens here
+  });
+
+  it("api mode is unchanged (generation billed by tokens)", () => {
+    const api = calculate(baseInputs(), priceBook);
+    const genLine = api.breakdown.find((l) => l.category === "generation")!;
+    expect(genLine.monthly$).toBeCloseTo(api.perQuery.apiGen$ * 100000, 6);
+    expect(genLine.label).toMatch(/API/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Mode B (Bedrock Knowledge Bases) overrides
 // ---------------------------------------------------------------------------
 
