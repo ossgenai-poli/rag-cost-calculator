@@ -35,25 +35,32 @@ export interface Scenario {
 export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario[] {
   const queries = inputs.traffic.queriesPerMonth;
   const cx = result.crossover;
+  const selfHostedMode = inputs.generation.mode === "self-hosted";
 
-  const total = result.totalMonthly$;
-  const generationMonthly = result.perQuery.apiGen$ * queries;
-  const infraNonGen = total - generationMonthly; // traffic + vector store + ingestion, minus LLM
+  // Compute infra + BOTH generation options from components, INDEPENDENT of the
+  // selected mode — so "Self-built + API" is always the API cost and
+  // "Self-built + GPU" is always the fleet cost, whatever mode is active.
+  const infra =
+    result.ingestion.embedIngestMonthly$ +
+    result.vectorStore.opensearchMonthly$ +
+    (result.perQuery.perQuery$ - result.perQuery.apiGen$) * queries;
+  const apiGenMonthly = result.perQuery.apiGen$ * queries;
+  const apiTotal = infra + apiGenMonthly;
 
   const per1000 = (monthly: number) => (queries > 0 ? (monthly / queries) * 1000 : 0);
-  const diffOf = (monthly: number) => (total > 0 ? (monthly - total) / total : 0);
+  const diffOf = (monthly: number) => (apiTotal > 0 ? (monthly - apiTotal) / apiTotal : 0);
 
-  // --- Baseline: Self-built + API ---
+  // --- Baseline: Self-built + API (the API comparison uses the selected model's hosted price) ---
   const baseline: Scenario = {
     id: "self-built-api",
     label: "Self-built + API",
-    monthly: total,
-    per1000: per1000(total),
+    monthly: apiTotal,
+    per1000: per1000(apiTotal),
     diffPct: 0,
     difference: "Baseline",
-    note: "OpenSearch Serverless + Bedrock model API",
+    note: "OpenSearch Serverless + selected model via hosted API",
     complete: true,
-    highlight: true,
+    highlight: !selfHostedMode, // highlighted when it's the selected scenario
   };
 
   // --- Bedrock Knowledge Bases + API — managed pricing not verifiable ---
@@ -76,21 +83,21 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
   // One box minimum when there's volume but the crossover returned the zero result.
   const selfHostedMonthly = cx.selfHostedMonthly$ > 0 ? cx.selfHostedMonthly$ : cx.gpuMonthly$;
 
-  // --- Self-built + self-hosted GPU (full stack: infra + GPU generation) ---
-  const gpuMonthly = infraNonGen + selfHostedMonthly;
+  // --- Self-built + self-hosted GPU (full stack: infra + GPU fleet) ---
+  const gpuTotal = infra + selfHostedMonthly;
   const selfHostedGpu: Scenario = hasVolume
     ? {
         id: "self-built-gpu",
         label: "Self-built + GPU",
-        monthly: gpuMonthly,
-        per1000: per1000(gpuMonthly),
-        diffPct: diffOf(gpuMonthly),
-        difference: formatDiff(diffOf(gpuMonthly)),
+        monthly: gpuTotal,
+        per1000: per1000(gpuTotal),
+        diffPct: diffOf(gpuTotal),
+        difference: formatDiff(diffOf(gpuTotal)),
         note: `${cx.boxes} × ${inputs.generation.gpuInstanceType} at ${Math.round(
           inputs.generation.utilTarget * 100
         )}% target util`,
         complete: true,
-        highlight: true,
+        highlight: selfHostedMode, // highlighted when it's the selected scenario
       }
     : {
         id: "self-built-gpu",

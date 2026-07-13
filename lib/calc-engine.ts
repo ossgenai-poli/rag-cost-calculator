@@ -107,7 +107,9 @@ function computePerQuery(inputs: CalcInputs): PerQueryResult {
   const guardrailUnit = (guardrails.unitsPerQuery / 1000) * guardrails.unitPricePer1K;
   const guardrailIn = guardrails.inputEnabled ? guardrailUnit : 0;
   const embedQuery = (queryTokens / 1000) * chunking.embedPricePer1K;
-  const rerank = retrieval.rerankEnabled ? (retrieval.topK / 1000) * retrieval.rerankPricePer1K : 0;
+  // Reranking is billed per search REQUEST (one per query), not per token.
+  // rerankPricePer1K is $ per 1,000 rerank requests.
+  const rerank = retrieval.rerankEnabled ? retrieval.rerankPricePer1K / 1000 : 0;
   const llmInputTok = retrieval.topN * chunking.chunkSize + generation.promptOverhead + queryTokens;
   const apiGen = (llmInputTok / 1000) * generation.llmInPricePer1K + (generation.outTokens / 1000) * generation.llmOutPricePer1K;
   const guardrailOut = guardrails.outputEnabled ? guardrailUnit : 0;
@@ -140,14 +142,16 @@ function buildBreakdown(
   generationLabel: string
 ): CostBreakdownLine[] {
   const guardrailsMonthly = (perQuery.guardrailIn$ + perQuery.guardrailOut$) * queriesPerMonth;
-  const queryOtherMonthly = (perQuery.embedQuery$ + perQuery.rerank$ + perQuery.infraCrumbs$) * queriesPerMonth;
+  const rerankMonthly = perQuery.rerank$ * queriesPerMonth;
+  const queryOtherMonthly = (perQuery.embedQuery$ + perQuery.infraCrumbs$) * queriesPerMonth;
 
   return [
     { label: "Ingestion (embedding)", monthly$: ingestion.embedIngestMonthly$, category: "ingestion" },
     { label: "Vector store (OpenSearch Serverless)", monthly$: vectorStore.opensearchMonthly$, category: "vectorstore" },
+    { label: "Reranking", monthly$: rerankMonthly, category: "rerank" },
     { label: generationLabel, monthly$: generationMonthly, category: "generation" },
     { label: "Guardrails", monthly$: guardrailsMonthly, category: "guardrails" },
-    { label: "Query overhead (embed + rerank + infra)", monthly$: queryOtherMonthly, category: "query" },
+    { label: "Query overhead (query embedding + infra)", monthly$: queryOtherMonthly, category: "query" },
   ];
 }
 
@@ -308,6 +312,7 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       sustainedTokPerSec: gpu.sustainedTokPerSec,
       utilTarget: 0.7,
       numInstances: 1,
+      weightBits: 16,
     },
     traffic: {
       queriesPerMonth: 100000,

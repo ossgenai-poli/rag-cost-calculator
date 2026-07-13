@@ -125,6 +125,7 @@ export interface GenerationInputs {
   sustainedTokPerSec: number; // patched from instance (editable)
   utilTarget: number;         // (0,1] target GPU utilization
   numInstances: number;       // provisioned GPU instances; defaults to the min needed to load the model
+  weightBits: number;         // weight precision: 16 (BF16/FP16), 8 (FP8/INT8), 4 (INT4) — drives memory
 }
 
 export type TrafficMethod = "monthly" | "qps";
@@ -188,7 +189,7 @@ export interface PerQueryResult {
 export interface CostBreakdownLine {
   label: string;
   monthly$: number;
-  category: "ingestion" | "vectorstore" | "query" | "generation" | "guardrails";
+  category: "ingestion" | "vectorstore" | "query" | "rerank" | "generation" | "guardrails";
 }
 
 export interface CalcResult {

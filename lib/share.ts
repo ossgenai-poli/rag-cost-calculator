@@ -73,6 +73,7 @@ const calcInputsSchema = z.object({
     sustainedTokPerSec: num.positive(),
     utilTarget: num.min(0.01).max(1),
     numInstances: num.min(1).default(1),
+    weightBits: num.min(1).default(16),
   }),
   traffic: z.object({
     queriesPerMonth: nonNeg,

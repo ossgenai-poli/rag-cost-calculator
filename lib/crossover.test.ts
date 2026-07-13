@@ -47,7 +47,7 @@ function makeInputs(overrides: {
       gpuPricePerHr: overrides.gpuPricePerHr,
       sustainedTokPerSec: overrides.sustainedTokPerSec,
       utilTarget: overrides.utilTarget ?? 0.5,
-      numInstances: overrides.numInstances ?? 1,
+      numInstances: overrides.numInstances ?? 1, weightBits: 16,
     },
     traffic: {
       queriesPerMonth: overrides.queriesPerMonth,
