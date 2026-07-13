@@ -97,7 +97,7 @@ Anchor outputs to verify (at committed reference prices):
 |---|---|---|---|---|---|
 | C1 | Chunk/overlap affect vectors | Reset → change chunk size and overlap. | Number of vectors and ingestion cost update; overlap increases embedded-token count. | | |
 | C2 | topN drives prompt size | Reset → increase topN (chunks sent to LLM). | Input tokens/query and generation cost rise; token breakdown reflects it. | | |
-| C3 | topN ≤ topK guard | Try setting topN greater than topK. | topN is capped at topK (cannot exceed retrieved set). | | |
+| C3 | topN ≤ topK guard | Reset → leave Top K = 20, set "Chunks sent to the LLM" (topN) = 30. | **Confirmed behavior (QA-002):** the field *keeps* the entered value (30) and shows a warning that topN exceeds topK; the **calculation clamps topN to topK** — generation cost equals the topN=20 cost, and raising topN further (e.g. 1000) does not change it. Rationale: transparent to the user's intent, correct in the math (never bills an impossible retrieval config). Verified by `calc-engine.test.ts › topN ≤ topK enforcement`. | | |
 | C4 | OpenSearch min-OCU floor | Reset → shrink corpus toward 0. | Vector-store cost does **not** fall below the min-OCU floor (~$350/mo); an info note explains the floor. | | |
 | C5 | Refresh cadence amortization | Reset → change corpus refresh cadence (one-time / weekly / monthly). | Ingestion (embedding) monthly cost changes accordingly (one-time amortized over 12 mo; weekly ×4.345). | | |
 
@@ -170,6 +170,8 @@ Anchor outputs to verify (at committed reference prices):
 | K2 | Round-trip persistence | Set QPS mode, copy the share link, open it in a new tab. | QPS method + values restored (not just the monthly number). | | |
 
 ### Suite L — Sharing, saved scenarios, exports
+> Export acceptance criteria (exact CSV columns, JSON schema, Markdown sections) are in
+> **[docs/EXPORT_SPEC.md](./EXPORT_SPEC.md)** — use it to grade L5–L7.
 | ID | Test | Steps | Expected | Result | Notes |
 |---|---|---|---|---|---|
 | L1 | Copy link round-trips | Change several inputs → **Copy link** → open the URL in a fresh tab. | All inputs restored exactly; same monthly total. | | |
