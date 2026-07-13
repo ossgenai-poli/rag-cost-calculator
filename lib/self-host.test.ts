@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { modelMemoryGB, modelWeightsGB, instancesToLoad } from "./self-host";
+import { modelMemoryGB, modelWeightsGB, instancesToLoad, precisionThroughputFactor } from "./self-host";
 import { computeCrossover } from "./crossover";
 import type { CalcInputs, PerQueryResult, PriceBook } from "./types";
 
@@ -28,6 +28,12 @@ describe("self-host GPU sizing", () => {
     expect(instancesToLoad(671, 640, 8)).toBe(2); // 805 GB
     expect(instancesToLoad(671, 640, 4)).toBe(1); // 402 GB
     expect(modelMemoryGB(671, 8)).toBeCloseTo(805.2, 4);
+  });
+
+  it("lower precision also raises decode throughput", () => {
+    expect(precisionThroughputFactor(16)).toBe(1);
+    expect(precisionThroughputFactor(8)).toBeGreaterThan(1);
+    expect(precisionThroughputFactor(4)).toBeGreaterThan(precisionThroughputFactor(8));
   });
 });
 

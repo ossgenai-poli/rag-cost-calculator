@@ -100,18 +100,20 @@ Also gate: `npm run typecheck`, `npm run build`, and (for UI-affecting changes)
   not hidden in "query overhead").
 - ✅ **Precision/quantization** input (BF16/FP16=2B, FP8/INT8=1B, INT4=0.5B) → memory
   and instance count (throughput impact not yet modeled — see below).
+- ✅ **Throughput vs precision** — quantization now raises decode capacity via a
+  precision speedup factor (FP16 1.0 / FP8 1.6 / INT4 1.8), so realized util,
+  throughput-instances, and break-even reflect it.
+- ✅ **Price provenance** — Sources modal shows source badges (live / reference /
+  typed config / estimate) with a legend and per-section provenance.
 - Still open:
   - Model comparison **currently uses the same model's hosted price** (apples-to-apples
     for OSS models). Add an explicit **API comparison-model selector** + proxy
     disclosure for cross-model comparisons.
-  - **Throughput vs precision** — quantization changes memory today but not the
-    assumed decode throughput; wire that in (and reset/flag throughput on change).
   - Fuller **model-memory model** (active vs total params, explicit KV-cache from
     context length × concurrency, TP/PP overhead, safety margin) + "does not fit".
+    The current model uses a documented 1.2× overhead over precision-aware weights.
   - **Managed KB** built from its own component tree (today it honestly reuses the
     self-built infra estimate and discloses it, but should be independent).
-  - **Price provenance** per value (provider, SKU, region, effective date, source
-    badge: verified / user-entered / estimated / stale / proxy).
 
 ### P2 — product quality
 - Feature-level **guardrail** pricing (input/output separate; char-based units).
