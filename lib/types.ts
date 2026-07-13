@@ -40,6 +40,10 @@ export interface ModelPrice {
   selfHostable?: boolean;
   /** total parameter count in billions — drives GPU memory sizing for self-hosting. */
   paramsB?: number;
+  /** KV-cache bytes per token at FP16, summed over attention layers (arch-derived). */
+  kvBytesPerToken?: number;
+  /** attention family — explains the KV footprint: "MLA" | "GQA" | "hybrid". */
+  attentionType?: string;
   verifiedAt: string;        // ISO date the price was validated against vendor page
 }
 
@@ -131,6 +135,9 @@ export interface GenerationInputs {
   apiComparisonModelId: string;
   apiComparisonInPricePer1K: number;
   apiComparisonOutPricePer1K: number;
+  // Serving shape — drives KV-cache memory. KV precision follows weightBits.
+  maxContextLen: number;      // max sequence length held in KV cache (tokens)
+  maxConcurrentSeqs: number;  // concurrent sequences (batch) held in KV cache
 }
 
 export type TrafficMethod = "monthly" | "qps";

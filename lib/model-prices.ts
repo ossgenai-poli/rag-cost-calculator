@@ -76,6 +76,9 @@ export const MODEL_PRICES: ModelPrice[] = [
     kind: "llm",
     selfHostable: true,
     paramsB: 400,
+    // GQA, ~92 layers × 8 KV heads × 128 head_dim × 2 (K+V) × 2 B = 376,832 B/tok
+    kvBytesPerToken: 376832,
+    attentionType: "GQA",
     inPricePer1K: 0.0006,
     outPricePer1K: 0.0022,
     verifiedAt: VERIFIED_AT,
@@ -88,6 +91,9 @@ export const MODEL_PRICES: ModelPrice[] = [
     kind: "llm",
     selfHostable: true,
     paramsB: 550,
+    // Hybrid Mamba: ~8% attention layers (~10 of ~120) × 2 KV heads × 128 × 2 × 2 B
+    kvBytesPerToken: 10240,
+    attentionType: "hybrid (Mamba)",
     inPricePer1K: 0.001,
     outPricePer1K: 0.003,
     verifiedAt: VERIFIED_AT,
@@ -100,6 +106,9 @@ export const MODEL_PRICES: ModelPrice[] = [
     kind: "llm",
     selfHostable: true,
     paramsB: 480,
+    // Hybrid lightning: ~1/8 softmax-attention layers (~10 of ~80) × 8 KV × 128 × 2 × 2 B
+    kvBytesPerToken: 40960,
+    attentionType: "hybrid (lightning)",
     inPricePer1K: 0.0003,
     outPricePer1K: 0.0011,
     verifiedAt: VERIFIED_AT,
@@ -112,6 +121,9 @@ export const MODEL_PRICES: ModelPrice[] = [
     kind: "llm",
     selfHostable: true,
     paramsB: 720,
+    // MLA: ~61 layers × (kv_lora 512 + rope 64) × 2 B = 70,272 B/tok (compressed latent)
+    kvBytesPerToken: 70272,
+    attentionType: "MLA",
     inPricePer1K: 0.0006,
     outPricePer1K: 0.0024,
     verifiedAt: VERIFIED_AT,
@@ -124,6 +136,9 @@ export const MODEL_PRICES: ModelPrice[] = [
     kind: "llm",
     selfHostable: true,
     paramsB: 1000,
+    // MLA (DeepSeek-arch): ~61 layers × (512 + 64) × 2 B = 70,272 B/tok
+    kvBytesPerToken: 70272,
+    attentionType: "MLA",
     inPricePer1K: 0.0006,
     outPricePer1K: 0.0025,
     verifiedAt: VERIFIED_AT,

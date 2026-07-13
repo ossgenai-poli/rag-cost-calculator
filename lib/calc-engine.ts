@@ -322,6 +322,8 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       apiComparisonModelId: llmModel.id,
       apiComparisonInPricePer1K: llmModel.inPricePer1K,
       apiComparisonOutPricePer1K: llmModel.outPricePer1K,
+      maxContextLen: 8192,
+      maxConcurrentSeqs: 16,
     },
     traffic: {
       queriesPerMonth: 100000,

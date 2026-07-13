@@ -68,7 +68,14 @@ export function computeCrossover(
   // need at least this many boxes just to load it — regardless of throughput.
   const model = priceBook.models?.find((m) => m.id === generation.llmModelId);
   const gpu = priceBook.gpus?.find((g) => g.instanceType === generation.gpuInstanceType);
-  const minInstancesToLoad = instancesToLoad(model?.paramsB, gpu?.totalMemGB ?? 0, generation.weightBits);
+  const minInstancesToLoad = instancesToLoad(
+    model?.paramsB,
+    gpu?.totalMemGB ?? 0,
+    generation.weightBits,
+    model?.kvBytesPerToken,
+    generation.maxContextLen,
+    generation.maxConcurrentSeqs
+  );
 
   // The billed fleet is what the user provisioned, never below the memory floor.
   // We do NOT auto-scale it to demand — instead we report how many instances the

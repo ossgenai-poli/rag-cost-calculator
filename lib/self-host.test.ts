@@ -1,19 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { modelMemoryGB, modelWeightsGB, instancesToLoad, precisionThroughputFactor } from "./self-host";
+import { serviceMemoryGB, modelWeightsGB, kvCacheGB, instancesToLoad, precisionThroughputFactor } from "./self-host";
 import { computeCrossover } from "./crossover";
 import type { CalcInputs, PerQueryResult, PriceBook } from "./types";
 
 describe("self-host GPU sizing", () => {
   it("weights and serving memory scale with params (FP16)", () => {
     expect(modelWeightsGB(671)).toBeCloseTo(1342, 6); // 671B × 2 bytes
-    expect(modelMemoryGB(671)).toBeCloseTo(1610.4, 4); // × 1.2 overhead
+    // serving memory (no KV) = weights × 1.15 runtime reserve
+    expect(serviceMemoryGB(671)).toBeCloseTo(1543.3, 1);
   });
 
-  it("instancesToLoad is the ceil of model memory over instance HBM", () => {
-    // 671B ≈ 1610 GB; p5 = 640 GB -> 3 boxes; p5e = 1128 GB -> 2 boxes
+  it("instancesToLoad is the ceil of serving memory over instance HBM (weights-bound)", () => {
+    // 671B FP16 ≈ 1543 GB; p5 = 640 GB -> 3 boxes; p5e = 1128 GB -> 2 boxes
     expect(instancesToLoad(671, 640)).toBe(3);
     expect(instancesToLoad(671, 1128)).toBe(2);
-    expect(instancesToLoad(235, 640)).toBe(1); // 235B ≈ 564 GB fits one p5
+    expect(instancesToLoad(235, 640)).toBe(1); // 235B FP16 ≈ 540 GB fits one p5
   });
 
   it("returns 1 when params or instance memory are unknown (never lowers box count)", () => {
@@ -27,7 +28,24 @@ describe("self-host GPU sizing", () => {
     expect(instancesToLoad(671, 640, 16)).toBe(3); // 1610 GB
     expect(instancesToLoad(671, 640, 8)).toBe(2); // 805 GB
     expect(instancesToLoad(671, 640, 4)).toBe(1); // 402 GB
-    expect(modelMemoryGB(671, 8)).toBeCloseTo(805.2, 4);
+    expect(modelWeightsGB(671, 8)).toBeCloseTo(671, 6); // FP8 weights
+    expect(serviceMemoryGB(671, 8, 0, 0, 0)).toBeCloseTo(771.65, 2); // × 1.15 reserve
+  });
+
+  it("KV cache adds memory at long context — GQA needs more boxes, MLA stays weight-bound", () => {
+    // GLM-like GQA (376,832 B/tok) at 128K ctx × 16 concurrency -> ~772 GB KV.
+    const glmKv = kvCacheGB(376832, 16, 128000, 16);
+    expect(glmKv).toBeCloseTo(771.75, 1);
+    // 400B FP16 weights (800 GB) + KV pushes p5 boxes from 2 -> 3.
+    expect(instancesToLoad(400, 640, 16, 376832, 128000, 16)).toBe(3);
+    expect(instancesToLoad(400, 640, 16)).toBe(2); // weights only
+
+    // MLA (70,272 B/tok) at the same load: ~144 GB KV — a 1T model stays weight-bound.
+    expect(instancesToLoad(1000, 640, 16, 70272, 128000, 16)).toBe(4);
+    expect(instancesToLoad(1000, 640, 16)).toBe(4);
+
+    // KV precision follows the weight precision: FP8 halves the KV term.
+    expect(kvCacheGB(376832, 8, 128000, 16)).toBeCloseTo(glmKv / 2, 4);
   });
 
   it("lower precision also raises decode throughput", () => {
@@ -60,7 +78,7 @@ describe("crossover memory floor", () => {
       generation: {
         mode: "self-hosted", llmModelId: "big-oss", llmInPricePer1K: 0.00055, llmOutPricePer1K: 0.00219,
         outTokens: 200, promptOverhead: 100, gpuInstanceType: "p5.48xlarge", gpuPricePerHr: 55.04,
-        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0,
+        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16,
       },
       traffic: { queriesPerMonth: 1000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
       queryTokens: 50,

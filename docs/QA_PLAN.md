@@ -108,10 +108,12 @@ Also gate: `npm run typecheck`, `npm run build`, and (for UI-affecting changes)
 - ✅ **API comparison-model selector** — self-hosted mode can price the API rows
   against a *different* model (default = same model, apples-to-apples), with a
   proxy-comparison warning when they differ.
+- ✅ **Architecture-aware KV-cache memory model** — per-model `kvBytesPerToken`
+  (derived from real MLA/GQA/hybrid architectures) + `maxContextLen` and
+  `maxConcurrentSeqs` inputs. Memory = (weights + KV) × 1.15 reserve; KV precision
+  follows weight precision. GQA models (GLM) now correctly need far more memory
+  per token than MLA models (DeepSeek/Kimi) despite fewer params.
 - Still open (pending data / to discuss):
-  - Fuller **model-memory model** (active vs total params, explicit KV-cache from
-    context length × concurrency, TP/PP overhead, safety margin) + "does not fit".
-    The current model uses a documented 1.2× overhead over precision-aware weights.
   - **Managed KB** built from its own component tree (today it honestly reuses the
     self-built infra estimate and discloses it, but should be independent).
 
