@@ -55,6 +55,57 @@ export const MODEL_PRICES: ModelPrice[] = [
     outPricePer1K: 0.0054,
     verifiedAt: VERIFIED_AT,
   },
+  // ---- Open-weight, self-hostable LLMs (also priced via OSS serving APIs) ----
+  // inPrice/outPrice are representative hosted (serving-provider) prices used as
+  // the API baseline in the crossover; paramsB drives self-host GPU sizing.
+  {
+    id: "deepseek-r1-oss",
+    label: "DeepSeek-R1 671B (open weights)",
+    provider: "oss",
+    bedrock: false,
+    kind: "llm",
+    selfHostable: true,
+    paramsB: 671,
+    inPricePer1K: 0.00055,
+    outPricePer1K: 0.00219,
+    verifiedAt: VERIFIED_AT,
+  },
+  {
+    id: "llama-3.1-405b-oss",
+    label: "Llama 3.1 405B (open weights)",
+    provider: "oss",
+    bedrock: false,
+    kind: "llm",
+    selfHostable: true,
+    paramsB: 405,
+    inPricePer1K: 0.0008,
+    outPricePer1K: 0.0008,
+    verifiedAt: VERIFIED_AT,
+  },
+  {
+    id: "glm-4.5-oss",
+    label: "GLM-4.5 355B (open weights)",
+    provider: "oss",
+    bedrock: false,
+    kind: "llm",
+    selfHostable: true,
+    paramsB: 355,
+    inPricePer1K: 0.0006,
+    outPricePer1K: 0.0022,
+    verifiedAt: VERIFIED_AT,
+  },
+  {
+    id: "qwen3-235b-oss",
+    label: "Qwen3 235B (open weights)",
+    provider: "oss",
+    bedrock: false,
+    kind: "llm",
+    selfHostable: true,
+    paramsB: 235,
+    inPricePer1K: 0.0002,
+    outPricePer1K: 0.0006,
+    verifiedAt: VERIFIED_AT,
+  },
   // ---- non-Bedrock LLMs (direct vendor API, egress applies) ----
   {
     id: "gemini-3.1-pro",
@@ -147,8 +198,8 @@ export const OPENSEARCH_DEFAULTS: OpenSearchPrice = {
 // rough estimate for a 70B-class model and is never available from the
 // Pricing API, so it's always merged in from here even on a "live" fetch.
 export const GPU_DEFAULTS: GpuInstancePrice[] = [
-  { instanceType: "p5.48xlarge", gpu: "8x H100", pricePerHr: 55.04, sustainedTokPerSec: 2600 },
-  { instanceType: "p5e.48xlarge", gpu: "8x H200", pricePerHr: 47.76, sustainedTokPerSec: 3000 },
-  { instanceType: "p4d.24xlarge", gpu: "8x A100", pricePerHr: 32.77, sustainedTokPerSec: 1500 },
-  { instanceType: "g5.12xlarge", gpu: "4x A10G", pricePerHr: 5.672, sustainedTokPerSec: 350 },
+  { instanceType: "p5.48xlarge", gpu: "8x H100 80GB", pricePerHr: 55.04, sustainedTokPerSec: 2600, totalMemGB: 640 },
+  { instanceType: "p5e.48xlarge", gpu: "8x H200 141GB", pricePerHr: 47.76, sustainedTokPerSec: 3000, totalMemGB: 1128 },
+  { instanceType: "p4d.24xlarge", gpu: "8x A100 40GB", pricePerHr: 32.77, sustainedTokPerSec: 1500, totalMemGB: 320 },
+  { instanceType: "g5.12xlarge", gpu: "4x A10G 24GB", pricePerHr: 5.672, sustainedTokPerSec: 350, totalMemGB: 96 },
 ];

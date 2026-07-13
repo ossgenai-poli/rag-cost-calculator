@@ -3,6 +3,7 @@
 // generation on dedicated GPU instances, and reports the token volume at
 // which self-hosting a box starts paying for itself.
 import type { CalcInputs, PriceBook, PerQueryResult, CrossoverResult } from "./types";
+import { instancesToLoad } from "./self-host";
 
 const HOURS_PER_MONTH = 730;
 const SECONDS_PER_MONTH = HOURS_PER_MONTH * 3600; // 2,628,000 — unified with calc-engine
@@ -33,7 +34,7 @@ function zeroResult(
 
 export function computeCrossover(
   inputs: CalcInputs,
-  _priceBook: PriceBook,
+  priceBook: PriceBook,
   perQuery: PerQueryResult
 ): CrossoverResult {
   const { generation, traffic } = inputs;
@@ -54,7 +55,13 @@ export function computeCrossover(
   const utilTarget = generation.utilTarget > 0 ? generation.utilTarget : 1;
   const capacityEff = capacity100 * utilTarget;
 
-  const boxes = Math.max(1, Math.ceil(monthlyGenTokens / capacityEff));
+  // Memory floor: an open-weight model must fit in aggregate GPU HBM, so you
+  // need at least this many boxes just to load it — regardless of throughput.
+  const model = priceBook.models?.find((m) => m.id === generation.llmModelId);
+  const gpu = priceBook.gpus?.find((g) => g.instanceType === generation.gpuInstanceType);
+  const memInstances = instancesToLoad(model?.paramsB, gpu?.totalMemGB ?? 0);
+
+  const boxes = Math.max(1, Math.ceil(monthlyGenTokens / capacityEff), memInstances);
   const selfHostedMonthly$ = boxes * gpuMonthly$;
 
   const apiMonthly$ = apiBlendedPricePerToken * monthlyGenTokens;
@@ -73,7 +80,7 @@ export function computeCrossover(
     for (let i = 0; i < CURVE_POINTS; i++) {
       const tokens = step * i;
       const api$ = apiBlendedPricePerToken * tokens;
-      const stepBoxes = Math.max(1, Math.ceil(tokens / capacityEff));
+      const stepBoxes = Math.max(1, Math.ceil(tokens / capacityEff), memInstances);
       const selfHosted$ = stepBoxes * gpuMonthly$;
       curve.push({ tokens, api$, selfHosted$ });
     }
