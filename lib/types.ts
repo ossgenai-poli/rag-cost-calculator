@@ -125,6 +125,14 @@ export interface GuardrailInputs {
   unitsPerQuery: number;      // guardrail units charged per query text (approx)
 }
 
+/** GPU purchasing model — applies a commitment discount to the on-demand rate. */
+export type GpuPricingModel =
+  | "on-demand"
+  | "reserved-1yr"
+  | "reserved-3yr"
+  | "savings-1yr"
+  | "spot";
+
 export interface GenerationInputs {
   mode: GenerationMode;       // api | self-hosted
   llmModelId: string;         // -> ModelPrice (kind=llm)
@@ -134,7 +142,9 @@ export interface GenerationInputs {
   promptOverhead: number;     // system/prompt tokens per query
   // self-hosted GPU params:
   gpuInstanceType: string;    // -> GpuInstancePrice
-  gpuPricePerHr: number;      // patched from instance
+  gpuPricePerHr: number;      // ON-DEMAND price, patched from instance
+  gpuPricingModel: GpuPricingModel; // commitment model → discount off on-demand
+  gpuUptimeHoursPerMonth: number;   // hours/mo the fleet runs (730 = always-on)
   sustainedTokPerSec: number; // patched from instance (editable)
   utilTarget: number;         // (0,1] target GPU utilization
   numInstances: number;       // provisioned GPU instances; defaults to the min needed to load the model

@@ -3,7 +3,7 @@
 // generation on dedicated GPU instances, and reports the token volume at
 // which self-hosting a box starts paying for itself.
 import type { CalcInputs, PriceBook, PerQueryResult, CrossoverResult } from "./types";
-import { instancesToLoad, precisionThroughputFactor } from "./self-host";
+import { effectiveGpuHourly, instancesToLoad, precisionThroughputFactor } from "./self-host";
 
 const HOURS_PER_MONTH = 730;
 const SECONDS_PER_MONTH = HOURS_PER_MONTH * 3600; // 2,628,000 — unified with calc-engine
@@ -47,11 +47,16 @@ export function computeCrossover(
   const tokensPerQuery = llmInputTok + outTokens;
 
   const monthlyGenTokens = traffic.queriesPerMonth * tokensPerQuery;
-  const gpuMonthly$ = generation.gpuPricePerHr * HOURS_PER_MONTH;
+  // Fleet cost reflects the commitment model (discount off on-demand) and how many
+  // hours/month the fleet actually runs. Default uptime (730) = always-on.
+  const uptimeHours = generation.gpuUptimeHoursPerMonth > 0 ? generation.gpuUptimeHoursPerMonth : HOURS_PER_MONTH;
+  const effectiveHourly = effectiveGpuHourly(generation.gpuPricePerHr, generation.gpuPricingModel);
+  const gpuMonthly$ = effectiveHourly * uptimeHours;
   // Decode capacity (output tokens/mo), scaled by the precision speedup — lower
-  // precision decodes faster, so it raises capacity as well as lowering memory.
+  // precision decodes faster, so it raises capacity as well as lowering memory. A
+  // fleet that only runs part of the month can process proportionally fewer tokens.
   const capacity100 =
-    generation.sustainedTokPerSec * precisionThroughputFactor(generation.weightBits) * SECONDS_PER_MONTH;
+    generation.sustainedTokPerSec * precisionThroughputFactor(generation.weightBits) * (uptimeHours * 3600);
   // The API baseline for the crossover uses the COMPARISON model (defaults to the
   // selected model — same-model, apples-to-apples).
   const apiBlendedPricePerToken =

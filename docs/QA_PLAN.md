@@ -128,7 +128,12 @@ Also gate: `npm run typecheck`, `npm run build`, and (for UI-affecting changes)
 - Feature-level **guardrail** pricing (input/output separate; char-based units).
 - Crossover **X-axis selector** (queries / QPS / input-tok / output-tok) and a
   "no feasible crossover" state; per-point tooltip with instances + utilization.
-- **Reserved / Spot / Savings Plan** GPU pricing + uptime schedule.
+- ✅ **GPU commitment pricing + uptime** — a purchasing-model selector (On-demand /
+  RI 1yr / RI 3yr / Savings / Spot) applies a planning-estimate discount to the
+  on-demand $/hr, and a fleet-uptime field (hrs/mo, 730 = always-on) scales BOTH
+  cost and decode capacity. Flows through `crossover.gpuMonthly$` → the self-hosted
+  headline, scenarios, and break-even. On-demand + 730h preserves all golden
+  numbers. Discounts are labelled estimates (Spot fluctuates / is interruptible).
 - Networking / logging / monitoring / production-overhead line items.
 - Peak-vs-average workload modeling; exportable assumptions + calc report.
 

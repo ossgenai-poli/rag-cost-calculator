@@ -70,6 +70,10 @@ const calcInputsSchema = z.object({
     promptOverhead: nonNeg,
     gpuInstanceType: z.string(),
     gpuPricePerHr: nonNeg,
+    gpuPricingModel: z
+      .enum(["on-demand", "reserved-1yr", "reserved-3yr", "savings-1yr", "spot"])
+      .default("on-demand"),
+    gpuUptimeHoursPerMonth: num.positive().default(730),
     sustainedTokPerSec: num.positive(),
     utilTarget: num.min(0.01).max(1),
     numInstances: num.min(1).default(1),

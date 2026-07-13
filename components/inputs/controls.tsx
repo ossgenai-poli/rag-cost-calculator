@@ -199,22 +199,24 @@ export function SegmentedToggle<T extends string>(props: {
   value: T;
   options: SelectOption<T>[];
   onChange: (v: T) => void;
+  disabled?: boolean;
 }) {
-  const { label, value, options, onChange } = props;
+  const { label, value, options, onChange, disabled } = props;
   return (
-    <div>
+    <div className={disabled ? "opacity-40" : undefined}>
       {label && <span className="text-xs text-slate-400 block mb-1">{label}</span>}
       <div className="inline-flex rounded-md border border-slate-700 bg-slate-900/60 p-0.5">
         {options.map((o) => (
           <button
             key={o.value}
             type="button"
+            disabled={disabled}
             onClick={() => onChange(o.value)}
             className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
               value === o.value
                 ? "bg-accent text-slate-950"
                 : "text-slate-400 hover:text-slate-200"
-            }`}
+            } ${disabled ? "cursor-not-allowed" : ""}`}
           >
             {o.label}
           </button>

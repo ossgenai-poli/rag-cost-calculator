@@ -49,6 +49,7 @@ function baseInputs(): CalcInputs {
       promptOverhead: 300,
       gpuInstanceType: "p5.48xlarge",
       gpuPricePerHr: 50,
+      gpuPricingModel: "on-demand", gpuUptimeHoursPerMonth: 730,
       sustainedTokPerSec: 2000,
       utilTarget: 0.7,
       numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16,
