@@ -52,8 +52,10 @@ export function computeCrossover(
   // precision decodes faster, so it raises capacity as well as lowering memory.
   const capacity100 =
     generation.sustainedTokPerSec * precisionThroughputFactor(generation.weightBits) * SECONDS_PER_MONTH;
+  // The API baseline for the crossover uses the COMPARISON model (defaults to the
+  // selected model — same-model, apples-to-apples).
   const apiBlendedPricePerToken =
-    tokensPerQuery > 0 ? perQuery.apiGen$ / tokensPerQuery : 0;
+    tokensPerQuery > 0 ? perQuery.apiComparisonGen$ / tokensPerQuery : 0;
 
   if (apiBlendedPricePerToken <= 0 || capacity100 <= 0) {
     return zeroResult(monthlyGenTokens, gpuMonthly$, capacity100);

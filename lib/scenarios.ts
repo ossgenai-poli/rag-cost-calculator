@@ -44,7 +44,8 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
     result.ingestion.embedIngestMonthly$ +
     result.vectorStore.opensearchMonthly$ +
     (result.perQuery.perQuery$ - result.perQuery.apiGen$) * queries;
-  const apiGenMonthly = result.perQuery.apiGen$ * queries;
+  // "Self-built + API" uses the comparison model (defaults to the selected model).
+  const apiGenMonthly = result.perQuery.apiComparisonGen$ * queries;
   const apiTotal = infra + apiGenMonthly;
 
   const per1000 = (monthly: number) => (queries > 0 ? (monthly / queries) * 1000 : 0);

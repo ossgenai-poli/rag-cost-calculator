@@ -60,7 +60,7 @@ describe("crossover memory floor", () => {
       generation: {
         mode: "self-hosted", llmModelId: "big-oss", llmInPricePer1K: 0.00055, llmOutPricePer1K: 0.00219,
         outTokens: 200, promptOverhead: 100, gpuInstanceType: "p5.48xlarge", gpuPricePerHr: 55.04,
-        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, weightBits: 16,
+        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0,
       },
       traffic: { queriesPerMonth: 1000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
       queryTokens: 50,
@@ -68,7 +68,7 @@ describe("crossover memory floor", () => {
   }
 
   const perQuery: PerQueryResult = {
-    guardrailIn$: 0, embedQuery$: 0, rerank$: 0, llmInputTok: 800, apiGen$: 0.0005, guardrailOut$: 0, infraCrumbs$: 0, perQuery$: 0.0005,
+    guardrailIn$: 0, embedQuery$: 0, rerank$: 0, llmInputTok: 800, apiGen$: 0.0005, apiComparisonGen$: 0.0005, guardrailOut$: 0, infraCrumbs$: 0, perQuery$: 0.0005,
   };
 
   it("forces at least the memory-required boxes even at trivial traffic", () => {
