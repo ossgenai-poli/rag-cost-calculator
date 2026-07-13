@@ -187,9 +187,10 @@ function Formulas() {
   );
 }
 
-function SourceBadge({ kind }: { kind: "live" | "reference" | "config" | "estimate" }) {
+function SourceBadge({ kind }: { kind: "live" | "published" | "reference" | "config" | "estimate" }) {
   const map = {
     live: ["bg-emerald-500/15 text-emerald-300", "live"],
+    published: ["bg-teal-500/15 text-teal-300", "AWS published"],
     reference: ["bg-amber-500/15 text-amber-300", "reference"],
     config: ["bg-sky-500/15 text-sky-300", "typed config"],
     estimate: ["bg-slate-600/40 text-slate-300", "estimate"],
@@ -209,6 +210,7 @@ function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
       {/* Badge legend */}
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
         Provenance: <SourceBadge kind="live" /> live AWS Price List API ·{" "}
+        <SourceBadge kind="published" /> AWS published rate card ·{" "}
         <SourceBadge kind="reference" /> committed fallback ·{" "}
         <SourceBadge kind="config" /> typed model config ·{" "}
         <SourceBadge kind="estimate" /> rough estimate
@@ -230,7 +232,7 @@ function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
       </div>
       <div>
         <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
-          Bedrock Managed Knowledge Bases <SourceBadge kind="config" />
+          Bedrock Managed Knowledge Bases <SourceBadge kind="published" />
         </div>
         <div className="text-slate-300">
           Storage ${priceBook.managedKb.indexStoragePerGBmo}/GB-mo · Retrieve ${priceBook.managedKb.retrievePer1k}/1K

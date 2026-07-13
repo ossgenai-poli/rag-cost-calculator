@@ -103,6 +103,9 @@ describe("computeCrossover", () => {
     expect(result.utilAtBreakEven).toBeCloseTo(0.066667, 5);
     expect(result.breakEvenFeasible).toBe(true);
     expect(result.verdict).toBe("self-host efficient");
+    // Axis-conversion fields let the chart map the token axis to queries/QPS/in/out.
+    expect(result.tokensPerQuery).toBe(1000); // 800 input + 200 output
+    expect(result.outputFraction).toBeCloseTo(0.2, 6); // 200 / 1000
   });
 
   it("golden numbers: break-even output exceeds capacity -> infeasible, 'API wins'", () => {
