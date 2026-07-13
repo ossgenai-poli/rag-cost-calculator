@@ -46,7 +46,7 @@ describe("crossover memory floor", () => {
       generation: {
         mode: "self-hosted", llmModelId: "big-oss", llmInPricePer1K: 0.00055, llmOutPricePer1K: 0.00219,
         outTokens: 200, promptOverhead: 100, gpuInstanceType: "p5.48xlarge", gpuPricePerHr: 55.04,
-        sustainedTokPerSec: 2600, utilTarget: 0.7,
+        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1,
       },
       traffic: { queriesPerMonth: 1000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
       queryTokens: 50,

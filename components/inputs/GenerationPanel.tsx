@@ -1,6 +1,6 @@
 "use client";
 
-import type { GenerationInputs, GenerationMode, ModelPrice, PriceBook } from "@/lib/types";
+import type { GenerationInputs, GenerationMode, GpuInstancePrice, ModelPrice, PriceBook } from "@/lib/types";
 import { instancesToLoad, modelMemoryGB } from "@/lib/self-host";
 import {
   NumberField,
@@ -18,59 +18,54 @@ export function GenerationPanel(props: {
 }) {
   const { generation, onChange, priceBook, advanced = true } = props;
   const llmModels = priceBook.models.filter((m) => m.kind === "llm");
-  // API mode lists hosted/proprietary models; self-hosted lists only open-weight
-  // models that can actually run on your own GPUs.
+  // API mode = Bedrock-hosted models; self-hosted = open-weight models only.
   const apiModels = llmModels.filter((m) => !m.selfHostable);
   const selfHostModels = llmModels.filter((m) => m.selfHostable);
-  const bedrockModels = apiModels.filter((m) => m.bedrock);
-  const nonBedrockModels = apiModels.filter((m) => !m.bedrock);
 
   const selectedModel = llmModels.find((m) => m.id === generation.llmModelId);
   const selfHosted = generation.mode === "self-hosted";
   const gpu = priceBook.gpus.find((g) => g.instanceType === generation.gpuInstanceType);
 
-  function patchModel(model: ModelPrice | undefined, extra?: Partial<GenerationInputs>) {
-    if (!model) {
-      if (extra) onChange({ ...generation, ...extra });
-      return;
+  // Minimum instances to hold the selected model's weights on the selected GPU.
+  const floorFor = (model: ModelPrice | undefined, g: GpuInstancePrice | undefined) =>
+    instancesToLoad(model?.paramsB, g?.totalMemGB ?? 0);
+
+  function patchModel(model: ModelPrice | undefined, g: GpuInstancePrice | undefined, extra?: Partial<GenerationInputs>) {
+    const next: GenerationInputs = { ...generation, ...extra };
+    if (model) {
+      next.llmModelId = model.id;
+      next.llmInPricePer1K = model.inPricePer1K;
+      next.llmOutPricePer1K = model.outPricePer1K;
     }
-    onChange({
-      ...generation,
-      ...extra,
-      llmModelId: model.id,
-      llmInPricePer1K: model.inPricePer1K,
-      llmOutPricePer1K: model.outPricePer1K,
-    });
+    // Reset the fleet to the minimum needed to load the (new) model on the GPU.
+    if ((extra?.mode ?? generation.mode) === "self-hosted") {
+      next.numInstances = floorFor(model ?? selectedModel, g ?? gpu);
+    }
+    onChange(next);
   }
 
   function selectLlmModel(id: string) {
-    patchModel(llmModels.find((m) => m.id === id));
+    patchModel(llmModels.find((m) => m.id === id), gpu);
   }
 
-  // Switching mode narrows the model list — auto-pick a valid model if the
-  // current one isn't available in the new mode.
   function setMode(mode: GenerationMode) {
     const validList = mode === "self-hosted" ? selfHostModels : apiModels;
     const stillValid = validList.some((m) => m.id === generation.llmModelId);
-    patchModel(stillValid ? undefined : validList[0], { mode });
+    patchModel(stillValid ? selectedModel : validList[0], gpu, { mode });
   }
 
   function selectGpu(instanceType: string) {
     const g = priceBook.gpus.find((x) => x.instanceType === instanceType);
     if (!g) return;
-    onChange({
-      ...generation,
+    patchModel(selectedModel, g, {
       gpuInstanceType: g.instanceType,
       gpuPricePerHr: g.pricePerHr,
       sustainedTokPerSec: g.sustainedTokPerSec,
     });
   }
 
-  // Memory-based GPU count to load the selected open-weight model.
   const memInstances =
-    selfHosted && selectedModel?.paramsB && gpu
-      ? instancesToLoad(selectedModel.paramsB, gpu.totalMemGB)
-      : null;
+    selfHosted && selectedModel?.paramsB && gpu ? floorFor(selectedModel, gpu) : null;
   const modelMem = selectedModel?.paramsB ? modelMemoryGB(selectedModel.paramsB) : 0;
 
   return (
@@ -79,34 +74,23 @@ export function GenerationPanel(props: {
         label="Mode"
         value={generation.mode}
         options={[
-          { value: "api", label: "API" },
+          { value: "api", label: "API (Bedrock)" },
           { value: "self-hosted", label: "Self-hosted GPU" },
         ]}
         onChange={setMode}
       />
 
-      {selfHosted ? (
-        <SelectField
-          label="LLM (open weights)"
-          hint="Self-hosted runs open-weight models only — proprietary APIs (Claude, Gemini, GPT) can't be self-hosted."
-          value={generation.llmModelId}
-          options={selfHostModels.map((m) => ({ value: m.id, label: m.label }))}
-          onChange={selectLlmModel}
-        />
-      ) : (
-        <SelectField
-          label="LLM"
-          value={generation.llmModelId}
-          groups={[
-            { label: "Bedrock", options: bedrockModels.map((m) => ({ value: m.id, label: m.label })) },
-            { label: "Non-Bedrock", options: nonBedrockModels.map((m) => ({ value: m.id, label: m.label })) },
-          ]}
-          onChange={selectLlmModel}
-        />
-      )}
-      {!selfHosted && selectedModel && !selectedModel.bedrock && (
-        <p className="text-xs text-amber-400">⚠ non-Bedrock: data egress / no VPC-private inference</p>
-      )}
+      <SelectField
+        label={selfHosted ? "LLM (open weights)" : "LLM (Bedrock)"}
+        hint={
+          selfHosted
+            ? "Self-hosted runs open-weight models only — proprietary APIs can't be self-hosted."
+            : undefined
+        }
+        value={generation.llmModelId}
+        options={(selfHosted ? selfHostModels : apiModels).map((m) => ({ value: m.id, label: m.label }))}
+        onChange={selectLlmModel}
+      />
 
       <NumberField
         label="System prompt & formatting"
@@ -133,21 +117,32 @@ export function GenerationPanel(props: {
           onChange={selectGpu}
         />
 
-        {/* Memory-based instance count to load the model */}
         {selfHosted && memInstances && gpu && selectedModel && (
           <div className="rounded-md border border-accent/30 bg-accent/5 p-2.5 text-xs">
             <div className="font-medium text-slate-200">
-              To load the weights: {memInstances} × {gpu.instanceType}
-              <span className="ml-1 font-normal text-slate-400">
-                = {memInstances * gpu.totalMemGB} GB HBM
-              </span>
+              Minimum to load: {memInstances} × {gpu.instanceType}
+              <span className="ml-1 font-normal text-slate-400">= {memInstances * gpu.totalMemGB} GB HBM</span>
             </div>
             <div className="mt-0.5 text-slate-400">
               {selectedModel.paramsB}B params ≈ {Math.round(modelMem)} GB in FP16 (weights + overhead) vs{" "}
-              {gpu.totalMemGB} GB per instance. Throughput may push this higher at high volume.
+              {gpu.totalMemGB} GB per instance.
             </div>
           </div>
         )}
+
+        <NumberField
+          label="Number of instances"
+          hint={
+            memInstances
+              ? `Defaults to ${memInstances} (minimum to load the model). Increase for more throughput headroom.`
+              : "GPU instances provisioned for generation."
+          }
+          value={generation.numInstances}
+          min={memInstances ?? 1}
+          step={1}
+          disabled={!selfHosted}
+          onChange={(v) => onChange({ ...generation, numInstances: v })}
+        />
 
         <NumberField
           label="GPU price"
