@@ -45,6 +45,7 @@ function makeInputs(overrides: {
       promptOverhead: 100,
       gpuInstanceType: "test.gpu",
       gpuPricePerHr: overrides.gpuPricePerHr,
+      gpuPricingModel: "on-demand", gpuUptimeHoursPerMonth: 730,
       sustainedTokPerSec: overrides.sustainedTokPerSec,
       utilTarget: overrides.utilTarget ?? 0.5,
       numInstances: overrides.numInstances ?? 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16,
@@ -106,6 +107,30 @@ describe("computeCrossover", () => {
     // Axis-conversion fields let the chart map the token axis to queries/QPS/in/out.
     expect(result.tokensPerQuery).toBe(1000); // 800 input + 200 output
     expect(result.outputFraction).toBeCloseTo(0.2, 6); // 200 / 1000
+  });
+
+  it("commitment discount + uptime scale the fleet cost (and uptime scales capacity)", () => {
+    const onDemand = makeInputs({
+      outTokens: 200,
+      gpuPricePerHr: 100,
+      sustainedTokPerSec: 5000,
+      utilTarget: 0.5,
+      queriesPerMonth: 100_000,
+    });
+    const base = computeCrossover(onDemand, priceBook, makePerQuery(800, 0.0005));
+    expect(base.gpuMonthly$).toBeCloseTo(73_000, 6); // 100 × 730, no discount
+
+    // Reserved 1-yr = 40% off → 0.6 × on-demand. Capacity unchanged (still 730h).
+    const reserved = { ...onDemand, generation: { ...onDemand.generation, gpuPricingModel: "reserved-1yr" as const } };
+    const r = computeCrossover(reserved, priceBook, makePerQuery(800, 0.0005));
+    expect(r.gpuMonthly$).toBeCloseTo(43_800, 6); // 100 × 0.6 × 730
+    expect(r.capacity100).toBeCloseTo(base.capacity100, 3);
+
+    // Half-month uptime (365h) halves BOTH cost and decode capacity.
+    const partTime = { ...onDemand, generation: { ...onDemand.generation, gpuUptimeHoursPerMonth: 365 } };
+    const p = computeCrossover(partTime, priceBook, makePerQuery(800, 0.0005));
+    expect(p.gpuMonthly$).toBeCloseTo(36_500, 6); // 100 × 365
+    expect(p.capacity100).toBeCloseTo(base.capacity100 / 2, 3);
   });
 
   it("golden numbers: break-even output exceeds capacity -> infeasible, 'API wins'", () => {

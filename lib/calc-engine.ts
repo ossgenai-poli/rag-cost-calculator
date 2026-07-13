@@ -352,6 +352,8 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       promptOverhead: 300,
       gpuInstanceType: gpu.instanceType,
       gpuPricePerHr: gpu.pricePerHr,
+      gpuPricingModel: "on-demand",
+      gpuUptimeHoursPerMonth: 730,
       sustainedTokPerSec: gpu.sustainedTokPerSec,
       utilTarget: 0.7,
       numInstances: 1,

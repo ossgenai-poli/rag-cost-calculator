@@ -5,6 +5,28 @@
 // the hard floor on how many GPU boxes you need, independent of throughput.
 // ============================================================================
 
+import type { GpuPricingModel } from "./types";
+
+/**
+ * Commitment discount off the on-demand GPU rate, by purchasing model. These are
+ * typical mid-range PLANNING factors, not quotes: Reserved / Savings Plans vary
+ * with term and payment option, and Spot fluctuates and is interruptible. Editing
+ * the on-demand $/hr directly lets you plug in a real quote.
+ */
+export const GPU_COMMITMENT_DISCOUNT: Record<GpuPricingModel, number> = {
+  "on-demand": 0,
+  "reserved-1yr": 0.4,
+  "reserved-3yr": 0.6,
+  "savings-1yr": 0.4,
+  spot: 0.65,
+};
+
+/** Effective GPU $/hr after applying the commitment model's discount. */
+export function effectiveGpuHourly(onDemandHourly: number, model: GpuPricingModel): number {
+  const discount = GPU_COMMITMENT_DISCOUNT[model] ?? 0;
+  return onDemandHourly * (1 - discount);
+}
+
 /** FP16 weights: 2 bytes/param. 1e9 params × 2 bytes = 2 GB per billion params. */
 export const BYTES_PER_PARAM_FP16 = 2;
 /** Runtime reserve over (weights + KV): activations, buffers, fragmentation, margin. */

@@ -1,7 +1,7 @@
 "use client";
 
-import type { GenerationInputs, GenerationMode, GpuInstancePrice, ModelPrice, PriceBook } from "@/lib/types";
-import { instancesToLoad, modelWeightsGB, kvCacheGB } from "@/lib/self-host";
+import type { GenerationInputs, GenerationMode, GpuInstancePrice, GpuPricingModel, ModelPrice, PriceBook } from "@/lib/types";
+import { effectiveGpuHourly, GPU_COMMITMENT_DISCOUNT, instancesToLoad, modelWeightsGB, kvCacheGB } from "@/lib/self-host";
 import {
   NumberField,
   SegmentedToggle,
@@ -256,13 +256,55 @@ export function GenerationPanel(props: {
         />
 
         <NumberField
-          label="GPU price"
+          label="On-demand GPU price"
           suffix="$/hr"
           value={generation.gpuPricePerHr}
           min={0}
           step={0.01}
           disabled={!selfHosted}
           onChange={(v) => onChange({ ...generation, gpuPricePerHr: v })}
+        />
+
+        <SegmentedToggle<GpuPricingModel>
+          label="Purchasing model"
+          value={generation.gpuPricingModel}
+          disabled={!selfHosted}
+          options={[
+            { value: "on-demand", label: "On-demand" },
+            { value: "reserved-1yr", label: "RI 1yr" },
+            { value: "reserved-3yr", label: "RI 3yr" },
+            { value: "savings-1yr", label: "Savings" },
+            { value: "spot", label: "Spot" },
+          ]}
+          onChange={(v) => onChange({ ...generation, gpuPricingModel: v })}
+        />
+        {selfHosted && (
+          <div className="rounded-md border border-slate-800 bg-slate-900/40 p-2 text-xs text-slate-400">
+            Effective rate{" "}
+            <span className="tabular-nums text-slate-200">
+              ${effectiveGpuHourly(generation.gpuPricePerHr, generation.gpuPricingModel).toFixed(2)}/hr
+            </span>{" "}
+            {generation.gpuPricingModel !== "on-demand" && (
+              <span className="text-emerald-400">
+                (−{Math.round(GPU_COMMITMENT_DISCOUNT[generation.gpuPricingModel] * 100)}% vs on-demand)
+              </span>
+            )}
+            <div className="mt-0.5 text-[11px] text-slate-500">
+              Commitment discounts are planning estimates; Spot is interruptible and its price
+              fluctuates. Edit the on-demand rate to use a real quote.
+            </div>
+          </div>
+        )}
+
+        <NumberField
+          label="Fleet uptime"
+          suffix="hrs/mo"
+          hint="Hours per month the fleet runs — 730 is always-on. Fewer hours lowers cost and decode capacity proportionally (e.g. business-hours or batch)."
+          value={generation.gpuUptimeHoursPerMonth}
+          min={1}
+          step={10}
+          disabled={!selfHosted}
+          onChange={(v) => onChange({ ...generation, gpuUptimeHoursPerMonth: v })}
         />
         {advanced && (
           <>
