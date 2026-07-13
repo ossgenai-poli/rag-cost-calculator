@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { calculate, defaultInputs } from "./calc-engine";
 import { deriveDisplayMetrics } from "./derived";
 import { buildScenarios } from "./scenarios";
-import { encodeInputs, decodeInputs, coerceInputs } from "./share";
+import { encodeInputs, decodeInputs, coerceInputs, buildReport } from "./share";
 import { computeSensitivity } from "./sensitivity";
 import type { CalcInputs, PriceBook } from "./types";
 
@@ -28,6 +28,26 @@ function base(): CalcInputs {
 // ---------------------------------------------------------------------------
 // deriveDisplayMetrics
 // ---------------------------------------------------------------------------
+
+describe("buildReport", () => {
+  it("produces a Markdown report with the headline, breakdown, scenarios, and assumptions", () => {
+    const inputs = base();
+    const result = calculate(inputs, priceBook);
+    const md = buildReport(inputs, result, priceBook, "2026-07-12");
+
+    expect(md).toContain("# RAG Cost Report");
+    expect(md).toContain("## Headline");
+    expect(md).toContain("## Cost breakdown (monthly)");
+    expect(md).toContain("## Scenario comparison");
+    expect(md).toContain("## Self-host vs API crossover");
+    expect(md).toContain("## Key assumptions");
+    // The breakdown total row echoes the computed monthly cost.
+    expect(md).toContain(result.dominantLever.label);
+    // Ops overhead surfaces only when non-zero.
+    const withOps = { ...inputs, ops: { networkingMonthly$: 100, observabilityMonthly$: 0, overheadPct: 15 } };
+    expect(buildReport(withOps, calculate(withOps, priceBook), priceBook, "2026-07-12")).toContain("Ops & overhead");
+  });
+});
 
 describe("deriveDisplayMetrics", () => {
   it("computes per-query, per-1k, annualized, and the token split", () => {

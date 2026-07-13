@@ -140,8 +140,15 @@ Also gate: `npm run typecheck`, `npm run build`, and (for UI-affecting changes)
   `crossover.ts` exposes `tokensPerQuery` + `outputFraction` so the chart converts
   the token axis into any unit without re-deriving.
 - **Reserved / Spot / Savings Plan** GPU pricing + uptime schedule.
-- Networking / logging / monitoring / production-overhead line items.
-- Peak-vs-average workload modeling; exportable assumptions + calc report.
+- ✅ **Ops & overhead line items** — networking + logging/monitoring fixed monthly
+  fields plus a production-overhead % markup on every other line, as an "Operations
+  & overhead" breakdown row. All default to 0 (base model unchanged).
+- ✅ **Peak-vs-average** — a peak-to-average ratio scales the throughput-required
+  instance count (a self-hosted fleet must be provisioned for peak); default 1 =
+  flat. Doesn't change API cost.
+- ✅ **Exportable report** — `buildReport` emits a Markdown report (headline,
+  breakdown, scenario comparison, crossover verdict, key assumptions) via an
+  "Export report" toolbar action.
 
 ## 7. Sign-off checklist (paste into the PR)
 - [ ] `npm test` green (and new invariants covered by a test)

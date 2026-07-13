@@ -83,7 +83,8 @@ describe("crossover memory floor", () => {
         sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16,
       },
       managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
-      traffic: { queriesPerMonth: 1000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30 },
+      ops: { networkingMonthly$: 0, observabilityMonthly$: 0, overheadPct: 0 },
+      traffic: { queriesPerMonth: 1000, region: "us-east-1", method: "monthly", qps: 1, hoursPerDay: 24, daysPerMonth: 30, peakFactor: 1 },
       queryTokens: 50,
     };
   }

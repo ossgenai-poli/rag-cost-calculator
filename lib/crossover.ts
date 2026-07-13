@@ -98,7 +98,11 @@ export function computeCrossover(
   // Capacity is DECODE-bound: sustainedTokPerSec is output tokens/sec, so it only
   // applies to output tokens — never to total (input + output) tokens.
   const monthlyOutputTokens = traffic.queriesPerMonth * outTokens;
-  const throughputInstances = Math.max(1, Math.ceil(monthlyOutputTokens / capacityEff));
+  // A self-hosted fleet must be provisioned for PEAK load, not the monthly average,
+  // so the throughput-required instance count scales by the peak-to-average ratio.
+  // (peakFactor = 1 → provision for the flat average, unchanged.)
+  const peakFactor = traffic.peakFactor > 0 ? traffic.peakFactor : 1;
+  const throughputInstances = Math.max(1, Math.ceil((monthlyOutputTokens * peakFactor) / capacityEff));
   const realizedUtil = boxes * capacity100 > 0 ? monthlyOutputTokens / (boxes * capacity100) : 0;
 
   const apiMonthly$ = apiBlendedPricePerToken * monthlyGenTokens;

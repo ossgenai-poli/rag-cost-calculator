@@ -51,13 +51,14 @@ function makeInputs(overrides: {
       numInstances: overrides.numInstances ?? 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16,
     },
     managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
+    ops: { networkingMonthly$: 0, observabilityMonthly$: 0, overheadPct: 0 },
     traffic: {
       queriesPerMonth: overrides.queriesPerMonth,
       region: "us-east-1",
       method: "monthly",
       qps: 1,
       hoursPerDay: 24,
-      daysPerMonth: 30,
+      daysPerMonth: 30, peakFactor: 1,
     },
     queryTokens: 50,
   };
@@ -151,6 +152,28 @@ describe("computeCrossover", () => {
     expect(result.utilAtBreakEven).toBeCloseTo(2.222222, 4);
     expect(result.breakEvenFeasible).toBe(false);
     expect(result.verdict).toBe("API wins in practice below sustained load");
+  });
+
+  it("peak-to-average ratio scales the throughput-required instance count", () => {
+    const flat = makeInputs({
+      outTokens: 2000,
+      gpuPricePerHr: 3,
+      sustainedTokPerSec: 100, // low throughput so several instances are needed
+      utilTarget: 0.5,
+      queriesPerMonth: 5_000_000,
+    });
+    const base = computeCrossover(flat, priceBook, makePerQuery(800, 0.0005));
+
+    const peaky = { ...flat, traffic: { ...flat.traffic, peakFactor: 3 } };
+    const r = computeCrossover(peaky, priceBook, makePerQuery(800, 0.0005));
+    // Provisioning for a 3× peak needs ~3× the average throughput instances.
+    // (ceil(3X) lands in (3·ceil(X) − 3, 3·ceil(X)], so allow the rounding band.)
+    expect(r.throughputInstances).toBeGreaterThan(base.throughputInstances * 3 - 3);
+    expect(r.throughputInstances).toBeLessThanOrEqual(base.throughputInstances * 3);
+    // The billed (provisioned) fleet and its cost are unchanged — this only moves
+    // the "instances the load needs" (under-provisioning) signal.
+    expect(r.boxes).toBe(base.boxes);
+    expect(r.selfHostedMonthly$).toBeCloseTo(base.selfHostedMonthly$, 6);
   });
 
   it("curve is a flat fixed-fleet line vs a rising linear API line", () => {

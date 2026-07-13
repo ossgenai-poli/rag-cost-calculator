@@ -9,6 +9,7 @@
 import { z } from "zod";
 import type { CalcInputs, CalcResult, PriceBook } from "./types";
 import { deriveDisplayMetrics } from "./derived";
+import { buildScenarios } from "./scenarios";
 
 const PARAM_KEY = "s";
 const SHARE_VERSION = 1;
@@ -91,6 +92,13 @@ const calcInputsSchema = z.object({
       indexedDataGB: nonNeg.default(1),
     })
     .default({ retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 1 }),
+  ops: z
+    .object({
+      networkingMonthly$: nonNeg.default(0),
+      observabilityMonthly$: nonNeg.default(0),
+      overheadPct: nonNeg.default(0),
+    })
+    .default({ networkingMonthly$: 0, observabilityMonthly$: 0, overheadPct: 0 }),
   traffic: z.object({
     queriesPerMonth: nonNeg,
     region: z.string(),
@@ -98,6 +106,7 @@ const calcInputsSchema = z.object({
     qps: nonNeg.default(1),
     hoursPerDay: nonNeg.default(24),
     daysPerMonth: nonNeg.default(30),
+    peakFactor: num.positive().default(1),
   }),
   queryTokens: nonNeg,
 });
@@ -235,6 +244,98 @@ export function assumptionsToJson(
     null,
     2
   );
+}
+
+/**
+ * Human-readable Markdown report: headline metrics, the full cost breakdown, the
+ * scenario comparison, the crossover verdict, and the key assumptions behind them.
+ * `resultA` MUST be the Mode-A (self-built) result so the scenarios reflect real
+ * GPU economics. Pure string builder — safe to call anywhere.
+ */
+export function buildReport(
+  inputs: CalcInputs,
+  resultA: CalcResult,
+  priceBook: PriceBook,
+  asOf: string
+): string {
+  const m = deriveDisplayMetrics(resultA, inputs);
+  const g = inputs.generation;
+  const usd = (n: number, d = 2) =>
+    `$${n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+  const selfHosted = g.mode === "self-hosted";
+
+  const lines: string[] = [];
+  lines.push(`# RAG Cost Report`);
+  lines.push("");
+  lines.push(`- **Region:** ${priceBook.region}`);
+  lines.push(`- **Pricing as of:** ${asOf} (source: ${priceBook.source})`);
+  lines.push(`- **Deployment:** ${selfHosted ? "Self-hosted GPU" : "Bedrock API"} · ${g.llmModelId}`);
+  lines.push(`- **Traffic:** ${inputs.traffic.queriesPerMonth.toLocaleString()} queries/mo` +
+    (inputs.traffic.peakFactor > 1 ? ` · ${inputs.traffic.peakFactor}× peak-to-average` : ""));
+  lines.push("");
+
+  lines.push(`## Headline`);
+  lines.push("");
+  lines.push(`| Metric | Value |`);
+  lines.push(`| --- | --- |`);
+  lines.push(`| Estimated monthly cost | ${usd(m.totalMonthly)} |`);
+  lines.push(`| Cost per query | ${usd(m.costPerQuery, 6)} |`);
+  lines.push(`| Cost per 1,000 queries | ${usd(m.costPer1000)} |`);
+  lines.push(`| Annualized | ${usd(m.annualized)} |`);
+  lines.push(`| Largest driver | ${resultA.dominantLever.label} (${Math.round(resultA.dominantLever.share * 100)}%) |`);
+  lines.push("");
+
+  lines.push(`## Cost breakdown (monthly)`);
+  lines.push("");
+  lines.push(`| Component | Monthly | Share |`);
+  lines.push(`| --- | ---: | ---: |`);
+  for (const r of m.breakdown) {
+    lines.push(`| ${r.label} | ${usd(r.monthly)} | ${(r.share * 100).toFixed(1)}% |`);
+  }
+  lines.push(`| **Total** | **${usd(m.totalMonthly)}** | 100% |`);
+  lines.push("");
+
+  lines.push(`## Scenario comparison`);
+  lines.push("");
+  lines.push(`| Scenario | Monthly | Per 1K | vs baseline |`);
+  lines.push(`| --- | ---: | ---: | ---: |`);
+  for (const s of buildScenarios(resultA, inputs)) {
+    const monthly = s.monthly == null ? "—" : usd(s.monthly);
+    const per1k = s.per1000 == null ? "—" : usd(s.per1000);
+    lines.push(`| ${s.label} | ${monthly} | ${per1k} | ${s.difference} |`);
+  }
+  lines.push("");
+
+  const cx = resultA.crossover;
+  lines.push(`## Self-host vs API crossover`);
+  lines.push("");
+  lines.push(`- **Verdict:** ${cx.verdict}`);
+  if (cx.breakEvenTokens > 0) {
+    lines.push(`- **Break-even:** ${Math.round(cx.breakEvenTokens).toLocaleString()} tokens/mo (~${cx.equivalentQPS.toFixed(2)} QPS)`);
+    lines.push(`- **Utilization to break even:** ${cx.utilAtBreakEven <= 1 ? `${Math.round(cx.utilAtBreakEven * 100)}%` : `${cx.utilAtBreakEven.toFixed(1)}× capacity (infeasible)`}`);
+  }
+  lines.push("");
+
+  lines.push(`## Key assumptions`);
+  lines.push("");
+  if (selfHosted) {
+    lines.push(`- **GPU:** ${g.gpuInstanceType} at ${usd(g.gpuPricePerHr)}/hr`);
+    lines.push(`- **Fleet:** ${cx.boxes} instance(s); memory floor ${cx.minInstancesToLoad}, throughput needs ${cx.throughputInstances}`);
+    lines.push(`- **Precision:** ${g.weightBits}-bit weights · ${g.maxContextLen} ctx × ${g.maxConcurrentSeqs} concurrent`);
+  } else {
+    lines.push(`- **API model:** ${g.llmModelId} (in ${usd(g.llmInPricePer1K, 5)} / out ${usd(g.llmOutPricePer1K, 5)} per 1K)`);
+  }
+  lines.push(`- **Retrieval:** topK ${inputs.retrieval.topK}, topN ${inputs.retrieval.topN}, rerank ${inputs.retrieval.rerankEnabled ? "on" : "off"}`);
+  lines.push(`- **Guardrails:** input ${inputs.guardrails.inputEnabled ? "on" : "off"}, output ${inputs.guardrails.outputEnabled ? "on" : "off"}`);
+  const ops = inputs.ops;
+  if (ops.networkingMonthly$ || ops.observabilityMonthly$ || ops.overheadPct) {
+    lines.push(`- **Ops & overhead:** networking ${usd(ops.networkingMonthly$)}/mo, observability ${usd(ops.observabilityMonthly$)}/mo, +${ops.overheadPct}% overhead`);
+  }
+  lines.push("");
+  lines.push(`_Generated by the RAG Cost Calculator. Figures are planning estimates from the assumptions above._`);
+  lines.push("");
+
+  return lines.join("\n");
 }
 
 /** Browser-only: trigger a file download of a text blob. No-op server-side. */
