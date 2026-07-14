@@ -11,18 +11,38 @@ not quotes**.
 
 ---
 
-## Shared input set (the canonical workload)
+## Shared input set (the canonical workload) — complete, reproducible
+
+Every constituent input is listed so the derived numbers can be reproduced without relying on any
+implicit UI default. These are the frozen rc-qa-11 `defaultInputs` for a self-hosted DeepSeek build.
 
 | Input | Value |
 |---|---|
-| Model | DeepSeek-V4-Pro (open weights) · InferenceX key `dsv4` |
+| Model | DeepSeek-V4-Pro (open weights) · InferenceX key `dsv4` · model context ceiling 163,840 |
 | GPU | p6-b200.48xlarge (8× B200) |
-| Weight precision | INT4 (weight bits 4) |
-| Monthly question volume | 200,000,000 |
-| Input / output tokens | 2,910 / 500 (default RAG prompt) |
-| Concurrency cap | 32 · Utilization target | 70% · Peak factor | 1 · N+1 | on |
+| Weight precision | INT4 (weight bits 4) · KV precision BF16 (kv bits 16) |
+| Monthly question volume | 200,000,000 · Peak factor 1 · Uptime 730 h/mo |
+| **User query length** | **50** tokens |
+| **System prompt & formatting (prompt overhead)** | **300** tokens |
+| **Chunk size** | **512** tokens |
+| **Top N (context chunks sent to the model)** | **5** |
+| Top K (retrieved from the vector store) | 20 |
+| **Output length** | **500** tokens |
+| Configured context window (`maxContextLen`) | 8,192 |
+| Concurrency cap | 32 · Utilization target 70% · N+1 on · auto-size on · on-demand pricing |
 
-Cases R3–R5 change exactly one dimension from this set (noted per row).
+**Input tokens (deterministic):**
+`llmInputTok = query + prompt overhead + (Top N × chunk size) = 50 + 300 + (5 × 512) = **2,910**`.
+
+**Context (KV) window:**
+- **Needed** = input + output = 2,910 + 500 = **3,410** tokens (`capacity.contextRequiredTokens`).
+- **Configured window** = `min(maxContextLen 8,192, model ceiling 163,840)` = **8,192** (`maxContextConfigured`).
+- **No overflow** (3,410 ≤ 8,192), so the config is feasible. The v2 "derive the window from needed +
+  headroom, rounded up, capped at the model ceiling" rule ([03](03-gpu-comprehension-matrix.md)) is a
+  **Phase-1** behaviour with a to-be-fixed headroom %; the frozen engine uses the configured 8,192, so the
+  wireframe shows the reproducible **"3,410 needed · 8,192 window"** rather than a derived number.
+
+Cases R3–R5 change exactly one dimension from this set (noted per row); Top N stays **5** throughout.
 
 ---
 

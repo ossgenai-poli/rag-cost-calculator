@@ -73,10 +73,12 @@ The wireframe must not **misrepresent** the frozen engine.
   throughput + 1 N+1)**, **prefill-bound**, equation **221,461 input tok/s ÷ (3,715 × 70% = 2,600) →
   86**, confidence **Measured·scaled**, topology **"8 GPUs handle prefill and decode (aggregated)"**,
   **P99** TTFT wording.
-- **2d. Dollar figures are labeled illustrative.** The rail's $ values (API $331k, self-host $7.2M,
-  $/query, break-even) carry a "‡ illustrative placeholders" note. This is **expected and acceptable
-  for a wireframe** — do **not** file the specific dollar amounts as a defect. *Do* file it if any $
-  value is presented as real/computed without the illustrative marker.
+- **2d. Dollar figures are real reference-case values (updated).** As of the revision the rail's $ values
+  are the **frozen-engine reference case R1** — API **$6.49M**, self-host **$7.18M**, break-even
+  **≈221M/mo** — labelled "reference case R1 (rc-qa-11) … planning figures from the committed price book,
+  not a quote." (They are no longer the earlier illustrative placeholders.) Verify they match
+  [18-reference-cases.md](18-reference-cases.md) R1. *Do* file it if any structural or $ value is presented
+  as real/computed but does **not** reconcile with a documented reference case.
 
 ---
 
@@ -203,5 +205,7 @@ Open-question positions: Q1..Q7 {answer or defer}
 
 - Re-testing engine math (done at rc-qa-11).
 - Expecting a running app, recommendation engine, or narrative code (Phase 1).
-- The specific illustrative dollar amounts in the wireframe (labeled placeholders).
+- The **exact** dollar magnitudes as a precision concern — they are rounded reference-case R1 planning
+  figures (not quotes). *In scope:* that every visible number **reconciles** with a documented reference
+  case ([18-reference-cases.md](18-reference-cases.md)).
 - Any request to deploy, change workflows, or touch `main`.

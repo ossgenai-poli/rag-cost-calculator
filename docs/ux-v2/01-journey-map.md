@@ -31,12 +31,18 @@ hides the whole GPU section). Nothing about infrastructure is asked yet.
 
 **Goal:** collect only what a buyer actually knows. Customer-language labels; technical name secondary.
 
-- Traffic: **queries/month** or **QPS**; **peak-to-average ratio**; **hours of operation**.
-- Corpus: **number of documents**, **average document size**, **refresh frequency**.
-- Response: **expected answer length**, **how many sources retrieved**.
+- **Customer facts** (the SA enters what the buyer knows): Traffic — **queries/month** or **QPS**;
+  **peak-to-average ratio**; **hours of operation**. Corpus — **number of documents**, **average document
+  size**, **refresh frequency**. Response — **expected answer length**.
+- **Recommended, customer-adjustable** (the app proposes a default the customer can confirm or change,
+  *not* a pure fact): **how many sources retrieved** ("Context chunks sent to the model" — classified
+  **Recommended** in [02-field-inventory.md](02-field-inventory.md) and rendered with the Recommended chip
+  in the wireframe).
 
-Every field here is a **Customer fact**. If the customer doesn't know one, they use the range/"I
-don't know" control (Stage B never blocks on a number — see [08-unknown-range-handling.md](08-unknown-range-handling.md)).
+Most Stage-B fields are **Customer facts**; the retrieved-sources count is a **Recommended** value the
+customer accepts or adjusts — the taxonomy chip is shown per field so the SA can tell them apart. If the
+customer doesn't know a fact, they use the range/"I don't know" control (Stage B never blocks on a number
+— see [08-unknown-range-handling.md](08-unknown-range-handling.md)).
 
 **Exit criterion:** business truth captured, with uncertainty recorded where it exists.
 

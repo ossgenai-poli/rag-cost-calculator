@@ -253,7 +253,7 @@
               <div class="stage-h"><span class="s">B</span> Workload facts</div>
               <div class="field"><span class="lab">Monthly question volume <span class="tax fact taxdot">Fact</span></span><span class="val tnum">200,000,000</span></div>
               <div class="field"><span class="lab">Typical answer length <span class="tax fact taxdot">Fact</span></span><span class="val tnum">500 tok</span></div>
-              <div class="field"><span class="lab">Context chunks sent to the model <span class="tax rec taxdot">Recommended</span></span><span class="val tnum">6</span></div>
+              <div class="field"><span class="lab">Context chunks sent to the model <span class="tax rec taxdot">Recommended</span></span><span class="val tnum">5</span></div>
               <div class="field"><span class="lab">Busiest hour vs average <span class="tax fact taxdot">Fact</span></span><span class="val">1.0×</span></div>
             </div>
             <div class="stage">
@@ -267,7 +267,7 @@
               <div class="stage-h"><span class="s">D</span> Recommended config</div>
               <div class="field"><span class="lab">GPU <span class="tax rec taxdot">Recommended</span></span><span class="val">p6-b200 · INT4</span></div>
               <div class="field"><span class="lab">Fleet size <span class="tax derived taxdot">Derived</span></span><span class="val readonly">87 · auto-sized</span></div>
-              <div class="field"><span class="lab">Context window <span class="tax derived taxdot">Derived</span></span><span class="val readonly">4,500 tok</span></div>
+              <div class="field"><span class="lab">Context window <span class="tax derived taxdot">Derived</span></span><span class="val readonly">3,410 needed · 8,192 window</span></div>
             </div>
           </div>
 
@@ -317,7 +317,7 @@
         <div class="drawer"><div class="dh">KV &amp; context <span class="tax expert expert-badge">Expert</span></div>
           <div class="dl">
             <div class="drow"><span>KV-cache precision</span><span class="rv">BF16<span class="rec-note">conservative default</span></span></div>
-            <div class="drow"><span>Context window</span><span class="rv">4,500 tok<span class="rec-note">derived + headroom</span></span></div>
+            <div class="drow"><span>Context window</span><span class="rv">3,410 needed · 8,192 window<span class="rec-note">needed = 2,910 in + 500 out; headroom-derived window is Phase-1</span></span></div>
           </div></div>
         <div class="drawer"><div class="dh">Concurrency &amp; latency <span class="tax expert expert-badge">Expert</span></div>
           <div class="dl">
