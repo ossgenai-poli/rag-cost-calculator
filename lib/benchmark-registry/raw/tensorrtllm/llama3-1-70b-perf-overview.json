@@ -1,0 +1,46 @@
+{
+  "_snapshot": {
+    "kind": "illustrative-pending-ingestion",
+    "source": "NVIDIA TensorRT-LLM",
+    "sourceUrl": "https://nvidia.github.io/TensorRT-LLM/latest/developer-guide/perf-overview.html",
+    "repoUrl": "https://github.com/NVIDIA/TensorRT-LLM",
+    "pinnedCommit": "PINNED_COMMIT_TBD",
+    "retrievedAt": "2026-07-14",
+    "license": "Apache-2.0",
+    "attribution": "NVIDIA TensorRT-LLM performance overview",
+    "note": "ILLUSTRATIVE pinned example for the vertical slice — structure/provenance real; numbers placeholder pending real ingestion. Vendor-measured. Max-load rows are a CAPACITY CEILING, not an interactive-RAG result unless the row is latency-qualified."
+  },
+  "model": "llama3.1-70b",
+  "checkpoint": "Llama-3.1-70B-Instruct",
+  "framework": "tensorrt-llm",
+  "version": "0.x-pinned",
+  "rows": [
+    {
+      "row_kind": "latency-qualified",
+      "gpu": "H200", "gpu_count": 8, "gpu_mem_gb": 141, "form_factor": "SXM",
+      "precision": "fp8", "kv_precision": "fp8", "tp": 8, "pp": 1,
+      "isl": 1024, "osl": 1024, "concurrency": 8,
+      "ttft_ms": 520, "tpot_ms": 38,
+      "output_tokens_per_second_per_gpu": 610, "input_tokens_per_second_per_gpu": 600,
+      "per_gpu_reported": true, "multinode": false, "interconnect": "NVLink (single node)"
+    },
+    {
+      "row_kind": "max-throughput",
+      "gpu": "H200", "gpu_count": 8, "gpu_mem_gb": 141, "form_factor": "SXM",
+      "precision": "fp8", "kv_precision": "fp8", "tp": 8, "pp": 1,
+      "isl": 1024, "osl": 1024, "concurrency": 512,
+      "ttft_ms": null, "tpot_ms": 220,
+      "output_tokens_per_second_per_gpu": 1850, "input_tokens_per_second_per_gpu": 1820,
+      "per_gpu_reported": true, "multinode": false, "interconnect": "NVLink (single node)"
+    },
+    {
+      "row_kind": "max-throughput",
+      "gpu": "GB200", "gpu_count": 72, "gpu_mem_gb": 186, "form_factor": "UltraServer/NVL72",
+      "precision": "fp8", "kv_precision": "fp8", "tp": 8, "pp": 9,
+      "isl": 1024, "osl": 1024, "concurrency": 4096,
+      "ttft_ms": null, "tpot_ms": 60,
+      "system_tokens_per_second_total": 210000,
+      "per_gpu_reported": false, "multinode": true, "interconnect": "NVLink NVL72 + across-rack"
+    }
+  ]
+}
