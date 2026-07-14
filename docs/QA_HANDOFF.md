@@ -33,7 +33,7 @@ git checkout rc-qa-4            # detached HEAD at the pinned RC
 **Pre-verified by the developer on this exact SHA** (so an environment problem is distinguishable
 from a product defect):
 - `npm run typecheck` → clean
-- `npm test` → **101 passed** (incl. GPU capacity, catalog-drift, topN-clamp, QA regressions)
+- `npm test` → **106 passed** (incl. GPU capacity, catalog-drift, topN-clamp, QA regressions)
 - `npm run build:static` → emits `./out`
 - `npm run test:e2e` → **PASS** (no console errors)
 
