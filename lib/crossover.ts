@@ -16,13 +16,19 @@ function zeroResult(
   gpuMonthly$: number,
   capacity100: number,
   tokensPerQuery = 0,
-  outputFraction = 0
+  outputFraction = 0,
+  userInstances = 1,
+  ownedCapacity = false
 ): CrossoverResult {
   return {
     monthlyGenTokens,
     gpuMonthly$,
     capacity100,
     boxes: 1,
+    userInstances,
+    requiredInstances: 1,
+    autoSized: false,
+    ownedCapacity,
     minInstancesToLoad: 1,
     throughputInstances: 0,
     realizedUtil: 0,
@@ -43,7 +49,11 @@ function zeroResult(
 export function computeCrossover(
   inputs: CalcInputs,
   priceBook: PriceBook,
-  perQuery: PerQueryResult
+  perQuery: PerQueryResult,
+  // Floor on the billed fleet from a more-accurate model (e.g. grounded, measured
+  // per-GPU throughput). computeForMode re-runs with this so billing is never
+  // below the true requirement even when it exceeds the flat-nameplate estimate.
+  minRequiredInstances = 0
 ): CrossoverResult {
   const { generation, traffic } = inputs;
   const llmInputTok = perQuery.llmInputTok;
@@ -52,12 +62,21 @@ export function computeCrossover(
   // Fraction of each query's tokens that are decode (output) — used to convert the
   // token axis to output/input tokens and to derive decode utilization per point.
   const outputFraction = tokensPerQuery > 0 ? outTokens / tokensPerQuery : 0;
+  // The user's requested fleet: an INTEGER count (P2 — 2.5 instances is invalid).
+  const userInstances = Math.max(1, Math.floor(generation.numInstances || 1));
 
   const monthlyGenTokens = traffic.queriesPerMonth * tokensPerQuery;
   // Fleet cost reflects the commitment model (discount off on-demand) and how many
-  // hours/month the fleet actually runs. Default uptime (730) = always-on.
-  const uptimeHours = generation.gpuUptimeHoursPerMonth > 0 ? generation.gpuUptimeHoursPerMonth : HOURS_PER_MONTH;
+  // hours/month the fleet actually runs. Default uptime (730) = always-on; a month
+  // has at most 730 GPU-hours, so cap it there (P2 — uptime > 730 is impossible).
+  const uptimeHours = Math.min(
+    HOURS_PER_MONTH,
+    generation.gpuUptimeHoursPerMonth > 0 ? generation.gpuUptimeHoursPerMonth : HOURS_PER_MONTH
+  );
   const effectiveHourly = effectiveGpuHourly(generation.gpuPricePerHr, generation.gpuPricingModel);
+  // Owned/free capacity: a $0 GPU rate makes self-host trivially "cheapest" — flag
+  // it so the UI/scenarios don't present a meaningless -100% saving (P2).
+  const ownedCapacity = effectiveHourly <= 0;
   const gpuMonthly$ = effectiveHourly * uptimeHours;
   // Decode capacity (output tokens/mo), scaled by the precision speedup — lower
   // precision decodes faster, so it raises capacity as well as lowering memory. A
@@ -70,7 +89,15 @@ export function computeCrossover(
     tokensPerQuery > 0 ? perQuery.apiComparisonGen$ / tokensPerQuery : 0;
 
   if (apiBlendedPricePerToken <= 0 || capacity100 <= 0) {
-    return zeroResult(monthlyGenTokens, gpuMonthly$, capacity100, tokensPerQuery, outputFraction);
+    return zeroResult(
+      monthlyGenTokens,
+      gpuMonthly$,
+      capacity100,
+      tokensPerQuery,
+      outputFraction,
+      userInstances,
+      ownedCapacity
+    );
   }
 
   const utilTarget = generation.utilTarget > 0 ? generation.utilTarget : 1;
@@ -89,12 +116,6 @@ export function computeCrossover(
     generation.maxConcurrentSeqs
   );
 
-  // The billed fleet is what the user provisioned, never below the memory floor.
-  // We do NOT auto-scale it to demand — instead we report how many instances the
-  // throughput would need, so an under-provisioned fleet is surfaced as a warning.
-  const boxes = Math.max(1, generation.numInstances || 1, minInstancesToLoad);
-  const selfHostedMonthly$ = boxes * gpuMonthly$;
-
   // Capacity is DECODE-bound: sustainedTokPerSec is output tokens/sec, so it only
   // applies to output tokens — never to total (input + output) tokens.
   const monthlyOutputTokens = traffic.queriesPerMonth * outTokens;
@@ -103,6 +124,16 @@ export function computeCrossover(
   // (peakFactor = 1 → provision for the flat average, unchanged.)
   const peakFactor = traffic.peakFactor > 0 ? traffic.peakFactor : 1;
   const throughputInstances = Math.max(1, Math.ceil((monthlyOutputTokens * peakFactor) / capacityEff));
+
+  // Auto-size the billed fleet to what actually SERVES the load: it can never be
+  // below the memory floor, the throughput need, or an externally-supplied floor
+  // (e.g. grounded/measured throughput). Presenting a cheaper-but-inadequate fleet
+  // as a valid savings was the core P1 bug — the comparison must be apples-to-apples.
+  const requiredInstances = Math.max(1, minInstancesToLoad, throughputInstances, Math.ceil(minRequiredInstances));
+  const boxes = Math.max(userInstances, requiredInstances);
+  const autoSized = boxes > userInstances;
+  const selfHostedMonthly$ = boxes * gpuMonthly$;
+
   const realizedUtil = boxes * capacity100 > 0 ? monthlyOutputTokens / (boxes * capacity100) : 0;
 
   const apiMonthly$ = apiBlendedPricePerToken * monthlyGenTokens;
@@ -139,6 +170,10 @@ export function computeCrossover(
     gpuMonthly$,
     capacity100,
     boxes,
+    userInstances,
+    requiredInstances,
+    autoSized,
+    ownedCapacity,
     minInstancesToLoad,
     throughputInstances,
     realizedUtil,

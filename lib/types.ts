@@ -312,7 +312,11 @@ export interface CrossoverResult {
   monthlyGenTokens: number;
   gpuMonthly$: number;
   capacity100: number;         // tokens/mo at 100% util per box
-  boxes: number;               // provisioned instances actually billed (= numInstances, floored to fit the model)
+  boxes: number;               // instances actually billed — auto-sized up to serve the load (never below what's required)
+  userInstances: number;       // the integer count the user requested (before auto-sizing)
+  requiredInstances: number;   // max(memory floor, throughput need, grounded need) — the minimum feasible fleet
+  autoSized: boolean;          // true when boxes had to exceed the user's requested count to serve the load
+  ownedCapacity: boolean;      // true when the GPU $/hr is 0 (owned/free capacity) — crossover savings not meaningful
   minInstancesToLoad: number;  // memory floor — min instances to hold the weights
   throughputInstances: number; // instances the current load would need for decode throughput
   realizedUtil: number;        // actual decode utilization of the fleet at the current workload

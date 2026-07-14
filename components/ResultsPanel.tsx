@@ -87,7 +87,7 @@ export function ResultsPanel({
   const genModel = priceBook.models.find((m) => m.id === inputs.generation.llmModelId);
   const genModelName = genModel?.label?.replace(/\s*\(.*\)\s*$/, "") ?? inputs.generation.llmModelId;
   const scenarioLabel = metrics.selfHosted
-    ? `Self-hosted ${genModelName} · ${inputs.generation.numInstances} × ${inputs.generation.gpuInstanceType}`
+    ? `Self-hosted ${genModelName} · ${crossover.boxes} × ${inputs.generation.gpuInstanceType}`
     : `${activeProvider.modelApi} API · ${genModelName}`;
 
   // Proxy-comparison disclosure: the API column uses a different model.
@@ -200,8 +200,21 @@ export function ResultsPanel({
               {crossover.realizedUtil < 0.1
                 ? `The fleet is heavily underutilized — you're paying for ${crossover.boxes} instance(s) to serve a fraction of their decode capacity. An API is usually cheaper at this load.`
                 : `Decode demand ≈ ${Math.round(metrics.monthlyOutputTokens / (730 * 3600)).toLocaleString()} output tok/s vs ${Math.round((crossover.boxes * crossover.capacity100) / (730 * 3600)).toLocaleString()} provisioned.`}
-              {effRequiredInstances > crossover.boxes &&
-                ` Capacity exceeded: needs ≥ ${effRequiredInstances} instances.`}
+              {crossover.autoSized && (
+                <span className="mt-1 block text-amber-300">
+                  Fleet auto-sized from {crossover.userInstances} to{" "}
+                  <span className="font-medium">{crossover.boxes}</span> instance
+                  {crossover.boxes === 1 ? "" : "s"} to serve this load — the cost and savings
+                  reflect the {crossover.boxes}-instance fleet, not the {crossover.userInstances} you
+                  entered.
+                </span>
+              )}
+              {crossover.ownedCapacity && (
+                <span className="mt-1 block text-amber-300">
+                  GPU rate is $0 (owned / free capacity) — the self-hosted total excludes hardware
+                  cost, so the savings vs API isn&apos;t a like-for-like comparison.
+                </span>
+              )}
             </div>
           </div>
         ) : (

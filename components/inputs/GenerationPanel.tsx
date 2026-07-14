@@ -252,7 +252,9 @@ export function GenerationPanel(props: {
           min={memInstances ?? 1}
           step={1}
           disabled={!selfHosted}
-          onChange={(v) => onChange({ ...generation, numInstances: v })}
+          onChange={(v) =>
+            onChange({ ...generation, numInstances: Math.max(1, Math.floor(v || 1)) })
+          }
         />
 
         <NumberField
@@ -310,12 +312,15 @@ export function GenerationPanel(props: {
         <NumberField
           label="Fleet uptime"
           suffix="hrs/mo"
-          hint="Hours per month the fleet runs — 730 is always-on. Fewer hours lowers cost and decode capacity proportionally (e.g. business-hours or batch)."
+          hint="Hours per month the fleet runs — 730 is always-on (a month's max). Fewer hours lowers cost and decode capacity proportionally (e.g. business-hours or batch)."
           value={generation.gpuUptimeHoursPerMonth}
           min={1}
+          max={730}
           step={10}
           disabled={!selfHosted}
-          onChange={(v) => onChange({ ...generation, gpuUptimeHoursPerMonth: v })}
+          onChange={(v) =>
+            onChange({ ...generation, gpuUptimeHoursPerMonth: Math.min(730, Math.max(1, v || 730)) })
+          }
         />
         {advanced && (
           <>

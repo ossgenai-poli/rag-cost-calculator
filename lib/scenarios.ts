@@ -44,9 +44,16 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
     result.ingestion.embedIngestMonthly$ +
     result.vectorStore.opensearchMonthly$ +
     (result.perQuery.perQuery$ - result.perQuery.apiGen$) * queries;
+  // Operations & overhead (networking + observability + overhead%) is a production
+  // cost that applies to EVERY strategy — and the headline already includes it, so
+  // each scenario must add its own share or the totals won't reconcile (P1-d). The
+  // overhead % scales with that scenario's own base, so it's scenario-specific.
+  const ops = inputs.ops;
+  const opsOn = (base: number) =>
+    base + ops.networkingMonthly$ + ops.observabilityMonthly$ + (ops.overheadPct / 100) * base;
   // "Self-built + API" uses the comparison model (defaults to the selected model).
   const apiGenMonthly = result.perQuery.apiComparisonGen$ * queries;
-  const apiTotal = infra + apiGenMonthly;
+  const apiTotal = opsOn(infra + apiGenMonthly);
 
   const per1000 = (monthly: number) => (queries > 0 ? (monthly / queries) * 1000 : 0);
   const diffOf = (monthly: number) => (apiTotal > 0 ? (monthly - apiTotal) / apiTotal : 0);
@@ -65,7 +72,7 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
   };
 
   // --- Bedrock Knowledge Bases + API — now priced from AWS's published rates ---
-  const mkbTotal = result.managedKb.total$;
+  const mkbTotal = opsOn(result.managedKb.total$);
   const bedrockKb: Scenario = {
     id: "bedrock-kb-api",
     label: "Bedrock KB + API",
@@ -83,10 +90,15 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
   const hasVolume = cx.monthlyGenTokens > 0 && cx.gpuMonthly$ > 0;
   const tokensPerQuery = result.perQuery.llmInputTok + inputs.generation.outTokens;
   // One box minimum when there's volume but the crossover returned the zero result.
+  // cx.boxes is already AUTO-SIZED to serve the load, so this fleet cost is feasible
+  // — never the cheaper-but-inadequate figure from an under-provisioned fleet (P1-a).
   const selfHostedMonthly = cx.selfHostedMonthly$ > 0 ? cx.selfHostedMonthly$ : cx.gpuMonthly$;
+  const sizingNote = cx.autoSized
+    ? ` (auto-sized from ${cx.userInstances} to serve the load)`
+    : "";
 
   // --- Self-built + self-hosted GPU (full stack: infra + GPU fleet) ---
-  const gpuTotal = infra + selfHostedMonthly;
+  const gpuTotal = opsOn(infra + selfHostedMonthly);
   const selfHostedGpu: Scenario = hasVolume
     ? {
         id: "self-built-gpu",
@@ -97,7 +109,7 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
         difference: formatDiff(diffOf(gpuTotal)),
         note: `${cx.boxes} × ${inputs.generation.gpuInstanceType} at ${Math.round(
           inputs.generation.utilTarget * 100
-        )}% target util`,
+        )}% target util${sizingNote}`,
         complete: true,
         highlight: selfHostedMode, // highlighted when it's the selected scenario
       }
@@ -115,8 +127,9 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
 
   // --- GPU at break-even traffic (the provisioned fleet's own break-even) ---
   const breakEvenQueries = tokensPerQuery > 0 ? cx.breakEvenTokens / tokensPerQuery : 0;
+  const breakEvenFleet = opsOn(cx.selfHostedMonthly$); // production cost incl. ops, consistent with the others
   const breakEvenPer1000 =
-    breakEvenQueries > 0 ? (cx.selfHostedMonthly$ / breakEvenQueries) * 1000 : null;
+    breakEvenQueries > 0 ? (breakEvenFleet / breakEvenQueries) * 1000 : null;
   const tokFmt = (t: number) =>
     t >= 1e9 ? `${(t / 1e9).toFixed(1)}B` : `${(t / 1e6).toFixed(0)}M`;
   const gpuBreakEven: Scenario = hasVolume
@@ -124,7 +137,7 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
         id: "gpu-break-even",
         label: "GPU at break-even traffic",
         // The fleet cost is fixed; per-1k is what it would be at break-even volume.
-        monthly: cx.selfHostedMonthly$,
+        monthly: breakEvenFleet,
         per1000: cx.breakEvenFeasible ? breakEvenPer1000 : null,
         diffPct: null,
         difference: cx.breakEvenFeasible ? "Break-even" : "Not achievable",

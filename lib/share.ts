@@ -76,10 +76,18 @@ const calcInputsSchema = z.object({
     gpuPricingModel: z
       .enum(["on-demand", "reserved-1yr", "reserved-3yr", "savings-1yr", "spot"])
       .default("on-demand"),
-    gpuUptimeHoursPerMonth: num.positive().default(730),
+    // A month has at most 730 GPU-hours — clamp rather than reject so old links load.
+    gpuUptimeHoursPerMonth: num
+      .positive()
+      .default(730)
+      .transform((v) => Math.min(730, v)),
     sustainedTokPerSec: num.positive(),
     utilTarget: num.min(0.01).max(1),
-    numInstances: num.min(1).default(1),
+    // Instances must be a whole number — floor (2.5 → 2) rather than reject.
+    numInstances: num
+      .min(1)
+      .default(1)
+      .transform((v) => Math.max(1, Math.floor(v))),
     weightBits: num.min(1).default(16),
     apiComparisonModelId: z.string().default(""),
     apiComparisonInPricePer1K: nonNeg.default(0),

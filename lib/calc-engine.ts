@@ -247,8 +247,23 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
   const ingestion = computeIngestion(effectiveInputs);
   const vectorStore = computeVectorStore(effectiveInputs, ingestion.numVectors);
   const perQuery = computePerQuery(effectiveInputs);
-  // Crossover is computed first so self-hosted mode can bill the GPU fleet.
-  const crossover = computeCrossover(effectiveInputs, priceBook, perQuery);
+  // Crossover is computed first so self-hosted mode can bill the GPU fleet. It
+  // auto-sizes the fleet to the flat-nameplate throughput need. Then grounding may
+  // reveal a LARGER measured requirement; if so, re-run the crossover with that as
+  // a floor so the billed fleet (and every downstream cost/scenario/export) is sized
+  // to actually serve the load — no cheaper-but-inadequate fleet is ever billed.
+  const crossover0 = computeCrossover(effectiveInputs, priceBook, perQuery);
+  const grounding0 = computeGrounding(effectiveInputs, priceBook, perQuery, crossover0);
+  const groundedFloor =
+    grounding0.available && grounding0.minInstances != null ? grounding0.minInstances : 0;
+  const crossover =
+    groundedFloor > crossover0.boxes
+      ? computeCrossover(effectiveInputs, priceBook, perQuery, groundedFloor)
+      : crossover0;
+  const grounding =
+    crossover === crossover0
+      ? grounding0
+      : computeGrounding(effectiveInputs, priceBook, perQuery, crossover);
 
   const queriesPerMonth = effectiveInputs.traffic.queriesPerMonth;
   const selfHosted = effectiveInputs.generation.mode === "self-hosted";
@@ -294,7 +309,7 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
     dominantLever,
     crossover,
     managedKb: computeManagedKb(effectiveInputs, priceBook, perQuery),
-    grounding: computeGrounding(effectiveInputs, priceBook, perQuery, crossover),
+    grounding,
     mode: reportedMode,
   };
 }

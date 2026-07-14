@@ -31,8 +31,9 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "openai",
     bedrock: true,
     kind: "llm",
-    inPricePer1K: 0.002,
-    outPricePer1K: 0.016,
+    // AWS Bedrock us-east-1: $5.50 / $33.00 per 1M input/output tokens.
+    inPricePer1K: 0.0055,
+    outPricePer1K: 0.033,
     verifiedAt: VERIFIED_AT,
   },
   {
@@ -61,8 +62,9 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "openai",
     bedrock: true,
     kind: "llm",
-    inPricePer1K: 0.00175,
-    outPricePer1K: 0.014,
+    // AWS Bedrock us-east-1: $2.75 / $16.50 per 1M input/output tokens.
+    inPricePer1K: 0.00275,
+    outPricePer1K: 0.0165,
     verifiedAt: VERIFIED_AT,
   },
   // ---- Self-hosted mode: open-weight LLMs ----

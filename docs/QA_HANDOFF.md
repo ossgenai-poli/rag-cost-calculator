@@ -1,11 +1,12 @@
-# QA Handoff — RAG Cost Calculator (RC `rc-qa-2`)
+# QA Handoff — RAG Cost Calculator (RC `rc-qa-3`)
 
 This is the single source of truth for the QA engineer. Everything needed to run the test plan is
 here. Live-pricing suites run against the Vercel runtime (§3/§5); all other suites run against the
 static site.
 
-> **Retest round (rc-qa-2):** fixes for the rc-qa-1 NO-GO findings #24–#28 are in, each with
-> regression coverage, plus the L4 fixture so that case is no longer blocked. See §8.
+> **Retest round (rc-qa-3):** fixes for the end-user AWS-decision findings (GPU auto-sizing,
+> grounded uptime/peak, Bedrock rates, ops-in-scenarios, and the P2 input guards). See §9.
+> Round-2 (#24–#28) fixes remain in. See §8.
 
 ---
 
@@ -13,11 +14,11 @@ static site.
 
 | | Value |
 |---|---|
-| **Git tag** | `rc-qa-2` |
-| **Commit SHA** | `be4f84d` (full: run `git rev-parse rc-qa-2`) |
+| **Git tag** | `rc-qa-3` |
+| **Commit SHA** | run `git rev-parse rc-qa-3` |
 | **Static site (live + verified rendering)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
 | **Runtime site (LIVE pricing)** | https://rag-cost-calculator-hazel.vercel.app/ |
-| **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues (#24–#28 commented, open for retest) |
+| **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
 
 Check out the exact tree:
 ```bash
@@ -218,3 +219,21 @@ screenshot or the offending export file.
 
 Local gates all green on `rc-qa-2`: `typecheck`, **75** unit tests (incl. `qa-regressions.test.ts`),
 `build:static`, `verify:basepath`, `test:e2e` (root **and** the deployed subpath URL), `verify:live`.
+
+---
+
+## 9. rc-qa-3 retest checklist (end-user AWS-decision findings)
+
+| Area | Fix | Retest |
+|---|---|---|
+| P1 — under-provisioned savings | The self-hosted fleet **auto-sizes** to serve the load (memory + throughput + grounded + peak/uptime). Comparison, headline, and exports all bill the feasible fleet; a note shows "auto-sized from N". | GLM-5.2, 2×p5, 100M q/mo → cost reflects the required fleet (no −42% illusion that reverses when sized) |
+| P1 — grounded capacity | Grounding now scales required decode by **peakFactor** and **uptime**; `effectiveRequiredInstances` = **max(grounded, flat)**. | Halve uptime or 2× peak → required instances rise; grounded never under-reports vs flat |
+| P1 — Bedrock rates | GPT-5.5 → **$5.50/$33** per 1M; GPT-5.4 → **$2.75/$16.50** per 1M (us-east-1). | Sources modal / JSON export shows the new rates |
+| P1 — ops in scenarios | Ops/overhead applied to **every** scenario (scenario-specific). | Set overhead>0 → the selected scenario total == the headline total |
+| P2 — uptime cap | Fleet uptime clamped to **≤730 h/mo** (input + schema + calc). | Enter 2000 → treated as 730 |
+| P2 — integer instances | Instances floored to a whole number (input + schema + calc). | Enter 2.5 → billed as 2 (or auto-sized higher) |
+| P2 — OpenSearch floor | Min-OCU field discloses the **Classic 2-OCU** assumption + NextGen note. | Hint visible on the Min OCU field |
+| P2 — $0 GPU rate | Flagged as **owned/free capacity**; savings marked not like-for-like. | Set GPU $/hr = 0 → owned-capacity notice shows |
+
+Coverage: `lib/qa-regressions.test.ts` adds cases for every item above; **82** unit tests pass.
+Gates green on `rc-qa-3`: typecheck · 82 tests · build:static · verify:basepath · test:e2e · verify:live.

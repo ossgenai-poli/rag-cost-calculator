@@ -62,19 +62,24 @@ function selfHostInputs(modelId: string) {
 }
 
 describe("computeGrounding (via calculate)", () => {
-  it("grounds a measured model and flags under-provisioning at high QPS", () => {
+  it("grounds a measured model and AUTO-SIZES the fleet to the grounded need at high QPS", () => {
     const i = selfHostInputs("deepseek-v4-pro-oss");
     i.traffic.queriesPerMonth = 200_000_000; // heavy load
     i.generation.numInstances = 1;
-    const g = calculate(i, priceBook).grounding;
+    const r = calculate(i, priceBook);
+    const g = r.grounding;
     expect(g.available).toBe(true);
     expect(g.provenance).toBe("measured");
     expect(g.tputPerGpu).toBeGreaterThan(0);
     expect(g.minInstances).toBe(Math.max(g.minInstancesThroughput!, g.minInstancesMemory!, 1));
-    expect(g.underProvisioned).toBe(g.provisionedInstances! < g.minInstances!);
     // heavy load ⇒ throughput floor dominates and exceeds a 1-box fleet
     expect(g.minInstancesThroughput!).toBeGreaterThan(1);
-    expect(g.underProvisioned).toBe(true);
+    // The engine auto-sizes the billed fleet up to the grounded requirement, so it
+    // is NOT under-provisioned and the billed fleet reflects the true cost (P1-a/b).
+    expect(r.crossover.boxes).toBeGreaterThanOrEqual(g.minInstances!);
+    expect(g.provisionedInstances!).toBeGreaterThanOrEqual(g.minInstances!);
+    expect(g.underProvisioned).toBe(false);
+    expect(r.crossover.autoSized).toBe(true);
   });
 
   it("labels GLM-5.2 a proxy and marks Nemotron/Kimi unavailable", () => {

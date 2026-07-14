@@ -170,10 +170,11 @@ describe("computeCrossover", () => {
     // (ceil(3X) lands in (3·ceil(X) − 3, 3·ceil(X)], so allow the rounding band.)
     expect(r.throughputInstances).toBeGreaterThan(base.throughputInstances * 3 - 3);
     expect(r.throughputInstances).toBeLessThanOrEqual(base.throughputInstances * 3);
-    // The billed (provisioned) fleet and its cost are unchanged — this only moves
-    // the "instances the load needs" (under-provisioning) signal.
-    expect(r.boxes).toBe(base.boxes);
-    expect(r.selfHostedMonthly$).toBeCloseTo(base.selfHostedMonthly$, 6);
+    // The billed fleet auto-sizes up to serve the 3× peak, so both the box count
+    // and the cost rise with it — the peak requirement is billed, not hidden (P1-a/b).
+    expect(r.boxes).toBeGreaterThan(base.boxes);
+    expect(r.boxes).toBe(r.throughputInstances);
+    expect(r.selfHostedMonthly$).toBeGreaterThan(base.selfHostedMonthly$);
   });
 
   it("curve is a flat fixed-fleet line vs a rising linear API line", () => {
@@ -278,10 +279,10 @@ describe("computeCrossover", () => {
     expect(() => computeCrossover(inputs, priceBook, perQuery)).not.toThrow();
   });
 
-  it("billed boxes follow the provisioned fleet, not traffic; high volume shows as throughput demand", () => {
-    // A fixed 1-instance fleet is billed the same at 100k and 10M queries — the
-    // engine does NOT auto-scale. Instead throughputInstances rises to flag that
-    // the fleet is under-provisioned at the higher volume.
+  it("auto-sizes the billed fleet up to serve high volume (never a cheap-but-inadequate fleet)", () => {
+    // The billed fleet must SERVE the load: at high volume the throughput need
+    // exceeds 1 box, so the engine auto-sizes boxes up (and the cost with it),
+    // instead of billing an inadequate 1-box fleet as if it were valid (P1-a).
     const base = makeInputs({ outTokens: 200, gpuPricePerHr: 3, sustainedTokPerSec: 5000, utilTarget: 0.5, queriesPerMonth: 100_000, numInstances: 1 });
     const highVolume = makeInputs({ outTokens: 200, gpuPricePerHr: 3, sustainedTokPerSec: 5000, utilTarget: 0.5, queriesPerMonth: 100_000_000, numInstances: 1 });
     const perQuery = makePerQuery(800, 0.0005);
@@ -290,12 +291,14 @@ describe("computeCrossover", () => {
     const highVolumeResult = computeCrossover(highVolume, priceBook, perQuery);
 
     expect(baseResult.boxes).toBe(1);
-    expect(highVolumeResult.boxes).toBe(1); // fixed fleet — not auto-scaled
-    expect(highVolumeResult.selfHostedMonthly$).toBe(baseResult.selfHostedMonthly$);
-    // throughput demand rises, so the fleet is now under-provisioned
-    expect(highVolumeResult.throughputInstances).toBeGreaterThan(baseResult.throughputInstances);
-    expect(highVolumeResult.throughputInstances).toBeGreaterThan(highVolumeResult.boxes);
-    expect(highVolumeResult.verdict).toBe(baseResult.verdict);
+    expect(baseResult.autoSized).toBe(false);
+    // Auto-sized up: billed boxes rise with demand, and equal the throughput need.
+    expect(highVolumeResult.boxes).toBeGreaterThan(baseResult.boxes);
+    expect(highVolumeResult.boxes).toBe(highVolumeResult.throughputInstances);
+    expect(highVolumeResult.autoSized).toBe(true);
+    expect(highVolumeResult.userInstances).toBe(1);
+    // Cost scales with the feasible fleet — no cheaper-but-inadequate figure.
+    expect(highVolumeResult.selfHostedMonthly$).toBeGreaterThan(baseResult.selfHostedMonthly$);
   });
 
   it("provisioning more instances raises billed boxes and cost", () => {

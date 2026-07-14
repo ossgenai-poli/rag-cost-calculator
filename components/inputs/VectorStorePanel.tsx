@@ -27,6 +27,7 @@ export function VectorStorePanel(props: {
       <FieldRow>
         <NumberField
           label="Min OCU"
+          hint="Default 2 assumes OpenSearch Serverless 'Classic' (2-OCU minimum: 1 indexing + 1 search). NextGen serverless has a lower floor — set it here if you're on NextGen."
           value={vectorStore.minOCU}
           min={0}
           step={1}

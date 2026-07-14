@@ -10,8 +10,6 @@
 import type { CalcInputs, PriceBook, PerQueryResult, CrossoverResult, GroundingResult } from "./types";
 import { getBenchmarkCurve, operatingPointAt } from "./benchmarks";
 
-const SECONDS_PER_MONTH = 730 * 3600; // 2,628,000 — matches the engine
-
 /**
  * #25 reconciliation. When InferenceX grounding is available it is the
  * authoritative fleet requirement (measured-at-SLA throughput floor combined
@@ -24,9 +22,11 @@ export function effectiveRequiredInstances(
   grounding: GroundingResult,
   flatThroughputInstances: number
 ): number {
-  return grounding.available && grounding.minInstances != null
-    ? grounding.minInstances
-    : flatThroughputInstances;
+  // MAX, not "grounded wins": the grounded (measured) figure and the flat-nameplate
+  // figure are both lower bounds on a feasible fleet, so the requirement is the
+  // larger of the two — taking only the grounded value would mask a bigger flat need.
+  const grounded = grounding.available && grounding.minInstances != null ? grounding.minInstances : 0;
+  return Math.max(grounded, flatThroughputInstances);
 }
 
 /** Parse "8x H100 80GB" → 8; default 8. */
@@ -67,8 +67,13 @@ export function computeGrounding(
   const gpu = priceBook.gpus.find((g) => g.instanceType === generation.gpuInstanceType);
   const perBox = gpusPerBox(gpu?.gpu);
   const perBoxDecode = op.tputPerGpu * perBox;
-  const qps = traffic.queriesPerMonth / SECONDS_PER_MONTH;
-  const requiredDecode = qps * generation.outTokens; // aggregate output tok/s
+  // The fleet must clear the whole month's output tokens within the hours it
+  // actually runs (uptime ≤ 730), and be sized for PEAK not average load — same
+  // treatment as the flat crossover model, so grounded and flat are comparable.
+  const monthlyOutputTokens = traffic.queriesPerMonth * generation.outTokens;
+  const peakFactor = traffic.peakFactor > 0 ? traffic.peakFactor : 1;
+  const uptimeHours = Math.min(730, generation.gpuUptimeHoursPerMonth > 0 ? generation.gpuUptimeHoursPerMonth : 730);
+  const requiredDecode = (monthlyOutputTokens * peakFactor) / (uptimeHours * 3600); // peak output tok/s
 
   const minInstancesThroughput = perBoxDecode > 0 ? Math.ceil(requiredDecode / perBoxDecode) : 0;
   const minInstancesMemory = crossover.minInstancesToLoad;

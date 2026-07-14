@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-07-13T23:16:38.850Z",
+  "updatedAt": "2026-07-14T04:03:09.182Z",
   "source": "fallback",
   "region": "us-east-1",
   "gpus": [
@@ -54,8 +54,8 @@
       "provider": "openai",
       "bedrock": true,
       "kind": "llm",
-      "inPricePer1K": 0.002,
-      "outPricePer1K": 0.016,
+      "inPricePer1K": 0.0055,
+      "outPricePer1K": 0.033,
       "verifiedAt": "2026-07-10"
     },
     {
@@ -84,8 +84,8 @@
       "provider": "openai",
       "bedrock": true,
       "kind": "llm",
-      "inPricePer1K": 0.00175,
-      "outPricePer1K": 0.014,
+      "inPricePer1K": 0.00275,
+      "outPricePer1K": 0.0165,
       "verifiedAt": "2026-07-10"
     },
     {
