@@ -1,0 +1,74 @@
+[
+  {
+    "id": "l4-legacy-fixture",
+    "name": "Legacy scenario (pre-schema)",
+    "inputs": {
+      "ragMode": "A",
+      "corpus": {
+        "numDocs": 10000,
+        "avgTokensPerDoc": 800,
+        "refreshCadence": "monthly"
+      },
+      "chunking": {
+        "chunkSize": 512,
+        "overlapFraction": 0.1,
+        "embedModelId": "titan-embed-v2",
+        "embedDim": 1024,
+        "embedPricePer1K": 0.00002
+      },
+      "vectorStore": {
+        "indexingAlgo": "hnsw",
+        "m": 16,
+        "replicas": 1,
+        "pqCompression": 32,
+        "minOCU": 2,
+        "ocuPricePerHr": 0.24,
+        "storagePricePerGBmo": 0.024,
+        "gbRamPerOcu": 6,
+        "indexingOCUhrs": 10,
+        "qpsPerOcu": 2
+      },
+      "retrieval": {
+        "topK": 20,
+        "rerankEnabled": true,
+        "rerankModelId": "cohere-rerank-v3",
+        "rerankPricePer1K": 2,
+        "topN": 5
+      },
+      "guardrails": {
+        "inputEnabled": false,
+        "outputEnabled": false,
+        "inputPricePer1KUnits": 0.75,
+        "outputPricePer1KUnits": 0.75
+      },
+      "generation": {
+        "mode": "api",
+        "llmModelId": "claude-fable-5",
+        "llmInPricePer1K": 0.006,
+        "llmOutPricePer1K": 0.03,
+        "outTokens": 500,
+        "promptOverhead": 300,
+        "gpuInstanceType": "p5.48xlarge",
+        "gpuPricePerHr": 55.04,
+        "sustainedTokPerSec": 2600,
+        "utilTarget": 0.7,
+        "numInstances": 1,
+        "apiComparisonModelId": "claude-fable-5",
+        "apiComparisonInPricePer1K": 0.006,
+        "apiComparisonOutPricePer1K": 0.03,
+        "maxContextLen": 8192,
+        "maxConcurrentSeqs": 16
+      },
+      "traffic": {
+        "queriesPerMonth": 100000,
+        "region": "us-east-1",
+        "method": "monthly",
+        "qps": 1,
+        "hoursPerDay": 24,
+        "daysPerMonth": 30,
+        "peakFactor": 1
+      },
+      "queryTokens": 50
+    }
+  }
+]

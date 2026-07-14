@@ -12,6 +12,23 @@ import { getBenchmarkCurve, operatingPointAt } from "./benchmarks";
 
 const SECONDS_PER_MONTH = 730 * 3600; // 2,628,000 — matches the engine
 
+/**
+ * #25 reconciliation. When InferenceX grounding is available it is the
+ * authoritative fleet requirement (measured-at-SLA throughput floor combined
+ * with the memory floor). The flat-nameplate `throughputInstances` from the
+ * crossover model is only a fallback. Callers must use THIS everywhere they show
+ * a "needs ≥ N instances" figure so the grounded banner and the capacity warning
+ * can never disagree (e.g. grounded ≥15 vs flat ≥6 for the same config).
+ */
+export function effectiveRequiredInstances(
+  grounding: GroundingResult,
+  flatThroughputInstances: number
+): number {
+  return grounding.available && grounding.minInstances != null
+    ? grounding.minInstances
+    : flatThroughputInstances;
+}
+
 /** Parse "8x H100 80GB" → 8; default 8. */
 function gpusPerBox(gpuLabel: string | undefined): number {
   const m = gpuLabel?.match(/(\d+)\s*x/i);

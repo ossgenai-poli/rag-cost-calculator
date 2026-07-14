@@ -43,6 +43,8 @@ export interface DisplayMetrics {
 
   vectorStoreMonthly: number;
   opensearchFloor: number;
+  /** Number of embedding vectors stored — corpus tokens ÷ effective chunk size. */
+  numVectors: number;
 
   tokenConstruction: TokenConstruction;
   breakdown: BreakdownRow[];
@@ -108,6 +110,7 @@ export function deriveDisplayMetrics(result: CalcResult, inputs: CalcInputs): Di
     monthlyOutputTokens,
     vectorStoreMonthly: result.vectorStore.opensearchMonthly$,
     opensearchFloor: result.vectorStore.opensearchFloor$,
+    numVectors: result.ingestion.numVectors,
     tokenConstruction,
     breakdown,
     dominant: {

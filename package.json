@@ -16,7 +16,8 @@
     "refresh-prices": "tsx scripts/refresh-prices.ts",
     "serve:static": "npx serve out -l 3100",
     "test:e2e": "node scripts/verify-e2e.mjs",
-    "verify:live": "node scripts/verify-live.mjs"
+    "verify:live": "node scripts/verify-live.mjs",
+    "verify:basepath": "node scripts/verify-basepath.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-pricing": "^3.700.0",

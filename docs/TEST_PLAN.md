@@ -177,7 +177,7 @@ Anchor outputs to verify (at committed reference prices):
 | L1 | Copy link round-trips | Change several inputs → **Copy link** → open the URL in a fresh tab. | All inputs restored exactly; same monthly total. | | |
 | L2 | Malformed link is safe | Manually corrupt the `?s=` param in the URL and load it. | App falls back to defaults; no crash, no wrong number. | | |
 | L3 | Save / load / rename / duplicate / delete scenarios | Save a scenario; change inputs; save another; rename, duplicate, delete; reload the page. | Saved scenarios persist across reload (localStorage), show correct monthly + per-1k, and all actions work. | | |
-| L4 | Stale saved scenario | (If possible) load an older saved scenario. | Loads without crash — missing newer fields default in. | | |
+| L4 | Stale saved scenario | Seed the fixture per **[docs/fixtures/README.md](./fixtures/README.md)** (`legacy-saved-scenario.json` → localStorage `rag-calc-saved-v1`), reload, load "Legacy scenario (pre-schema)". | Loads without crash — 8 missing newer fields (managedKb, ops, interactivity SLA, GPU commitment, guardrail char fields) default in. No longer BLOCKED — fixture provided. | | |
 | L5 | Export CSV | Click **Export CSV**. | A CSV downloads with headline metrics + the cost breakdown; opens cleanly in a spreadsheet. | | |
 | L6 | Export JSON | Click **Export JSON**. | A JSON of all assumptions + a pricing provenance record downloads and is valid JSON. | | |
 | L7 | Export report | Click **Export report**. | A Markdown `rag-cost-report.md` downloads with headline, breakdown, scenario comparison, crossover verdict, and key assumptions. In self-hosted mode the GPU line records the purchasing model + uptime. | | |

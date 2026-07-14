@@ -15,9 +15,9 @@ import type { GpuPricingModel } from "./types";
  */
 export const GPU_COMMITMENT_DISCOUNT: Record<GpuPricingModel, number> = {
   "on-demand": 0,
-  "reserved-1yr": 0.4,
-  "reserved-3yr": 0.6,
-  "savings-1yr": 0.4,
+  "reserved-1yr": 0.4, // Standard 1-yr Reserved Instance (locked instance type/AZ)
+  "reserved-3yr": 0.6, // Standard 3-yr Reserved Instance
+  "savings-1yr": 0.3, // 1-yr Compute Savings Plan — more flexible, so a smaller discount than Standard RI
   spot: 0.65,
 };
 

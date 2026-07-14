@@ -212,7 +212,13 @@ export function inputsToCsv(result: CalcResult, inputs: CalcInputs): string {
     ["Queries per month", inputs.traffic.queriesPerMonth],
     [],
     ["Component", "Monthly cost (USD)", "Share (%)"],
-    ...m.breakdown.map((r) => [r.label, r.monthly.toFixed(2), (r.share * 100).toFixed(2)]),
+    // Stable CANONICAL order (docs/EXPORT_SPEC.md §1), not the cost-descending
+    // display sort — exports must be deterministic for diffing/QA. #28.
+    ...result.breakdown.map((r) => [
+      r.label,
+      r.monthly$.toFixed(2),
+      (m.totalMonthly > 0 ? (r.monthly$ / m.totalMonthly) * 100 : 0).toFixed(2),
+    ]),
   ];
   return rows.map((r) => r.map(csvEscape).join(",")).join("\n");
 }

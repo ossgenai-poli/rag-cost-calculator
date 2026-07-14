@@ -74,7 +74,7 @@ export function TokenBreakdown({ metrics }: TokenBreakdownProps) {
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-800 pt-3 text-xs">
+      <div className="mt-3 grid grid-cols-3 gap-3 border-t border-slate-800 pt-3 text-xs">
         <div>
           <div className="text-slate-500">Monthly input tokens</div>
           <div className="tabular-nums text-slate-300">{n(metrics.monthlyInputTokens)}</div>
@@ -82,6 +82,12 @@ export function TokenBreakdown({ metrics }: TokenBreakdownProps) {
         <div>
           <div className="text-slate-500">Monthly output tokens</div>
           <div className="tabular-nums text-slate-300">{n(metrics.monthlyOutputTokens)}</div>
+        </div>
+        <div>
+          <div className="text-slate-500">Vectors stored</div>
+          <div className="tabular-nums text-slate-300" title="Corpus tokens ÷ effective chunk size">
+            {n(metrics.numVectors)}
+          </div>
         </div>
       </div>
     </div>

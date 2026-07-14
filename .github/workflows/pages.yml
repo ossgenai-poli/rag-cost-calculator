@@ -31,11 +31,17 @@ jobs:
         run: npm ci
 
       - name: Build static export
-        # If hosting under a project subpath (https://USER.github.io/rag-cost-calculator/),
-        # set NEXT_PUBLIC_BASE_PATH to the repo name so basePath/assetPrefix are correct, e.g.:
-        # env:
-        #   NEXT_PUBLIC_BASE_PATH: /rag-cost-calculator
+        # Hosted under the project subpath https://USER.github.io/rag-cost-calculator/,
+        # so basePath/assetPrefix MUST be set or /_next assets 404 and the app hangs
+        # on "Loading prices…" (#24). NEXT_PUBLIC_BASE_PATH drives next.config.mjs.
+        env:
+          NEXT_PUBLIC_BASE_PATH: /rag-cost-calculator
         run: npm run build:static
+
+      - name: Verify subpath asset base path (#24 guard)
+        env:
+          NEXT_PUBLIC_BASE_PATH: /rag-cost-calculator
+        run: npm run verify:basepath
 
       - name: Disable Jekyll processing
         run: echo > out/.nojekyll

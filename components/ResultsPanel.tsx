@@ -3,6 +3,7 @@
 import type { CalcInputs, CalcResult, PriceBook } from "@/lib/types";
 import { deriveDisplayMetrics } from "@/lib/derived";
 import { buildScenarios } from "@/lib/scenarios";
+import { effectiveRequiredInstances } from "@/lib/grounding";
 import { computeSensitivity } from "@/lib/sensitivity";
 import { activeProvider } from "@/lib/provider";
 import { MetricCards } from "./MetricCards";
@@ -75,6 +76,12 @@ export function ResultsPanel({
     priceBook.models.find((m) => m.id === inputs.generation.llmModelId)?.label ?? "This model";
   const hasGenVolume = crossover.monthlyGenTokens > 0;
   const isEfficient = crossover.verdict === "self-host efficient";
+
+  // #25 reconcile: when InferenceX grounding is available it is the authoritative,
+  // measured-at-SLA fleet requirement (max of throughput + memory floors). Use it
+  // for the capacity callouts too, so the flat-nameplate estimate can never
+  // contradict the grounded banner (e.g. grounded ≥15 vs flat ≥6 for one config).
+  const effRequiredInstances = effectiveRequiredInstances(grounding, crossover.throughputInstances);
 
   // Human description of the ACTIVE scenario the headline numbers represent.
   const genModel = priceBook.models.find((m) => m.id === inputs.generation.llmModelId);
@@ -193,8 +200,8 @@ export function ResultsPanel({
               {crossover.realizedUtil < 0.1
                 ? `The fleet is heavily underutilized — you're paying for ${crossover.boxes} instance(s) to serve a fraction of their decode capacity. An API is usually cheaper at this load.`
                 : `Decode demand ≈ ${Math.round(metrics.monthlyOutputTokens / (730 * 3600)).toLocaleString()} output tok/s vs ${Math.round((crossover.boxes * crossover.capacity100) / (730 * 3600)).toLocaleString()} provisioned.`}
-              {crossover.throughputInstances > crossover.boxes &&
-                ` Capacity exceeded: needs ≥ ${crossover.throughputInstances} instances.`}
+              {effRequiredInstances > crossover.boxes &&
+                ` Capacity exceeded: needs ≥ ${effRequiredInstances} instances.`}
             </div>
           </div>
         ) : (
@@ -354,8 +361,11 @@ export function ResultsPanel({
       {/* What moves cost most */}
       <Sensitivity rows={sensitivity} />
 
-      {/* Self-hosted fleet adequacy */}
+      {/* Self-hosted fleet adequacy — flat-nameplate fallback. Suppressed when the
+          benchmark-grounded banner is shown (#25): that banner is the authoritative
+          under-provision signal, so this must not display a contradictory number. */}
       {inputs.generation.mode === "self-hosted" &&
+        !grounding.available &&
         crossover.throughputInstances > crossover.boxes && (
           <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
             <span aria-hidden className="mt-0.5 text-amber-400">⚠</span>
