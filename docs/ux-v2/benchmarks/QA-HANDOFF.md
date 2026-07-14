@@ -20,10 +20,27 @@ The layer **imports** the frozen `lib/benchmarks.ts` read-only (the control wrap
 ## Run the tests
 
 ```
-npx vitest run lib/benchmark-registry     # 15/15 — the 12 required tests + sub-cases
-npx vitest run                            # 199/199 — frozen 184 + new 15 (no regression)
+npx vitest run lib/benchmark-registry     # 30/30 — the 12 guarantees + P1/P2 hardening reproductions
+npx vitest run                            # 214/214 — frozen 184 + new 30 (no regression)
 npx tsc --noEmit                          # clean
 ```
+
+## Hardening (this round — HOLD fixes; all fail-closed)
+
+| Finding | Fix |
+|---|---|
+| **P1-1** illustrative selectable | `loadCatalog()` verified-only; eligibility denies `snapshotKind!=="verified"`; test: illustrative independent-reviewed can't outrank verified |
+| **P1-2** arbitrary GPU proxy | `equivalence.ts` — reviewed allowlist, **deny by default**; cross-accelerator → `unbenchmarked`; same-accelerator non-AWS host → host proxy w/ recorded differences |
+| **P1-3** topology unenforced | eligibility compares gpuCount/nodeCount/serving/TP·PP·EP; negative tests (8-GPU→1, 1-node→multi, TP mismatch) |
+| **P1-4** unknown KV → exact | request KV + record KV null/mismatch → ineligible (`kv-precision-unknown`/`kv-precision-mismatch`) |
+| **P1-5** latency/oppoint unsafe | `interactivity` requires `ttftPercentile` (+ optional streaming); mean/p50 can't satisfy P99; intvty preserved+returned; concurrency-exact required for exact |
+| **P1-6** label-only extrapolation | only transform = bounded **ISL-linear-scale** (`transform.ts`) → `measured-scaled` + metadata (input scaled, TTFT dropped); all other substitutions → `unbenchmarked` |
+| **P1-7** validation not closed | exhaustive `validateRecord` (enums, finite/positive, dates, hashes, urls, topology consistency); raw validated before `Number()`; adversarial tests |
+| **P2-1** control-diff partial | `opEqual` now compares throughput/TTFT/**concurrency/interactivity** |
+| **P2-2** provenance chain | manifest stores per-file checksums, verified at ingest (tamper fails closed); `LICENSE-MANIFEST.md` added; verified snapshot with TBD revision rejected |
+| **P2-3** overstated coverage | the reproductions above are now acceptance tests |
+
+Parent Phase-0 fixes are incorporated (branch rebased onto `ux/v2 @ c2d41f4`).
 
 The 12 required guarantees (mapped in [DESIGN.md](DESIGN.md) §7): exact>proxy>extrapolated ·
 independent>vendor · latency gate rejects max-load · no silent mismatch · whole-group topology preserved ·

@@ -196,23 +196,38 @@ Plus determinism: the selector is a pure function of (RequestSpec, pinned catalo
 
 ---
 
-## 8. Open decisions requiring product judgment
+## 8. Open decisions — RESOLVED (reviewer positions, adopted)
 
-1. **InferenceX Release gap** — the repo has no Releases despite the "weekly snapshot" claim. Pin
-   runs/commits for now; do we (a) wait for Releases, (b) mirror runs into our own pinned store, or (c)
-   accept per-run pinning as the stable interface? *(recommend c + b mirror.)*
-2. **Independent-vs-vendor precedence override** — is there ever a case where a vendor **exact** result
-   should outrank an MLPerf **exact** result (e.g. MLPerf lacks the interactive point)? Default: no.
-3. **Proxy host-equivalence policy** — which GPU/host substitutions count as "materially equivalent"
-   (e.g. HGX H200 ↔ p5en) and what differences must be surfaced? Needs an explicit equivalence table.
-4. **Illustrative fixtures** — the slice's MLPerf/TRT-LLM records are `illustrative-pending-ingestion`.
-   Confirm the update workflow admits **only `verified`** snapshots into the shipping catalog.
-5. **Where the layer plugs into the engine** — behind which flag, and does experimental ever become the
-   default before full QA? Default: control ships; experimental is opt-in until proven.
-6. **`unbenchmarked` UX** — when experimental returns `unbenchmarked` but control has a heuristic answer,
-   what does Simple mode show? (Proposed: exclude from Simple; Expert shows the gap.)
-7. **Update-workflow trigger** — manual-only until adapter + license manifest + schema validation +
-   rollback pass review (no unattended cron scraper before then).
+1. **InferenceX stability** — **per-run/commit pinning PLUS an owned immutable mirror.** Never rely on
+   an undocumented endpoint. *(Implemented: per-run pin + checksum; mirror is an ingestion-workflow TODO.)*
+2. **Independent vs vendor** — source class is a **tie-break only after** workload, SLA, statistic and
+   topology eligibility. Vendor evidence may win **only when independent evidence does not satisfy the
+   requested operating contract** — never a blanket override. *(Implemented: eligibility gates the contract
+   first; `statusRank` then `sourceRank` break ties among the eligible set.)*
+3. **Proxy equivalence** — **explicit reviewed allowlist; deny by default;** never inferred from GPU-family
+   naming. *(Implemented: `equivalence.ts` — allowlist empty for the slice → all cross-accelerator
+   substitutions fail closed to `unbenchmarked`; same-accelerator non-AWS host → host proxy with recorded
+   differences.)*
+4. **Illustrative fixtures** — **test-only and always ineligible; only verified snapshots enter the
+   selectable catalog.** *(Implemented: `loadCatalog()` verified-only; eligibility rejects
+   `snapshotKind !== "verified"`.)*
+5. **Engine integration** — remain behind an **opt-in experimental flag; do not wire into capacity/
+   economics** until these P1s pass and control-difference reconciliation is complete. *(Not wired; control
+   ships.)*
+6. **`unbenchmarked` UX** — **exclude from Simple recommendations;** Expert may show the evidence gap and
+   separately label the legacy heuristic — never present the heuristic as benchmark evidence.
+7. **Updates** — **manual, reviewed PR workflow** with immutable source revision, checksum, schema
+   validation, licensing, attribution, catalog diff and rollback. **No unattended cron ingestion yet.**
+
+### Hardening added this round (fail-closed)
+- **P1-1** verified-only selection · **P1-2** accelerator-equivalence allowlist (`equivalence.ts`) ·
+  **P1-3** full topology enforcement (gpu/node count, serving, TP/PP/EP) · **P1-4** unknown/mismatched KV
+  → ineligible · **P1-5** percentile-aware + streaming-aware latency gate, concurrency-exact operating
+  point · **P1-6** the only transform is a disclosed, bounded ISL-linear-scale (`transform.ts`) →
+  `measured-scaled` with metadata; every other substitution → `unbenchmarked` · **P1-7** exhaustive
+  `validateRecord` (enums, finite/positive, dates, hashes, urls, topology consistency; raw validated
+  before coercion) · **P2-1** `opEqual` compares throughput/TTFT/concurrency/interactivity · **P2-2**
+  manifest checksums verified at ingest + `LICENSE-MANIFEST.md` + verified-requires-non-TBD-revision.
 
 ---
 

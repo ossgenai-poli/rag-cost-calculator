@@ -50,6 +50,9 @@ export const tensorrtllmAdapter: SourceAdapter = {
         interconnect: row.interconnect,
         parallelism: { tp: Number(row.tp ?? gpuCount), pp: Number(row.pp ?? 1), ep: 1, dp: 1 },
         serving: "aggregated",
+        // Vendor perf tables are not an AWS-instance measurement → host proxy at best.
+        hostSystem: `${String(row.gpu).toUpperCase()}-nvidia-perf`,
+        hostIsAwsRepresentative: false,
         isl: Number(row.isl),
         osl: Number(row.osl),
         concurrency: Number(row.concurrency),
@@ -59,6 +62,8 @@ export const tensorrtllmAdapter: SourceAdapter = {
         // NEVER synthesize a per-GPU value when the source didn't report one.
         outputTputPerGpu: perGpuReported ? num(row.output_tokens_per_second_per_gpu) : null,
         inputTputPerGpu: perGpuReported ? num(row.input_tokens_per_second_per_gpu) : null,
+        intvty: null,
+        // Vendor perf tables report mean/median TTFT — NEVER a P99 SLA statistic.
         ttft: row.ttft_ms != null ? { value: Number(row.ttft_ms) / 1000, percentile: "mean" } : null,
         tpot: row.tpot_ms != null ? Number(row.tpot_ms) / 1000 : null,
         itl: null,

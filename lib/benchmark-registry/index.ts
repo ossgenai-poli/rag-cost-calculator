@@ -62,7 +62,12 @@ export function resolveOperatingPoint(req: RequestSpec, opts: ResolveOptions): S
     : control.status !== "selected" || best.record.provenance.sourceName !== "InferenceX"
       ? "new-data" // the experimental pick uses a source/record the control doesn't have
       : "selection-rule"; // same underlying source data, a different selection
-  const provenance = explain(best, { differsFromControl: differs, differenceCause, control });
+  const provenance = explain(best, {
+    differsFromControl: differs,
+    differenceCause,
+    transformations: best.transformations ?? null,
+    control,
+  });
 
   return {
     status: "selected",
@@ -78,8 +83,17 @@ export function resolveOperatingPoint(req: RequestSpec, opts: ResolveOptions): S
   };
 }
 
+// P2-1: compare EVERY decision-relevant operating-point field — throughput, TTFT,
+// concurrency and interactivity — so a different concurrency/interactivity is never
+// reported as "no difference".
 function opEqual(a?: OperatingPoint, b?: OperatingPoint): boolean {
   if (!a || !b) return false;
   const eq = (x: number | null, y: number | null) => (x == null && y == null) || (x != null && y != null && Math.abs(x - y) < 1e-9);
-  return eq(a.tputPerGpu, b.tputPerGpu) && eq(a.inputTputPerGpu, b.inputTputPerGpu) && eq(a.ttftS, b.ttftS);
+  return (
+    eq(a.tputPerGpu, b.tputPerGpu) &&
+    eq(a.inputTputPerGpu, b.inputTputPerGpu) &&
+    eq(a.ttftS, b.ttftS) &&
+    eq(a.conc, b.conc) &&
+    eq(a.intvty, b.intvty)
+  );
 }

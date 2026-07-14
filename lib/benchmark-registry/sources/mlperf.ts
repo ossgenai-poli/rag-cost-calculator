@@ -56,6 +56,9 @@ export const mlperfAdapter: SourceAdapter = {
         interconnect: sys.interconnect,
         parallelism: { tp: gpuCount, pp: 1, ep: 1, dp: 1 },
         serving: "aggregated",
+        // A submitter system is NOT an AWS instance unless it actually was one.
+        hostSystem: String(sys.name),
+        hostIsAwsRepresentative: false,
         isl: Number(res.workload.isl),
         osl: Number(res.workload.osl),
         concurrency: null, // Server scenario is request-rate driven, not fixed concurrency
@@ -64,6 +67,7 @@ export const mlperfAdapter: SourceAdapter = {
         specDecode: null,
         outputTputPerGpu: perGpuReported ? Number(meas.per_accelerator_tokens_per_second) : null,
         inputTputPerGpu: meas.input_tokens_per_second_per_accelerator != null ? Number(meas.input_tokens_per_second_per_accelerator) : null,
+        intvty: null,
         ttft: meas.ttft_p99_ms != null ? { value: Number(meas.ttft_p99_ms) / 1000, percentile: "p99" } : null,
         tpot: meas.tpot_p99_ms != null ? Number(meas.tpot_p99_ms) / 1000 : null,
         itl: null,

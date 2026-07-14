@@ -48,15 +48,19 @@ export const inferencexAdapter: SourceAdapter = {
         interconnect: c.interconnect,
         parallelism: { tp: c.tp, pp: c.pp, ep: c.ep, dp: c.dp },
         serving: c.disagg ? "disaggregated" : "aggregated",
-        isl: Number(p.isl),
-        osl: Number(p.osl),
-        concurrency: Number(p.conc),
+        // InferenceX B200 is the accepted representative source for the AWS p6-b200 host.
+        hostSystem: `${gpuSku}-inferencex`,
+        hostIsAwsRepresentative: true,
+        isl: reqNum(p.isl, "isl"),
+        osl: reqNum(p.osl, "osl"),
+        concurrency: reqNum(p.conc, "conc"),
         requestRate: null,
         prefixCache: null,
         specDecode: c.spec_method ?? null,
         outputTputPerGpu: num(m.output_tput_per_gpu),
         inputTputPerGpu: num(m.input_tput_per_gpu),
-        ttft: m.p99_ttft != null ? { value: Number(m.p99_ttft), percentile: "p99" } : null,
+        intvty: num(m.median_intvty),
+        ttft: m.p99_ttft != null ? { value: reqNum(m.p99_ttft, "p99_ttft"), percentile: "p99" } : null,
         tpot: null,
         itl: null,
         throughputTotal: null,
@@ -72,7 +76,16 @@ export const inferencexAdapter: SourceAdapter = {
 
 export class SchemaError extends Error {}
 function num(v: unknown): number | null {
-  return v == null ? null : Number(v);
+  if (v == null) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) throw new SchemaError(`non-finite numeric metric: ${JSON.stringify(v)}`);
+  return n;
+}
+/** Validate a REQUIRED raw value is a finite number before coercion (P1-7). */
+export function reqNum(v: unknown, field: string): number {
+  const n = Number(v);
+  if (v == null || !Number.isFinite(n)) throw new SchemaError(`field "${field}" is missing or non-finite: ${JSON.stringify(v)}`);
+  return n;
 }
 function retainUnknown(o: Record<string, unknown>, known: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};

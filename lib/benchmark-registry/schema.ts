@@ -84,6 +84,10 @@ export interface BenchmarkRecord {
   interconnect: string;
   parallelism: { tp: number; pp: number; ep: number; dp: number };
   serving: Serving;
+  /** The system the measurement ran on, and whether it represents the requested AWS host.
+   *  A non-AWS system (HGX/DGX) used for an AWS request is a host PROXY, never exact. */
+  hostSystem: string;
+  hostIsAwsRepresentative: boolean;
   // workload
   isl: number;
   osl: number;
@@ -94,6 +98,8 @@ export interface BenchmarkRecord {
   // metrics (per-GPU only when the source explicitly reports it)
   outputTputPerGpu: number | null;
   inputTputPerGpu: number | null;
+  /** Streaming interactivity actually measured (tok/s/user) — preserved, not discarded. */
+  intvty: number | null;
   ttft: Ttft | null;
   tpot: number | null;
   itl: number | null;
@@ -116,6 +122,8 @@ export interface EvidenceMatch {
   confidence: ConfidenceCategory;
   reasons: Reason[]; // every mismatch/qualification, explicit
   operatingPoint?: OperatingPoint; // only when a valid per-GPU point exists
+  /** Disclosed transformation(s) applied to reach the operating point (measured-scaled). */
+  transformations?: Transformation[];
 }
 
 /** The requested configuration to resolve an operating point for. */
@@ -126,18 +134,36 @@ export interface RequestSpec {
   kvPrecision?: string;
   framework?: string;
   gpuSku: string;
+  /** Target AWS instance (e.g. "p6-b200.48xlarge"); a non-AWS-representative record → proxy. */
+  awsInstance?: string;
   gpuCount?: number;
   nodeCount?: number;
   serving?: Serving;
+  /** Required parallelism to match (topology). */
+  parallelism?: { tp?: number; pp?: number; ep?: number };
   isl: number;
   osl: number;
+  /** The operating concurrency; an exact label requires this to match the measured point. */
   concurrency?: number;
-  /** An interactive TTFT SLA triggers the latency gate (max-load results can't satisfy it). */
-  interactivity?: { ttftSlaMs: number };
+  /** An interactive SLA. The percentile is REQUIRED — a mean/p50 record cannot satisfy a P99 SLA.
+   *  streamingTokPerSecPerUser (optional) is enforced against the record's measured interactivity. */
+  interactivity?: { ttftSlaMs: number; ttftPercentile: Percentile; streamingTokPerSecPerUser?: number };
   /** ISL/OSL tolerance for an "exact" bucket match (default 1.5×, matching rc-qa-11). */
   seqTolerance?: number;
   /** Require a valid per-GPU metric (fleet sizing needs it). Default true. */
   requirePerGpu?: boolean;
+}
+
+/** A disclosed, deterministic transformation applied to a measured record (P1-6). */
+export interface Transformation {
+  method: string; // e.g. "isl-linear-scale"
+  dimension: string; // e.g. "sequence"
+  appliedTo: string; // e.g. "inputTputPerGpu"
+  from: number;
+  to: number;
+  factor: number;
+  bounds: [number, number];
+  note: string;
 }
 
 /** The single authoritative operating point the engine consumes (rc-qa-11 shape). */

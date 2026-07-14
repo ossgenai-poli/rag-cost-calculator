@@ -9,7 +9,7 @@
       "attribution": "SemiAnalysis InferenceX",
       "redistribution": "permitted-with-attribution",
       "pinnedRevision": "run 27434759052 / recipe commit 45126b036efafc9d7ecee0f242ebab9790ba887c",
-      "rawFiles": ["raw/inferencex/dsv4-b200-fp4-1024.json"],
+      "rawFiles": [{ "path": "raw/inferencex/dsv4-b200-fp4-1024.json", "rawChecksum": "sha256:cc4af14f10136d8c78992d9a500cc7ed674fc8746b725481833ed67e3d77ef0e" }],
       "snapshotKind": "verified",
       "ingestionRisk": "Repo advertises weekly Release snapshots but currently has NO Releases — pin runs/commits, never a Release; never depend on an undocumented dashboard DB endpoint."
     },
@@ -22,9 +22,9 @@
       "attribution": "MLCommons MLPerf Inference v6.0",
       "redistribution": "permitted-with-attribution",
       "pinnedRevision": "PINNED_COMMIT_TBD",
-      "rawFiles": ["raw/mlperf/llama3-1-70b-h200-server-v6.json"],
+      "rawFiles": [{ "path": "raw/mlperf/llama3-1-70b-h200-server-v6.json", "rawChecksum": "sha256:2f34138a4994fa52458d49969efff0c42ef10fcebd33b0a9fb9a2a5e095c63e6" }],
       "snapshotKind": "illustrative-pending-ingestion",
-      "policy": "A single result is a latency/accuracy-qualified validation anchor, not a full concurrency curve. Never label a submitter system as an AWS configuration."
+      "policy": "A single result is a latency/accuracy-qualified validation anchor, not a full concurrency curve. Never label a submitter system as an AWS configuration. Illustrative + TBD revision → never selectable (verified-only catalog)."
     },
     {
       "sourceName": "NVIDIA TensorRT-LLM",
@@ -35,9 +35,9 @@
       "attribution": "NVIDIA TensorRT-LLM performance overview",
       "redistribution": "permitted-with-attribution",
       "pinnedRevision": "PINNED_COMMIT_TBD",
-      "rawFiles": ["raw/tensorrtllm/llama3-1-70b-perf-overview.json"],
+      "rawFiles": [{ "path": "raw/tensorrtllm/llama3-1-70b-perf-overview.json", "rawChecksum": "sha256:826531ed3ce4dfb480c6975ce9d7fb68aa5e08e77b8dd7062beb320267a18f51" }],
       "snapshotKind": "illustrative-pending-ingestion",
-      "policy": "Max-load throughput is a capacity ceiling, not an interactive-RAG result unless latency-qualified."
+      "policy": "Max-load throughput is a capacity ceiling, not an interactive-RAG result unless latency-qualified. Vendor mean/median TTFT never satisfies a P99 SLA. Illustrative + TBD revision → never selectable."
     }
   ],
   "excludedFromAutomatedIngestion": {
