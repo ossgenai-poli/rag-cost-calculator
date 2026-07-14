@@ -147,24 +147,37 @@ export async function GET() {
   let opensearch: OpenSearchPrice = OPENSEARCH_DEFAULTS;
   let gotLive = false;
 
+  // TEMP DIAGNOSTIC (secret-safe: only booleans/lengths + AWS error text, never
+  // the credential values). Remove after we confirm live pricing on Vercel.
+  const diag: Record<string, unknown> = {
+    hasKeyId: !!process.env.AWS_ACCESS_KEY_ID,
+    keyIdLen: (process.env.AWS_ACCESS_KEY_ID || "").length,
+    hasSecret: !!process.env.AWS_SECRET_ACCESS_KEY,
+    secretLen: (process.env.AWS_SECRET_ACCESS_KEY || "").length,
+    awsRegionEnv: process.env.AWS_REGION || null,
+  };
+
   try {
     const client = new PricingClient({ region: "us-east-1" });
 
     try {
       gpus = await fetchGpuPrices(client);
       gotLive = true;
-    } catch {
+    } catch (e) {
       gpus = GPU_DEFAULTS; // keep accurate defaults for GPU
+      diag.gpuErr = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     }
 
     try {
       opensearch = await fetchOpenSearchPrices(client);
       gotLive = true;
-    } catch {
+    } catch (e) {
       opensearch = OPENSEARCH_DEFAULTS; // OCU/storage price is stable — default is fine
+      diag.osErr = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     }
-  } catch {
+  } catch (e) {
     // client construction / no-creds (e.g. static build) -> full fallback
+    diag.clientErr = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
   }
 
   const priceBook: PriceBook = {
@@ -178,8 +191,8 @@ export async function GET() {
   };
 
   try {
-    return Response.json(priceBookSchema.parse(priceBook));
+    return Response.json({ ...priceBookSchema.parse(priceBook), _diag: diag });
   } catch {
-    return Response.json(priceBookSchema.parse(fallbackPriceBook()));
+    return Response.json({ ...priceBookSchema.parse(fallbackPriceBook()), _diag: diag });
   }
 }
