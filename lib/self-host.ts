@@ -55,18 +55,18 @@ export function modelWeightsGB(paramsB: number, weightBits = 16): number {
 
 /**
  * KV-cache footprint in GB. `kvBytesPerToken` is the architecture-derived FP16
- * cache per token (summed over attention layers); KV precision follows the
- * weight precision (FP8 weights => FP8 KV), so we scale by weightBits/16.
- * Returns 0 when the model's KV shape or serving shape is unknown/zero.
+ * cache per token (summed over attention layers). KV precision is INDEPENDENT of
+ * weight precision (GPU-003): a model can run INT4 weights with BF16 KV. We scale
+ * by kvBits/16. Returns 0 when the KV/serving shape is unknown/zero.
  */
 export function kvCacheGB(
   kvBytesPerToken = 0,
-  weightBits = 16,
+  kvBits = 16,
   ctxLen = 0,
   concurrency = 0
 ): number {
   if (!(kvBytesPerToken > 0) || !(ctxLen > 0) || !(concurrency > 0)) return 0;
-  const kvPrecisionScale = (weightBits > 0 ? weightBits : 16) / 16;
+  const kvPrecisionScale = (kvBits > 0 ? kvBits : 16) / 16;
   return (kvBytesPerToken * kvPrecisionScale * ctxLen * concurrency) / 1e9;
 }
 
@@ -76,17 +76,19 @@ export function serviceMemoryGB(
   weightBits = 16,
   kvBytesPerToken = 0,
   ctxLen = 0,
-  concurrency = 0
+  concurrency = 0,
+  kvBits = 16
 ): number {
   const weights = modelWeightsGB(paramsB, weightBits);
-  const kv = kvCacheGB(kvBytesPerToken, weightBits, ctxLen, concurrency);
+  const kv = kvCacheGB(kvBytesPerToken, kvBits, ctxLen, concurrency);
   return (weights + kv) * RUNTIME_RESERVE;
 }
 
 /**
  * Minimum number of GPU instances required to load + serve the model, given each
- * instance's aggregate HBM. Accounts for weight precision and KV cache. Returns
- * 1 when inputs are unknown/zero so it never lowers a throughput-derived count.
+ * instance's aggregate HBM. Accounts for weight precision AND (independent) KV
+ * precision. Returns 1 when inputs are unknown/zero so it never lowers a
+ * throughput-derived count.
  */
 export function instancesToLoad(
   paramsB: number | undefined,
@@ -94,9 +96,10 @@ export function instancesToLoad(
   weightBits = 16,
   kvBytesPerToken = 0,
   ctxLen = 0,
-  concurrency = 0
+  concurrency = 0,
+  kvBits = 16
 ): number {
   if (!paramsB || paramsB <= 0 || !(instanceTotalMemGB > 0)) return 1;
-  const mem = serviceMemoryGB(paramsB, weightBits, kvBytesPerToken, ctxLen, concurrency);
+  const mem = serviceMemoryGB(paramsB, weightBits, kvBytesPerToken, ctxLen, concurrency, kvBits);
   return Math.max(1, Math.ceil(mem / instanceTotalMemGB));
 }

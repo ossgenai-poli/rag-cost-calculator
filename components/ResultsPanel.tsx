@@ -70,6 +70,13 @@ export function ResultsPanel({
   const sensitivity = computeSensitivity(inputs, priceBook);
 
   const crossover = resultA.crossover;
+  const cap = crossover.capacity; // authoritative capacity + operating point + provenance
+  const SOURCE_STYLE: Record<string, string> = {
+    measured: "bg-emerald-500/15 text-emerald-300",
+    proxy: "bg-teal-500/15 text-teal-300",
+    extrapolated: "bg-amber-500/15 text-amber-300",
+    heuristic: "bg-slate-500/20 text-slate-300",
+  };
   const managedKb = resultA.managedKb;
   const grounding = resultA.grounding;
   const selectedModelLabel =
@@ -191,15 +198,17 @@ export function ResultsPanel({
               GPU utilization at this workload
             </div>
             <div className="mt-1 text-lg font-semibold text-slate-100">
-              ~{formatPercent(crossover.realizedUtil)} realized{" "}
+              ~{formatPercent(crossover.utilAvg)} at average{" "}
               <span className="text-sm font-normal text-slate-500">
-                (target {formatPercent(inputs.generation.utilTarget)})
+                · {formatPercent(crossover.utilPeak)} at peak
               </span>
             </div>
             <div className="mt-1 text-xs text-slate-400">
-              {crossover.realizedUtil < 0.1
-                ? `The fleet is heavily underutilized — you're paying for ${crossover.boxes} instance(s) to serve a fraction of their decode capacity. An API is usually cheaper at this load.`
-                : `Decode demand ≈ ${Math.round(metrics.monthlyOutputTokens / (730 * 3600)).toLocaleString()} output tok/s vs ${Math.round((crossover.boxes * crossover.capacity100) / (730 * 3600)).toLocaleString()} provisioned.`}
+              {/* Peak reporting: label BOTH demands against the measured provided capacity. */}
+              Avg demand <span className="text-slate-200">{Math.round(crossover.avgDecodeDemand).toLocaleString()}</span> ·
+              peak demand <span className="text-slate-200">{Math.round(crossover.peakDecodeDemand).toLocaleString()}</span> output tok/s
+              {" "}vs provided <span className="text-slate-200">{Math.round(crossover.providedDecodeCapacity).toLocaleString()}</span> tok/s
+              {inputs.traffic.peakFactor > 1 ? ` (${inputs.traffic.peakFactor}× peak)` : ""}.
               <span className="mt-1 block text-slate-300">
                 Entered fleet: <span className="font-medium">{crossover.userInstances}</span> ·{" "}
                 {crossover.feasible ? "Billed" : "Required"} fleet:{" "}
@@ -258,36 +267,54 @@ export function ResultsPanel({
             >
               <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
                 Benchmark-grounded GPU sizing
-                <span className="rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] font-medium text-teal-300">
-                  InferenceX · {grounding.provenance}
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${SOURCE_STYLE[cap.source]}`}>
+                  InferenceX · {cap.source}
                 </span>
               </div>
               <div className="mt-1 text-lg font-semibold text-slate-100">
-                Needs ≥ {grounding.minInstances} instance{grounding.minInstances === 1 ? "" : "s"}
+                Needs ≥ {crossover.requiredInstances} instance{crossover.requiredInstances === 1 ? "" : "s"}
                 <span className="text-sm font-normal text-slate-500">
-                  {" "}· you provisioned {grounding.provisionedInstances}
+                  {" "}({crossover.replicas} replica{crossover.replicas === 1 ? "" : "s"} × {crossover.instancesPerReplica} box
+                  {crossover.instancesPerReplica === 1 ? "" : "es"}
+                  {crossover.haReplicasAdded > 0 ? ", incl. N+1 HA" : ""})
                 </span>
-                {grounding.underProvisioned && (
+                {cap.slaAchievable === false && (
                   <span className="ml-2 rounded bg-rose-500/15 px-1.5 py-0.5 text-xs font-medium text-rose-300">
-                    under-provisioned
+                    SLA not met — infeasible
                   </span>
                 )}
               </div>
               <div className="mt-1 text-xs text-slate-400">
-                At <span className="text-slate-200">{grounding.interactivityTarget} tok/s/user</span>,{" "}
-                {selectedModelLabel} sustains ~
-                <span className="text-slate-200">{Math.round(grounding.tputPerGpu ?? 0)} tok/s/GPU</span>{" "}
-                (TTFT ~{grounding.ttftAtSla?.toFixed(2)}s). Your{" "}
-                {Math.round(grounding.requiredDecodeTokPerSec ?? 0).toLocaleString()} output tok/s needs{" "}
-                <span className="text-slate-200">{grounding.minInstancesThroughput}</span> for throughput
-                and {grounding.minInstancesMemory} to fit the weights → ≥ {grounding.minInstances}.
-                {grounding.slaAchievable === false && (
+                Operating point: <span className="text-slate-200">{cap.chosenConcurrency} concurrent</span> →{" "}
+                <span className="text-slate-200">{Math.round(cap.perGpuDecodeTokS)} tok/s/GPU</span>,{" "}
+                <span className={cap.interactivityMet ? "text-slate-200" : "text-rose-300"}>
+                  {Math.round(cap.achievedInteractivity)} tok/s/user
+                </span>{" "}
+                (target {grounding.interactivityTarget}),{" "}
+                <span className={cap.ttftMet ? "text-slate-200" : "text-rose-300"}>
+                  TTFT {cap.ttftS.toFixed(1)}s
+                </span>{" "}
+                (max {(inputs.generation.ttftTargetMs / 1000).toFixed(1)}s). Peak demand{" "}
+                {Math.round(crossover.peakDecodeDemand).toLocaleString()} output tok/s ÷{" "}
+                {Math.round(cap.perReplicaDecodeTokS).toLocaleString()} tok/s/replica →{" "}
+                {crossover.throughputInstances} box(es) for throughput, {cap.memoryFloorBoxes} to fit weights.
+                {cap.slaAchievable === false && (
                   <span className="mt-1 block text-rose-300">
-                    ⚠ SLA not achievable: even at minimum batch, this config delivers only ~
-                    {Math.round(grounding.achievedInteractivity ?? 0)} tok/s/user. Lower the target or pick a faster GPU/precision.
+                    ⚠ No benchmark point meets both the interactivity and TTFT targets under the concurrency
+                    cap ({cap.maxConcurrency}). Not a valid self-host configuration — raise the TTFT budget,
+                    lower interactivity, raise concurrency, or pick a faster GPU/precision.
                   </span>
                 )}
-                {grounding.note && <span className="mt-1 block text-slate-500">{grounding.note}</span>}
+                {cap.source === "extrapolated" && cap.extrapolationReasons.length > 0 && (
+                  <span className="mt-1 block text-amber-300">
+                    Extrapolated (not a direct measurement): {cap.extrapolationReasons.join("; ")}.
+                  </span>
+                )}
+                <span className="mt-1 block text-slate-500">
+                  Benchmark: {cap.benchModelKey} · {cap.framework} · {cap.precisionUsed} · {cap.seqUsed} ·{" "}
+                  {cap.gpusInConfig} GPUs measured. Weights {Math.round(cap.weightsGB)} GB (
+                  {cap.weightPrecisionBits}-bit) + KV {Math.round(cap.kvCacheGB)} GB ({cap.kvPrecisionBits}-bit).
+                </span>
               </div>
             </div>
           ) : (

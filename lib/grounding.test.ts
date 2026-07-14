@@ -71,13 +71,16 @@ describe("computeGrounding (via calculate)", () => {
     expect(g.available).toBe(true);
     expect(g.provenance).toBe("measured");
     expect(g.tputPerGpu).toBeGreaterThan(0);
-    expect(g.minInstances).toBe(Math.max(g.minInstancesThroughput!, g.minInstancesMemory!, 1));
     // heavy load ⇒ throughput floor dominates and exceeds a 1-box fleet
     expect(g.minInstancesThroughput!).toBeGreaterThan(1);
-    // The engine auto-sizes the billed fleet up to the grounded requirement, so it
-    // is NOT under-provisioned and the billed fleet reflects the true cost (P1-a/b).
-    expect(r.crossover.boxes).toBeGreaterThanOrEqual(g.minInstances!);
-    expect(g.provisionedInstances!).toBeGreaterThanOrEqual(g.minInstances!);
+    // minInstances is the authoritative required fleet (replicas × boxes/replica,
+    // incl. N+1 HA), so it is ≥ the throughput-only figure.
+    expect(g.minInstances).toBe(r.crossover.requiredInstances);
+    expect(g.minInstances!).toBeGreaterThanOrEqual(g.minInstancesThroughput!);
+    expect(r.crossover.haReplicasAdded).toBeGreaterThanOrEqual(1); // HA on by default
+    // The engine auto-sizes the billed fleet up to the required count, so it is
+    // NOT under-provisioned and the billed fleet reflects the true cost.
+    expect(r.crossover.boxes).toBe(r.crossover.requiredInstances);
     expect(g.underProvisioned).toBe(false);
     expect(r.crossover.autoSized).toBe(true);
   });

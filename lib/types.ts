@@ -158,7 +158,10 @@ export interface GenerationInputs {
   utilTarget: number;         // (0,1] target GPU utilization
   numInstances: number;       // provisioned GPU instances; defaults to the min needed to load the model
   autoSizeFleet: boolean;     // when true (default), bill the fleet up to what serves the load; when false, bill exactly numInstances and mark infeasible if that can't serve it
-  weightBits: number;         // weight precision: 16 (BF16/FP16), 8 (FP8/INT8), 4 (INT4) — drives memory
+  weightBits: number;         // weight precision: 16 (BF16/FP16), 8 (FP8/INT8), 4 (INT4) — drives WEIGHT memory
+  kvBits: number;             // KV-cache precision (INDEPENDENT of weightBits): 16 (BF16/FP16) or 8 (FP8) — drives KV memory. Default 16 (conservative). GPU-003
+  ttftTargetMs: number;       // max acceptable time-to-first-token (ms). A benchmark point must meet BOTH this and interactivityTarget or the config is infeasible. GPU-004
+  haEnabled: boolean;         // production redundancy: when true (default), provision N+1 replicas (min 2). GPU-006
   // API cost COMPARISON model (crossover + "Self-built + API" row). Defaults to
   // the selected model (apples-to-apples); can be a different model as a proxy.
   apiComparisonModelId: string;
@@ -309,6 +312,40 @@ export interface CalcResult {
 // CrossoverResult — API vs self-hosted GPU economics
 // ---------------------------------------------------------------------------
 
+export type CapacitySource = "measured" | "proxy" | "extrapolated" | "heuristic";
+
+/** Authoritative self-hosted decode capacity + operating point + topology (GPU-001). */
+export interface CapacityResult {
+  source: CapacitySource;
+  extrapolationReasons: string[];
+  benchmarkAvailable: boolean;
+  perGpuDecodeTokS: number;
+  perReplicaDecodeTokS: number;
+  perInstanceDecodeTokS: number;
+  chosenConcurrency: number;
+  achievedInteractivity: number;
+  ttftS: number;
+  interactivityMet: boolean;
+  ttftMet: boolean;
+  concWithinLimit: boolean;
+  slaAchievable: boolean;
+  maxConcurrency: number;
+  gpusPerBox: number;
+  gpusInConfig: number;
+  instancesPerReplica: number;
+  memoryFloorBoxes: number;
+  weightsGB: number;
+  kvCacheGB: number;
+  serviceMemGB: number;
+  benchModelKey?: string;
+  framework?: string;
+  precisionUsed?: string;
+  weightPrecisionBits: number;
+  kvPrecisionBits: number;
+  seqUsed?: string;
+  note?: string;
+}
+
 export interface CrossoverResult {
   monthlyGenTokens: number;
   gpuMonthly$: number;
@@ -317,8 +354,21 @@ export interface CrossoverResult {
   userInstances: number;       // the integer count the user requested (before auto-sizing)
   requiredInstances: number;   // max(memory floor, throughput need, grounded need) — the minimum feasible fleet
   autoSized: boolean;          // true when boxes had to exceed the user's requested count to serve the load
-  feasible: boolean;           // false only when auto-size is OFF and the entered fleet can't serve the load
+  feasible: boolean;           // false when the billed fleet can't meet throughput/concurrency/TTFT/memory (no positive verdict)
   ownedCapacity: boolean;      // true when the GPU $/hr is 0 (owned/free capacity) — crossover savings not meaningful
+
+  // Authoritative capacity + topology (GPU-001/005/006). ALL capacity/economics
+  // above derive from `capacity.perInstanceDecodeTokS`, never a generic estimate.
+  capacity: CapacityResult;
+  replicas: number;                // serving replicas billed (incl. HA)
+  instancesPerReplica: number;     // 8-GPU boxes per replica
+  haReplicasAdded: number;         // extra replicas added for N+1 HA (0 if HA off)
+  // Peak/uptime telemetry (label both — GPU peak reporting):
+  avgDecodeDemand: number;         // output tok/s, monthly average
+  peakDecodeDemand: number;        // output tok/s at peak (× peakFactor)
+  providedDecodeCapacity: number;  // output tok/s the billed fleet delivers at 100% util
+  utilAvg: number;                 // avg demand ÷ provided capacity
+  utilPeak: number;                // peak demand ÷ provided capacity
   minInstancesToLoad: number;  // memory floor — min instances to hold the weights
   throughputInstances: number; // instances the current load would need for decode throughput
   realizedUtil: number;        // actual decode utilization of the fleet at the current workload

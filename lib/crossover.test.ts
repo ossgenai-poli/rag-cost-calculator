@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeCrossover } from "./crossover";
+import { computeCapacity } from "./capacity";
 import type { CalcInputs, PriceBook, PerQueryResult } from "./types";
 
 // Only the fields computeCrossover actually reads are given real values;
@@ -48,7 +49,7 @@ function makeInputs(overrides: {
       gpuPricingModel: "on-demand", gpuUptimeHoursPerMonth: 730,
       sustainedTokPerSec: overrides.sustainedTokPerSec,
       utilTarget: overrides.utilTarget ?? 0.5,
-      numInstances: overrides.numInstances ?? 1, autoSizeFleet: true, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16, interactivityTarget: 30,
+      numInstances: overrides.numInstances ?? 1, autoSizeFleet: true, weightBits: 16, kvBits: 16, ttftTargetMs: 2000, haEnabled: false, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16, interactivityTarget: 30,
     },
     managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
     ops: { networkingMonthly$: 0, observabilityMonthly$: 0, overheadPct: 0 },
@@ -80,6 +81,11 @@ function makePerQuery(llmInputTok: number, apiGen$: number): PerQueryResult {
 
 const priceBook = {} as PriceBook; // unused by computeCrossover
 
+// Route through the authoritative capacity source (heuristic path for the fake model).
+function runCx(inputs: CalcInputs, pb: PriceBook, perQuery: PerQueryResult) {
+  return computeCrossover(inputs, pb, perQuery, computeCapacity(inputs, pb, perQuery));
+}
+
 describe("computeCrossover", () => {
   it("golden numbers: cheap box breaks even below capacity -> 'self-host efficient'", () => {
     const inputs = makeInputs({
@@ -91,7 +97,7 @@ describe("computeCrossover", () => {
     });
     const perQuery = makePerQuery(800, 0.0005); // tokensPerQuery = 1000
 
-    const result = computeCrossover(inputs, priceBook, perQuery);
+    const result = runCx(inputs, priceBook, perQuery);
 
     expect(result.monthlyGenTokens).toBe(100_000_000); // 100k * 1000
     expect(result.gpuMonthly$).toBeCloseTo(2190, 6); // 3 * 730
@@ -118,18 +124,18 @@ describe("computeCrossover", () => {
       utilTarget: 0.5,
       queriesPerMonth: 100_000,
     });
-    const base = computeCrossover(onDemand, priceBook, makePerQuery(800, 0.0005));
+    const base = runCx(onDemand, priceBook, makePerQuery(800, 0.0005));
     expect(base.gpuMonthly$).toBeCloseTo(73_000, 6); // 100 × 730, no discount
 
     // Reserved 1-yr = 40% off → 0.6 × on-demand. Capacity unchanged (still 730h).
     const reserved = { ...onDemand, generation: { ...onDemand.generation, gpuPricingModel: "reserved-1yr" as const } };
-    const r = computeCrossover(reserved, priceBook, makePerQuery(800, 0.0005));
+    const r = runCx(reserved, priceBook, makePerQuery(800, 0.0005));
     expect(r.gpuMonthly$).toBeCloseTo(43_800, 6); // 100 × 0.6 × 730
     expect(r.capacity100).toBeCloseTo(base.capacity100, 3);
 
     // Half-month uptime (365h) halves BOTH cost and decode capacity.
     const partTime = { ...onDemand, generation: { ...onDemand.generation, gpuUptimeHoursPerMonth: 365 } };
-    const p = computeCrossover(partTime, priceBook, makePerQuery(800, 0.0005));
+    const p = runCx(partTime, priceBook, makePerQuery(800, 0.0005));
     expect(p.gpuMonthly$).toBeCloseTo(36_500, 6); // 100 × 365
     expect(p.capacity100).toBeCloseTo(base.capacity100 / 2, 3);
   });
@@ -144,7 +150,7 @@ describe("computeCrossover", () => {
     });
     const perQuery = makePerQuery(800, 0.0005);
 
-    const result = computeCrossover(inputs, priceBook, perQuery);
+    const result = runCx(inputs, priceBook, perQuery);
 
     expect(result.gpuMonthly$).toBeCloseTo(73_000, 6); // 100 * 730
     expect(result.breakEvenTokens).toBeCloseTo(146_000_000_000, 2); // 73000 / 5e-7
@@ -162,10 +168,10 @@ describe("computeCrossover", () => {
       utilTarget: 0.5,
       queriesPerMonth: 5_000_000,
     });
-    const base = computeCrossover(flat, priceBook, makePerQuery(800, 0.0005));
+    const base = runCx(flat, priceBook, makePerQuery(800, 0.0005));
 
     const peaky = { ...flat, traffic: { ...flat.traffic, peakFactor: 3 } };
-    const r = computeCrossover(peaky, priceBook, makePerQuery(800, 0.0005));
+    const r = runCx(peaky, priceBook, makePerQuery(800, 0.0005));
     // Provisioning for a 3× peak needs ~3× the average throughput instances.
     // (ceil(3X) lands in (3·ceil(X) − 3, 3·ceil(X)], so allow the rounding band.)
     expect(r.throughputInstances).toBeGreaterThan(base.throughputInstances * 3 - 3);
@@ -187,7 +193,7 @@ describe("computeCrossover", () => {
     });
     const perQuery = makePerQuery(800, 0.0005);
 
-    const result = computeCrossover(inputs, priceBook, perQuery);
+    const result = runCx(inputs, priceBook, perQuery);
 
     expect(result.curve.length).toBeGreaterThan(0);
     expect(result.curve[0].tokens).toBe(0);
@@ -213,7 +219,7 @@ describe("computeCrossover", () => {
     });
     const perQuery = makePerQuery(800, 0); // apiGen$ = 0
 
-    const result = computeCrossover(inputs, priceBook, perQuery);
+    const result = runCx(inputs, priceBook, perQuery);
 
     expect(result.apiBlendedPricePerToken).toBe(0);
     expect(result.breakEvenTokens).toBe(0);
@@ -222,7 +228,7 @@ describe("computeCrossover", () => {
     expect(result.selfHostedMonthly$).toBe(0);
     expect(result.verdict).toBe("API wins in practice below sustained load");
     expect(result.curve).toEqual([]);
-    expect(() => computeCrossover(inputs, priceBook, perQuery)).not.toThrow();
+    expect(() => runCx(inputs, priceBook, perQuery)).not.toThrow();
   });
 
   it("guards divide-by-zero when sustainedTokPerSec (and thus capacity100) is 0", () => {
@@ -234,7 +240,7 @@ describe("computeCrossover", () => {
     });
     const perQuery = makePerQuery(800, 0.0005);
 
-    const result = computeCrossover(inputs, priceBook, perQuery);
+    const result = runCx(inputs, priceBook, perQuery);
 
     expect(result.capacity100).toBe(0);
     expect(result.breakEvenTokens).toBe(0);
@@ -243,7 +249,7 @@ describe("computeCrossover", () => {
     expect(result.selfHostedMonthly$).toBe(0);
     expect(result.verdict).toBe("API wins in practice below sustained load");
     expect(result.curve).toEqual([]);
-    expect(() => computeCrossover(inputs, priceBook, perQuery)).not.toThrow();
+    expect(() => runCx(inputs, priceBook, perQuery)).not.toThrow();
   });
 
   it("guards divide-by-zero when tokensPerQuery is 0 (llmInputTok + outTokens = 0)", () => {
@@ -255,11 +261,11 @@ describe("computeCrossover", () => {
     });
     const perQuery = makePerQuery(0, 0.0005);
 
-    const result = computeCrossover(inputs, priceBook, perQuery);
+    const result = runCx(inputs, priceBook, perQuery);
 
     expect(result.apiBlendedPricePerToken).toBe(0);
     expect(result.verdict).toBe("API wins in practice below sustained load");
-    expect(() => computeCrossover(inputs, priceBook, perQuery)).not.toThrow();
+    expect(() => runCx(inputs, priceBook, perQuery)).not.toThrow();
   });
 
   it("falls back to 100% utilization when utilTarget is not a positive fraction (defensive against bad input)", () => {
@@ -272,11 +278,11 @@ describe("computeCrossover", () => {
     });
     const perQuery = makePerQuery(800, 0.0005);
 
-    const result = computeCrossover(inputs, priceBook, perQuery);
+    const result = runCx(inputs, priceBook, perQuery);
 
     // capacityEff falls back to capacity100 * 1, so boxes uses full (not target) capacity.
     expect(result.boxes).toBe(Math.max(1, Math.ceil(result.monthlyGenTokens / result.capacity100)));
-    expect(() => computeCrossover(inputs, priceBook, perQuery)).not.toThrow();
+    expect(() => runCx(inputs, priceBook, perQuery)).not.toThrow();
   });
 
   it("auto-sizes the billed fleet up to serve high volume (never a cheap-but-inadequate fleet)", () => {
@@ -287,8 +293,8 @@ describe("computeCrossover", () => {
     const highVolume = makeInputs({ outTokens: 200, gpuPricePerHr: 3, sustainedTokPerSec: 5000, utilTarget: 0.5, queriesPerMonth: 100_000_000, numInstances: 1 });
     const perQuery = makePerQuery(800, 0.0005);
 
-    const baseResult = computeCrossover(base, priceBook, perQuery);
-    const highVolumeResult = computeCrossover(highVolume, priceBook, perQuery);
+    const baseResult = runCx(base, priceBook, perQuery);
+    const highVolumeResult = runCx(highVolume, priceBook, perQuery);
 
     expect(baseResult.boxes).toBe(1);
     expect(baseResult.autoSized).toBe(false);
@@ -306,8 +312,8 @@ describe("computeCrossover", () => {
     const four = makeInputs({ outTokens: 200, gpuPricePerHr: 3, sustainedTokPerSec: 5000, queriesPerMonth: 100_000, numInstances: 4 });
     const perQuery = makePerQuery(800, 0.0005);
 
-    const r1 = computeCrossover(one, priceBook, perQuery);
-    const r4 = computeCrossover(four, priceBook, perQuery);
+    const r1 = runCx(one, priceBook, perQuery);
+    const r4 = runCx(four, priceBook, perQuery);
     expect(r1.boxes).toBe(1);
     expect(r4.boxes).toBe(4);
     expect(r4.selfHostedMonthly$).toBeCloseTo(4 * r1.selfHostedMonthly$, 6);

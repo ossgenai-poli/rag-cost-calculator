@@ -16,6 +16,7 @@ import type {
 } from "./types";
 import { computeCrossover } from "./crossover";
 import { computeGrounding } from "./grounding";
+import { computeCapacity } from "./capacity";
 
 /** Fixed tiny S3/network per-query overhead ($), keeps golden tests stable. */
 export const INFRA_CRUMBS_PER_QUERY = 0.00002;
@@ -247,26 +248,13 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
   const ingestion = computeIngestion(effectiveInputs);
   const vectorStore = computeVectorStore(effectiveInputs, ingestion.numVectors);
   const perQuery = computePerQuery(effectiveInputs);
-  // Crossover is computed first so self-hosted mode can bill the GPU fleet. It
-  // auto-sizes the fleet to the flat-nameplate throughput need. Then grounding may
-  // reveal a LARGER measured requirement; if so, re-run the crossover with that as
-  // a floor so the billed fleet (and every downstream cost/scenario/export) is sized
-  // to actually serve the load — no cheaper-but-inadequate fleet is ever billed.
-  const crossover0 = computeCrossover(effectiveInputs, priceBook, perQuery);
-  const grounding0 = computeGrounding(effectiveInputs, priceBook, perQuery, crossover0);
-  const groundedFloor =
-    grounding0.available && grounding0.minInstances != null ? grounding0.minInstances : 0;
-  // Re-run with the grounded floor folded into the requirement so that, whether
-  // auto-size is on (fleet grows) or off (fleet capped → feasibility flag), the
-  // measured requirement is respected everywhere downstream.
-  const crossover =
-    groundedFloor > 0
-      ? computeCrossover(effectiveInputs, priceBook, perQuery, groundedFloor)
-      : crossover0;
-  const grounding =
-    crossover === crossover0
-      ? grounding0
-      : computeGrounding(effectiveInputs, priceBook, perQuery, crossover);
+  // ONE authoritative capacity source (GPU-001): the measured benchmark operating
+  // point (concurrency + TTFT gated), topology and replica/HA sizing. Both the
+  // economics (crossover) and the display (grounding) read from it, so utilization,
+  // break-even, verdict, scenarios, headline and exports can never diverge.
+  const capacity = computeCapacity(effectiveInputs, priceBook, perQuery);
+  const crossover = computeCrossover(effectiveInputs, priceBook, perQuery, capacity);
+  const grounding = computeGrounding(effectiveInputs, priceBook, capacity, crossover);
 
   const queriesPerMonth = effectiveInputs.traffic.queriesPerMonth;
   const selfHosted = effectiveInputs.generation.mode === "self-hosted";
@@ -419,6 +407,9 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       numInstances: 1,
       autoSizeFleet: true,
       weightBits: 16,
+      kvBits: 16,
+      ttftTargetMs: 2000,
+      haEnabled: true,
       apiComparisonModelId: llmModel.id,
       apiComparisonInPricePer1K: llmModel.inPricePer1K,
       apiComparisonOutPricePer1K: llmModel.outPricePer1K,

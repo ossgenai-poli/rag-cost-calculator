@@ -36,7 +36,8 @@ export function GenerationPanel(props: {
       bits,
       model?.kvBytesPerToken,
       generation.maxContextLen,
-      generation.maxConcurrentSeqs
+      generation.maxConcurrentSeqs,
+      generation.kvBits
     );
 
   function patchModel(model: ModelPrice | undefined, g: GpuInstancePrice | undefined, extra?: Partial<GenerationInputs>) {
@@ -94,7 +95,7 @@ export function GenerationPanel(props: {
   const weightsGB = selectedModel?.paramsB ? modelWeightsGB(selectedModel.paramsB, generation.weightBits) : 0;
   const kvGB = kvCacheGB(
     selectedModel?.kvBytesPerToken,
-    generation.weightBits,
+    generation.kvBits,
     generation.maxContextLen,
     generation.maxConcurrentSeqs
   );
@@ -112,7 +113,8 @@ export function GenerationPanel(props: {
         next.weightBits,
         selectedModel?.kvBytesPerToken,
         next.maxContextLen,
-        next.maxConcurrentSeqs
+        next.maxConcurrentSeqs,
+        next.kvBits
       );
     }
     onChange(next);
@@ -198,6 +200,18 @@ export function GenerationPanel(props: {
           onChange={(v) => patchServing({ weightBits: Number(v) })}
         />
 
+        <SelectField
+          label="KV-cache precision"
+          hint="INDEPENDENT of weight precision. BF16 is the conservative default; FP8 halves KV memory where the runtime/model supports it. INT4 KV is not offered by default."
+          value={String(generation.kvBits)}
+          disabled={!selfHosted}
+          options={[
+            { value: "16", label: "BF16 / FP16 (2 bytes)" },
+            { value: "8", label: "FP8 (1 byte)" },
+          ]}
+          onChange={(v) => patchServing({ kvBits: Number(v) })}
+        />
+
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             label="Max context length"
@@ -228,7 +242,7 @@ export function GenerationPanel(props: {
             </div>
             <div className="mt-0.5 text-slate-400">
               Weights {Math.round(weightsGB)} GB ({precisionLabel(generation.weightBits)}) + KV cache{" "}
-              {Math.round(kvGB)} GB
+              {Math.round(kvGB)} GB ({precisionLabel(generation.kvBits)})
               {selectedModel.attentionType && (
                 <span className="text-slate-500"> ({selectedModel.attentionType})</span>
               )}{" "}
@@ -266,16 +280,36 @@ export function GenerationPanel(props: {
           onChange={(v) => onChange({ ...generation, autoSizeFleet: v })}
         />
 
-        <NumberField
-          label="Interactivity target"
-          suffix="tok/s/user"
-          hint="Per-user streaming speed you must deliver (SLA). Higher = snappier UX = fewer concurrent requests per GPU = more GPUs. Grounds fleet sizing in real InferenceX benchmarks."
-          value={generation.interactivityTarget}
-          min={1}
-          step={5}
+        <Toggle
+          label="High availability (N+1 replicas)"
+          hint="On (default): provision one extra serving replica (minimum two) so a replica loss still serves peak load — real extra fleet and cost. Off: single replica; the UI states HA is excluded."
+          checked={generation.haEnabled !== false}
           disabled={!selfHosted}
-          onChange={(v) => onChange({ ...generation, interactivityTarget: v })}
+          onChange={(v) => onChange({ ...generation, haEnabled: v })}
         />
+
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField
+            label="Interactivity target"
+            suffix="tok/s/user"
+            hint="Per-user streaming speed you must deliver (SLA). Higher = snappier UX = fewer concurrent requests per GPU = more GPUs. Grounds fleet sizing in real InferenceX benchmarks."
+            value={generation.interactivityTarget}
+            min={1}
+            step={5}
+            disabled={!selfHosted}
+            onChange={(v) => onChange({ ...generation, interactivityTarget: v })}
+          />
+          <NumberField
+            label="Max TTFT"
+            suffix="ms"
+            hint="Time-to-first-token SLA. The chosen benchmark point must meet BOTH this and the interactivity target, or the config is infeasible (no positive self-host verdict)."
+            value={generation.ttftTargetMs}
+            min={100}
+            step={250}
+            disabled={!selfHosted}
+            onChange={(v) => onChange({ ...generation, ttftTargetMs: v })}
+          />
+        </div>
 
         <NumberField
           label="On-demand GPU price"

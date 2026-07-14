@@ -1,12 +1,14 @@
-# QA Handoff — RAG Cost Calculator (RC `rc-qa-3`)
+# QA Handoff — RAG Cost Calculator (RC `rc-qa-4`)
 
 This is the single source of truth for the QA engineer. Everything needed to run the test plan is
 here. Live-pricing suites run against the Vercel runtime (§3/§5); all other suites run against the
 static site.
 
-> **Retest round (rc-qa-3):** fixes for the end-user AWS-decision findings (GPU auto-sizing,
-> grounded uptime/peak, Bedrock rates, ops-in-scenarios, and the P2 input guards). See §9.
-> Round-2 (#24–#28) fixes remain in. See §8.
+> **Retest round (rc-qa-4):** GPU-engineering capacity-model remediation — one authoritative
+> benchmark-driven capacity (concurrency + TTFT gated), serving-group/replica/HA topology, split
+> weight/KV precision, extrapolation labeling, and the owned-capacity fix. **See §10** for the
+> focused checklist and the exact expected values (DeepSeek + GLM). rc-qa-3 fixes (auto-size, P2
+> guards, ops, Bedrock rates — §8/§9) remain intact.
 
 ---
 
@@ -14,8 +16,8 @@ static site.
 
 | | Value |
 |---|---|
-| **Git tag** | `rc-qa-3` |
-| **Commit SHA** | run `git rev-parse rc-qa-3` |
+| **Git tag** | `rc-qa-4` |
+| **Commit SHA** | run `git rev-parse rc-qa-4` |
 | **Static site (live + verified rendering)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
 | **Runtime site (LIVE pricing)** | https://rag-cost-calculator-hazel.vercel.app/ |
 | **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
@@ -24,15 +26,16 @@ Check out the exact tree:
 ```bash
 git clone https://github.com/ossgenai-poli/rag-cost-calculator.git
 cd rag-cost-calculator
-git checkout rc-qa-1        # detached HEAD at the pinned RC
+git fetch --tags --force        # the rc tags are re-pointed between rounds
+git checkout rc-qa-4            # detached HEAD at the pinned RC
 ```
 
 **Pre-verified by the developer on this exact SHA** (so an environment problem is distinguishable
 from a product defect):
 - `npm run typecheck` → clean
-- `npm test` → **67 passed** (incl. catalog-drift + topN-clamp regression tests)
+- `npm test` → **101 passed** (incl. GPU capacity, catalog-drift, topN-clamp, QA regressions)
 - `npm run build:static` → emits `./out`
-- `npm run test:e2e` → **PASS** (static default total **$3,801/mo**, no console errors)
+- `npm run test:e2e` → **PASS** (no console errors)
 
 ---
 
@@ -248,3 +251,51 @@ required count and every surface is consistent:
 - **Manual cap:** a "Auto-size fleet to workload" toggle (default ON). When OFF and the entered fleet
   can't serve the load, the **Self-built + GPU** scenario is marked **Infeasible** and its cost/savings
   are **suppressed** (not shown as a valid cheap option). Covered by `qa-regressions.test.ts`.
+
+---
+
+## 10. rc-qa-4 retest checklist — GPU capacity-model remediation (GPU-001…007)
+
+**One authoritative capacity source.** Self-hosted throughput, utilization, break-even, verdict,
+scenarios, headline and exports all read `crossover.capacity.perInstanceDecodeTokS` — the measured
+benchmark operating point. No generic `sustainedTokPerSec × precision` once a benchmark is selected.
+Every self-host result is labeled **measured / proxy / extrapolated / heuristic** (badge in the
+grounded card; `capacity source` in the report; `fleet.capacity.source` in JSON).
+
+| # | Area | Retest |
+|---|---|---|
+| GPU-001 | Benchmark capacity everywhere | Grounded card, headline, scenarios, exports agree; utilization is measured-tight, not the old comfortable value |
+| GPU-002 | Concurrency constrains the point | Lowering **Max concurrent seqs** lowers the selected point's throughput and raises instances; chosen concurrency ≤ the cap |
+| GPU-003 | KV precision independent of weights | New **KV-cache precision** control; BF16 vs FP8 changes KV memory only; both precisions recorded in exports |
+| GPU-004 | TTFT SLA gate | New **Max TTFT** (default 2000 ms); a point exceeding it → "SLA not met — infeasible", no positive verdict |
+| GPU-005 | Topology + substitution labels | 64-GPU / 4-GPU / precision / seq mismatches show **extrapolated** (not measured), with reasons |
+| GPU-006 | Serving group / replica / HA | Fleet = replicas × boxes/replica; **HA (N+1)** toggle (default on) adds a real replica + cost; counts are whole serving groups |
+| GPU-007 | Owned-capacity scenario | $0 GPU + traffic → complete scenario (infra + ops, hardware **$0 owned capacity**), NOT "No generation volume", no like-for-like % |
+| Peak/uptime | Telemetry | Utilization card shows **avg** and **peak** demand vs provided capacity, both labeled |
+
+### Exact expected values (baked InferenceX data, default inputs)
+
+**DeepSeek reproduction** — DeepSeek-V4-Pro · p6-b200 · INT4 · 200M q/mo · 500 out · 30 tok/s/user ·
+Max concurrent = 16 · TTFT 2000 ms · peak 1 · HA on:
+- capacity source **extrapolated** (default input 2910 tok is far from the 1024 bucket)
+- chosen concurrency **16**, **214 tok/s/GPU** (measured @ conc 16 — *not* the uncapped 327)
+- avg decode demand **38,052 tok/s**, provided **≈41,069 tok/s**, **utilAvg ≈ 92.7%**
+- throughput **23** boxes, **+1** N+1 HA replica ⇒ **requiredInstances = 24**, **billed = 24**
+- feasible **true**, verdict **self-host efficient**
+- Set **Max concurrent = 1** ⇒ conc-1 point ≈ **22.8 tok/s/GPU** ⇒ **≈210 instances** (throughput 209 + HA).
+- Set **Max TTFT = 100 ms** ⇒ TTFT 0.23 s > 0.1 s ⇒ **infeasible**, verdict flips to "API wins".
+
+**GLM long-context KV** — GLM-5.2 · p5 · INT4 **weights** · **BF16 KV** · 128K ctx · 16 concurrent:
+- weights **≈200 GB**, KV **≈790 GB**, service memory **≈1,139 GB** ⇒ **memory floor 2 × p5**
+- Switch **KV precision → FP8** ⇒ KV **≈395 GB** (weights unchanged at 200 GB).
+
+**MiniMax topology** — MiniMax-M3 · p6-b200 · FP8 (64-GPU benchmark):
+- gpusInConfig **64** ⇒ **8 boxes/replica**, source **extrapolated** (cross-node), fleet is a multiple of 8.
+
+Coverage: `lib/gpu-capacity.test.ts` (15 cases) pins the above; **101** unit tests pass. Gates green on
+`rc-qa-4`: typecheck · 101 tests · build:static · verify:basepath · test:e2e · verify:live.
+
+### Defaults chosen (owner-approved)
+Max TTFT **2 s** · KV precision **BF16** (independent) · **HA N+1 on** by default · cross-node benchmark =
+one measured replica of `ceil(gpus/8)` boxes with linear replica scaling, labeled **extrapolated** on any
+precision / sequence / model / partial-box mismatch.

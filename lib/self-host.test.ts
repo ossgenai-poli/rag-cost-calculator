@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { serviceMemoryGB, modelWeightsGB, kvCacheGB, instancesToLoad, precisionThroughputFactor } from "./self-host";
 import { computeCrossover } from "./crossover";
+import { computeCapacity } from "./capacity";
 import type { CalcInputs, PerQueryResult, PriceBook } from "./types";
 
 describe("self-host GPU sizing", () => {
@@ -80,7 +81,7 @@ describe("crossover memory floor", () => {
         mode: "self-hosted", llmModelId: "big-oss", llmInPricePer1K: 0.00055, llmOutPricePer1K: 0.00219,
         outTokens: 200, promptOverhead: 100, gpuInstanceType: "p5.48xlarge", gpuPricePerHr: 55.04,
         gpuPricingModel: "on-demand", gpuUptimeHoursPerMonth: 730,
-        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, autoSizeFleet: true, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16, interactivityTarget: 30,
+        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, autoSizeFleet: true, weightBits: 16, kvBits: 16, ttftTargetMs: 2000, haEnabled: false, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16, interactivityTarget: 30,
       },
       managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
       ops: { networkingMonthly$: 0, observabilityMonthly$: 0, overheadPct: 0 },
@@ -96,7 +97,8 @@ describe("crossover memory floor", () => {
   it("forces at least the memory-required boxes even at trivial traffic", () => {
     // 1000 queries/mo is far below one box of throughput, but a 671B model still
     // needs 3 × p5 just to load -> boxes = 3, cost = 3 × (55.04 × 730).
-    const r = computeCrossover(inputs(), priceBook, perQuery);
+    const i = inputs();
+    const r = computeCrossover(i, priceBook, perQuery, computeCapacity(i, priceBook, perQuery));
     expect(r.boxes).toBe(3);
     expect(r.selfHostedMonthly$).toBeCloseTo(3 * 55.04 * 730, 4);
   });

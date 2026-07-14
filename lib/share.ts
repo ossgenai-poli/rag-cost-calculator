@@ -90,6 +90,9 @@ const calcInputsSchema = z.object({
       .transform((v) => Math.max(1, Math.floor(v))),
     autoSizeFleet: z.boolean().default(true),
     weightBits: num.min(1).default(16),
+    kvBits: num.min(1).default(16), // KV precision, independent of weights (GPU-003)
+    ttftTargetMs: num.positive().default(2000), // TTFT SLA gate (GPU-004)
+    haEnabled: z.boolean().default(true), // N+1 redundancy by default (GPU-006)
     apiComparisonModelId: z.string().default(""),
     apiComparisonInPricePer1K: nonNeg.default(0),
     apiComparisonOutPricePer1K: nonNeg.default(0),
@@ -250,6 +253,40 @@ export function assumptionsToJson(
           requiredInstances: cx.requiredInstances,
           autoSized: cx.autoSized,
           feasible: cx.feasible,
+          ownedCapacity: cx.ownedCapacity,
+          replicas: cx.replicas,
+          instancesPerReplica: cx.instancesPerReplica,
+          haEnabled: inputs.generation.haEnabled,
+          haReplicasAdded: cx.haReplicasAdded,
+          capacity: {
+            source: cx.capacity.source,
+            slaAchievable: cx.capacity.slaAchievable,
+            benchmark: cx.capacity.benchmarkAvailable
+              ? {
+                  model: cx.capacity.benchModelKey,
+                  framework: cx.capacity.framework,
+                  precisionUsed: cx.capacity.precisionUsed,
+                  seqBucket: cx.capacity.seqUsed,
+                  gpusInConfig: cx.capacity.gpusInConfig,
+                }
+              : null,
+            extrapolationReasons: cx.capacity.extrapolationReasons,
+            chosenConcurrency: cx.capacity.chosenConcurrency,
+            perGpuDecodeTokS: cx.capacity.perGpuDecodeTokS,
+            achievedInteractivity: cx.capacity.achievedInteractivity,
+            ttftS: cx.capacity.ttftS,
+            weightPrecisionBits: cx.capacity.weightPrecisionBits,
+            kvPrecisionBits: cx.capacity.kvPrecisionBits,
+            weightsGB: cx.capacity.weightsGB,
+            kvCacheGB: cx.capacity.kvCacheGB,
+          },
+          demand: {
+            avgDecodeTokS: cx.avgDecodeDemand,
+            peakDecodeTokS: cx.peakDecodeDemand,
+            providedDecodeTokS: cx.providedDecodeCapacity,
+            utilAvg: cx.utilAvg,
+            utilPeak: cx.utilPeak,
+          },
         }
       : undefined;
   return JSON.stringify(
@@ -360,7 +397,22 @@ export function buildReport(
           ? `- **Fleet:** ${cx.boxes} instance(s) — **infeasible** for this load (needs ≥ ${cx.requiredInstances}); auto-size is off`
           : `- **Fleet:** ${cx.boxes} instance(s); memory floor ${cx.minInstancesToLoad}, throughput needs ${cx.throughputInstances}`
     );
-    lines.push(`- **Precision:** ${g.weightBits}-bit weights · ${g.maxContextLen} ctx × ${g.maxConcurrentSeqs} concurrent`);
+    lines.push(`- **Precision:** ${g.weightBits}-bit weights · ${g.kvBits}-bit KV cache · ${g.maxContextLen} ctx × ${g.maxConcurrentSeqs} max concurrent`);
+    const cap = cx.capacity;
+    lines.push(
+      `- **Capacity source:** ${cap.source}${cap.benchmarkAvailable ? ` (${cap.benchModelKey} · ${cap.framework} · ${cap.precisionUsed} · ${cap.seqUsed} · ${cap.gpusInConfig} GPUs measured)` : ""}`
+    );
+    if (cap.extrapolationReasons.length > 0)
+      lines.push(`- **Extrapolation:** ${cap.extrapolationReasons.join("; ")}`);
+    lines.push(
+      `- **Operating point:** ${cap.chosenConcurrency} concurrent · ${Math.round(cap.perGpuDecodeTokS)} tok/s/GPU · ${Math.round(cap.achievedInteractivity)} tok/s/user (target ${g.interactivityTarget}) · TTFT ${cap.ttftS.toFixed(1)}s (max ${(g.ttftTargetMs / 1000).toFixed(1)}s) · SLA ${cap.slaAchievable ? "met" : "**NOT met — infeasible**"}`
+    );
+    lines.push(
+      `- **Topology:** ${cx.replicas} replica(s) × ${cx.instancesPerReplica} box(es) = ${cx.requiredInstances} instances · HA ${g.haEnabled ? `N+1 (on, +${cx.haReplicasAdded} replica)` : "**excluded (off)**"}`
+    );
+    lines.push(
+      `- **Memory:** weights ${Math.round(cap.weightsGB)} GB + KV ${Math.round(cap.kvCacheGB)} GB + reserve → memory floor ${cap.memoryFloorBoxes} box(es)`
+    );
   } else {
     lines.push(`- **API model:** ${g.llmModelId} (in ${usd(g.llmInPricePer1K, 5)} / out ${usd(g.llmOutPricePer1K, 5)} per 1K)`);
   }

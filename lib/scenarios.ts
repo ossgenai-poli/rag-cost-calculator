@@ -85,9 +85,9 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
     highlight: false,
   };
 
-  // Gate on real generation volume and a real box cost — not on selfHostedMonthly$,
-  // which the crossover zeroes for $0-priced models even when there IS volume.
-  const hasVolume = cx.monthlyGenTokens > 0 && cx.gpuMonthly$ > 0;
+  // Volume depends ONLY on tokens/queries — NOT on GPU price (GPU-007): owned/free
+  // capacity ($0 GPU) with real traffic is still a complete scenario, not "no volume".
+  const hasVolume = cx.monthlyGenTokens > 0;
   const tokensPerQuery = result.perQuery.llmInputTok + inputs.generation.outTokens;
   // One box minimum when there's volume but the crossover returned the zero result.
   // cx.boxes is already AUTO-SIZED to serve the load, so this fleet cost is feasible
@@ -125,19 +125,33 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
           complete: false,
           highlight: selfHostedMode,
         }
-      : {
-          id: "self-built-gpu",
-          label: "Self-built + GPU",
-          monthly: gpuTotal,
-          per1000: per1000(gpuTotal),
-          diffPct: diffOf(gpuTotal),
-          difference: formatDiff(diffOf(gpuTotal)),
-          note: `${cx.boxes} × ${inputs.generation.gpuInstanceType} at ${Math.round(
-            inputs.generation.utilTarget * 100
-          )}% target util${sizingNote}`,
-          complete: true,
-          highlight: selfHostedMode, // highlighted when it's the selected scenario
-        };
+      : cx.ownedCapacity
+        ? {
+            // GPU-007: $0 owned/free hardware — show the real non-GPU (infra + ops)
+            // cost, mark hardware as $0 owned, and DON'T claim a like-for-like saving.
+            id: "self-built-gpu",
+            label: "Self-built + GPU",
+            monthly: gpuTotal, // infra + ops only; hardware is $0
+            per1000: per1000(gpuTotal),
+            diffPct: null, // not a like-for-like comparison
+            difference: "$0 owned capacity",
+            note: `${cx.boxes} × ${inputs.generation.gpuInstanceType} at $0/hr (owned/free capacity) — hardware excluded; infra + ops only${sizingNote}`,
+            complete: true,
+            highlight: selfHostedMode,
+          }
+        : {
+            id: "self-built-gpu",
+            label: "Self-built + GPU",
+            monthly: gpuTotal,
+            per1000: per1000(gpuTotal),
+            diffPct: diffOf(gpuTotal),
+            difference: formatDiff(diffOf(gpuTotal)),
+            note: `${cx.boxes} × ${inputs.generation.gpuInstanceType} at ${Math.round(
+              inputs.generation.utilTarget * 100
+            )}% target util${sizingNote}`,
+            complete: true,
+            highlight: selfHostedMode, // highlighted when it's the selected scenario
+          };
 
   // --- GPU at break-even traffic (the provisioned fleet's own break-even) ---
   const breakEvenQueries = tokensPerQuery > 0 ? cx.breakEvenTokens / tokensPerQuery : 0;
