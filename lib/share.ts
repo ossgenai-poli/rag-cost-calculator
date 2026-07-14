@@ -237,10 +237,11 @@ export function inputsToCsv(result: CalcResult, inputs: CalcInputs): string {
 
 /** Full assumptions dump: inputs + a trimmed pricing provenance record. */
 export function assumptionsToJson(
-  inputs: CalcInputs,
+  inputs: CalcInputs, // EFFECTIVE (clamped) inputs — authoritative for the calc (P1)
   priceBook: PriceBook,
   asOf: string,
-  result?: CalcResult
+  result?: CalcResult,
+  inputAdjustments?: Array<{ field: string; entered: number; calculated: number }>
 ): string {
   const cx = result?.crossover;
   // Billed/required fleet (M) so the export reflects what's actually charged, not
@@ -316,7 +317,8 @@ export function assumptionsToJson(
         opensearch: priceBook.opensearch,
         gpus: priceBook.gpus,
       },
-      inputs,
+      inputs, // EFFECTIVE (clamped) — what the numbers are computed from
+      ...(inputAdjustments && inputAdjustments.length > 0 ? { inputAdjustments } : {}),
     },
     null,
     2

@@ -40,7 +40,10 @@ function formatDate(iso: string): string {
 export interface ResultsPanelProps {
   resultA: CalcResult;
   resultB: CalcResult;
+  /** EFFECTIVE (clamped) inputs — everything displayed derives from these (P1). */
   inputs: CalcInputs;
+  /** Raw ENTERED inputs — used only for the clamp/audit warning. */
+  enteredInputs?: CalcInputs;
   priceBook: PriceBook;
   asOf: string;
   stale: boolean;
@@ -56,6 +59,7 @@ export function ResultsPanel({
   resultA,
   resultB,
   inputs,
+  enteredInputs,
   priceBook,
   asOf,
   stale,
@@ -80,7 +84,7 @@ export function ResultsPanel({
   };
   const managedKb = resultA.managedKb;
   const grounding = resultA.grounding;
-  const clampNotes = inputClampNotes(inputs); // INPUT-020 transparency
+  const clampNotes = inputClampNotes(enteredInputs ?? inputs); // INPUT-020: entered vs effective
   const selectedModelLabel =
     priceBook.models.find((m) => m.id === inputs.generation.llmModelId)?.label ?? "This model";
   const hasGenVolume = crossover.monthlyGenTokens > 0;

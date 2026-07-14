@@ -311,6 +311,10 @@ export interface CalcResult {
   managedKb: ManagedKbResult;
   grounding: GroundingResult;
   mode: RagMode;
+  /** The NORMALIZED (clamped) inputs the engine actually computed with. This is
+   * authoritative for display, scenarios, sensitivity and exports — the raw
+   * entered inputs are only audit/warning metadata (INPUT-020). */
+  effectiveInputs: CalcInputs;
 }
 
 // ---------------------------------------------------------------------------

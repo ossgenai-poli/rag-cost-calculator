@@ -1,4 +1,4 @@
-# QA Handoff — RAG Cost Calculator (RC `rc-qa-6`)
+# QA Handoff — RAG Cost Calculator (RC `rc-qa-7`)
 
 This is the single source of truth for the QA engineer. Everything needed to run the test plan is
 here. Live-pricing suites run against the Vercel runtime (§3/§5); all other suites run against the
@@ -17,8 +17,8 @@ static site.
 
 | | Value |
 |---|---|
-| **Git tag** | `rc-qa-6` |
-| **Commit SHA** | run `git rev-parse rc-qa-6` |
+| **Git tag** | `rc-qa-7` |
+| **Commit SHA** | run `git rev-parse rc-qa-7` |
 | **Static site (live + verified rendering)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
 | **Runtime site (LIVE pricing)** | https://rag-cost-calculator-hazel.vercel.app/ |
 | **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
@@ -28,13 +28,13 @@ Check out the exact tree:
 git clone https://github.com/ossgenai-poli/rag-cost-calculator.git
 cd rag-cost-calculator
 git fetch --tags --force        # the rc tags are re-pointed between rounds
-git checkout rc-qa-6            # detached HEAD at the pinned RC
+git checkout rc-qa-7            # detached HEAD at the pinned RC
 ```
 
 **Pre-verified by the developer on this exact SHA** (so an environment problem is distinguishable
 from a product defect):
 - `npm run typecheck` → clean
-- `npm test` → **140 passed** (incl. GPU capacity + both remediations, catalog-drift, topN-clamp, QA regressions)
+- `npm test` → **151 passed** (incl. GPU capacity, all remediations, effective-input reconciliation, catalog-drift, QA regressions)
 - `npm run build:static` → emits `./out`
 - `npm run test:e2e` → **PASS** (no console errors)
 
@@ -385,3 +385,32 @@ the fixed fleet's complete-replica capacity (peak-adjusted): `prefillUtil` and `
 `utilAtBreakEven = max(...)`, and `breakEvenFeasible ⇔ prefillUtil ≤ 1 AND decodeUtil ≤ 1 AND SLA`.
 A zero-output workload therefore has `decodeUtil = 0` but a real `prefillUtil`, so an overloaded
 prefill correctly suppresses the positive self-host verdict.
+
+---
+
+## 13. rc-qa-7 retest checklist — effective inputs authoritative everywhere
+
+The engine's NORMALIZED (clamped) inputs are now returned as `CalcResult.effectiveInputs`
+(`normalizeInputs()` is the exported authoritative normalizer). The UI feeds `effectiveInputs` to
+the display, scenarios, sensitivity and exports; the raw entered values are kept ONLY as the
+clamp/audit warning. So headline, unit-cost, scenario and exported figures all reconcile.
+
+| # | Sev | Area | Retest |
+|---|---|---|---|
+| P1 | ★ | Effective inputs authoritative | Enter queries/month = 1e308 → everything computes and displays at the **1e12** cap |
+| P2 | | All clamped fields reported | Every clamped field (incl. prompt-overhead and query-tokens) appears in the entered-vs-calculated notice |
+
+### queries/month = 1e308 — expected (all reconcile at 1e12)
+- **Engine**: `effectiveInputs.traffic.queriesPerMonth = 1,000,000,000,000`; total cost finite.
+- **Selected scenario / display**: shows **1e12** queries/mo (not 1e308).
+- **Cost/query & cost/1k**: > $0 and reconcile — `costPerQuery = total ÷ 1e12`, `costPer1k = ×1000`
+  (no more $0.0000 collapse).
+- **Monthly token volumes**: finite, based on 1e12.
+- **CSV**: contains `1000000000000`, no NaN/Infinity.
+- **JSON**: `inputs.traffic.queriesPerMonth = 1e12`; a separate `inputAdjustments: [{field,
+  entered, calculated}]` records the 1e308→1e12 adjustment; `inputs` round-trips to the same total.
+- **Markdown report**: uses `1,000,000,000,000` and reconciles with the headline.
+- **Warning**: "queries/month: entered 1e+308, calculated as 1,000,000,000,000".
+
+Coverage: `lib/rc-qa7.test.ts` (+11). Suite total: **151** unit tests. Gates green on `rc-qa-7`:
+typecheck · 151 tests · build:static · verify:basepath · test:e2e · verify:live.

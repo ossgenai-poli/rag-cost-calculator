@@ -302,6 +302,7 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
     managedKb: computeManagedKb(effectiveInputs, priceBook, perQuery),
     grounding,
     mode: reportedMode,
+    effectiveInputs,
   };
 }
 
@@ -328,7 +329,9 @@ export const INPUT_MAXIMA = {
 } as const;
 const clampPos = (v: number, max: number) =>
   !Number.isFinite(v) || v < 0 ? 0 : Math.min(v, max);
-function clampExtremes(inputs: CalcInputs): CalcInputs {
+/** The authoritative input normalizer — clamps every field to its practical max
+ * so the calc (and everything derived from it) stays finite (INPUT-020). */
+export function normalizeInputs(inputs: CalcInputs): CalcInputs {
   const M = INPUT_MAXIMA;
   return {
     ...inputs,
@@ -360,14 +363,16 @@ export function inputClampNotes(inputs: CalcInputs): Array<{ field: string; ente
   check("documents", inputs.corpus.numDocs, INPUT_MAXIMA.numDocs);
   check("tokens/doc", inputs.corpus.avgTokensPerDoc, INPUT_MAXIMA.avgTokensPerDoc);
   check("output tokens", inputs.generation.outTokens, INPUT_MAXIMA.outTokens);
+  check("prompt overhead", inputs.generation.promptOverhead, INPUT_MAXIMA.promptOverhead);
   check("max context", inputs.generation.maxContextLen, INPUT_MAXIMA.maxContextLen);
   check("max concurrency", inputs.generation.maxConcurrentSeqs, INPUT_MAXIMA.maxConcurrentSeqs);
   check("overhead %", inputs.ops.overheadPct, INPUT_MAXIMA.overheadPct);
+  check("query tokens", inputs.queryTokens, INPUT_MAXIMA.queryTokens);
   return notes;
 }
 
 export function calculate(rawInputs: CalcInputs, priceBook: PriceBook): CalcResult {
-  const inputs = clampExtremes(rawInputs);
+  const inputs = normalizeInputs(rawInputs);
   if (inputs.ragMode === "B") {
     const effectiveInputs: CalcInputs = {
       ...inputs,

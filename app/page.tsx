@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadPrices } from "@/lib/prices";
-import { calculate, defaultInputs } from "@/lib/calc-engine";
+import { calculate, defaultInputs, inputClampNotes } from "@/lib/calc-engine";
 import {
   assumptionsToJson,
   buildReport,
@@ -152,20 +152,22 @@ export default function Page() {
   }, [prices]);
   const shareUrl = inputs ? buildShareUrl(inputs) : "";
   const onExportCsv = useCallback(() => {
-    if (resultA && inputs) downloadText("rag-cost-breakdown.csv", inputsToCsv(resultA, inputs), "text/csv");
-  }, [resultA, inputs]);
+    // Exports use the EFFECTIVE (clamped) inputs so headline, unit-cost, scenario
+    // and exported figures all reconcile (P1). Entered values are audit metadata.
+    if (resultA) downloadText("rag-cost-breakdown.csv", inputsToCsv(resultA, resultA.effectiveInputs), "text/csv");
+  }, [resultA]);
   const onExportJson = useCallback(() => {
-    if (inputs && prices)
+    if (resultA && inputs && prices)
       downloadText(
         "rag-assumptions.json",
-        assumptionsToJson(inputs, prices.priceBook, prices.asOf, resultA ?? undefined),
+        assumptionsToJson(resultA.effectiveInputs, prices.priceBook, prices.asOf, resultA, inputClampNotes(inputs)),
         "application/json"
       );
   }, [inputs, prices, resultA]);
   const onExportReport = useCallback(() => {
-    if (resultA && inputs && prices)
-      downloadText("rag-cost-report.md", buildReport(inputs, resultA, prices.priceBook, prices.asOf), "text/markdown");
-  }, [resultA, inputs, prices]);
+    if (resultA && prices)
+      downloadText("rag-cost-report.md", buildReport(resultA.effectiveInputs, resultA, prices.priceBook, prices.asOf), "text/markdown");
+  }, [resultA, prices]);
 
   return (
     <main className="mx-auto max-w-[1500px] px-4 py-6 pb-20 lg:pb-6">
@@ -217,7 +219,8 @@ export default function Page() {
               <ResultsPanel
                 resultA={resultA}
                 resultB={resultB}
-                inputs={inputs}
+                inputs={resultA.effectiveInputs}
+                enteredInputs={inputs}
                 priceBook={prices.priceBook}
                 asOf={prices.asOf}
                 stale={prices.stale}
