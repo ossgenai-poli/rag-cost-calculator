@@ -1,0 +1,460 @@
+<style>
+  :root{
+    --paper:#eef1f6; --canvas:#f7f9fc; --ink:#131922; --ink-soft:#47515f; --ink-faint:#6b7482;
+    --line:#d3dae6; --line-soft:#e4e9f1; --accent:#2f5c8f; --accent-soft:#e7edf5;
+    --panel:#0e1420; --panel-2:#18202e; --panel-line:#28323f; --panel-ink:#c7d1de; --panel-faint:#8794a5;
+    --fact:#1e63c4; --derived:#5b6675; --rec:#147d64; --expert:#6e56cf;
+    --c-measured:#1b9e77; --c-extrap:#c77800; --c-proxy:#2f6fb0; --c-heur:#6b7280;
+    --mono:ui-monospace,"SFMono-Regular","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --sp:clamp(1rem,3vw,2rem);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding:var(--sp)}
+  a{color:var(--accent)}
+  h1,h2,h3{font-family:var(--mono);font-weight:600;text-wrap:balance;letter-spacing:-.01em;margin:0}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent);font-weight:600}
+  .muted{color:var(--ink-soft)} .faint{color:var(--ink-faint)}
+  .mono{font-family:var(--mono)} .tnum{font-variant-numeric:tabular-nums}
+
+  /* masthead */
+  .mast{border:1px solid var(--line);background:var(--canvas);border-radius:10px;padding:clamp(1.1rem,3vw,1.8rem);
+    margin-bottom:1.6rem}
+  .mast h1{font-size:clamp(1.5rem,3.4vw,2.15rem);line-height:1.1}
+  .mast .lede{margin:.7rem 0 0;max-width:64ch;color:var(--ink-soft)}
+  .tagrow{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem;align-items:center}
+  .badge{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;
+    padding:.28rem .55rem;border-radius:5px;font-weight:600;border:1px solid transparent}
+  .badge.exp{background:#fdf0d9;color:#8a5a00;border-color:#eecf97}
+  .badge.br{background:var(--accent-soft);color:var(--accent);border-color:#c9d8ea}
+  .badge.frozen{background:#e9edf2;color:var(--ink-soft);border-color:var(--line)}
+
+  section{margin:2.4rem 0}
+  .sec-head{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap;margin-bottom:1rem;
+    padding-bottom:.5rem;border-bottom:1px solid var(--line)}
+  .sec-head h2{font-size:1.15rem}
+  .sec-head .n{font-family:var(--mono);color:var(--accent);font-size:.9rem}
+  .sec-note{color:var(--ink-soft);max-width:70ch;margin:.2rem 0 1.1rem}
+
+  /* legends */
+  .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}
+  .legend .card{border:1px solid var(--line);border-radius:9px;background:var(--canvas);padding:1rem 1.1rem}
+  .legend h3{font-size:.85rem;margin-bottom:.7rem}
+  .chiprow{display:flex;flex-direction:column;gap:.5rem}
+  .chip-line{display:flex;gap:.6rem;align-items:baseline;font-size:.85rem}
+  /* taxonomy = outlined */
+  .tax{font-family:var(--mono);font-size:.66rem;letter-spacing:.05em;text-transform:uppercase;font-weight:600;
+    padding:.16rem .44rem;border-radius:4px;border:1.5px solid currentColor;white-space:nowrap}
+  .tax.fact{color:var(--fact)} .tax.derived{color:var(--derived)}
+  .tax.rec{color:var(--rec)} .tax.expert{color:var(--expert)}
+  /* confidence = filled */
+  .conf{font-family:var(--mono);font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;font-weight:600;
+    padding:.18rem .48rem;border-radius:4px;color:#fff;white-space:nowrap}
+  .conf.measured{background:var(--c-measured)} .conf.scaled{background:linear-gradient(90deg,var(--c-measured),var(--c-extrap))}
+  .conf.extrap{background:var(--c-extrap)} .conf.proxy{background:var(--c-proxy)} .conf.heur{background:var(--c-heur)}
+
+  /* mode toggle */
+  .toggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--canvas)}
+  .toggle button{font-family:var(--mono);font-size:.82rem;font-weight:600;border:0;background:transparent;
+    color:var(--ink-soft);padding:.55rem 1.1rem;cursor:pointer}
+  .toggle button[aria-pressed="true"]{background:var(--accent);color:#fff}
+  .toggle button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .mode-expert{display:none}
+  body.show-expert .mode-simple{display:none}
+  body.show-expert .mode-expert{display:block}
+
+  /* product mock = dark app */
+  .device{background:var(--panel);border:1px solid var(--panel-line);border-radius:12px;overflow:hidden;
+    box-shadow:0 18px 40px -24px rgba(10,20,40,.5)}
+  .device .bar{display:flex;gap:.4rem;align-items:center;padding:.6rem .9rem;border-bottom:1px solid var(--panel-line);
+    background:var(--panel-2)}
+  .dot{width:10px;height:10px;border-radius:50%;background:#3a4557}
+  .device .url{font-family:var(--mono);font-size:.7rem;color:var(--panel-faint);margin-left:.6rem}
+  .screen{display:grid;grid-template-columns:1.35fr 1fr;gap:0}
+  @media(max-width:760px){.screen{grid-template-columns:1fr}}
+  .col{padding:1.1rem 1.2rem;color:var(--panel-ink)}
+  .col.inputs{border-right:1px solid var(--panel-line)}
+  @media(max-width:760px){.col.inputs{border-right:0;border-bottom:1px solid var(--panel-line)}}
+  .stage{margin-bottom:1.25rem}
+  .stage-h{font-family:var(--mono);font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--panel-faint);margin-bottom:.55rem;display:flex;align-items:center;gap:.5rem}
+  .stage-h .s{color:#5f6f84}
+  .field{display:flex;justify-content:space-between;align-items:center;gap:.7rem;padding:.5rem .65rem;
+    border:1px solid var(--panel-line);border-radius:7px;margin-bottom:.5rem;background:#111a27}
+  .field .lab{font-size:.82rem}
+  .field .val{font-family:var(--mono);font-size:.8rem;color:#fff;background:#0b1119;border:1px solid #263140;
+    border-radius:5px;padding:.16rem .5rem}
+  .field .val.readonly{color:var(--panel-faint);background:transparent;border-style:dashed}
+  .seg{display:inline-flex;border:1px solid #2a3646;border-radius:6px;overflow:hidden}
+  .seg span{font-size:.72rem;padding:.2rem .5rem;color:var(--panel-faint)}
+  .seg span.on{background:var(--accent);color:#fff}
+  .taxdot{margin-left:.15rem}
+
+  /* recommendation rail */
+  .rail{background:#0b111b}
+  .rail .rh{font-family:var(--mono);font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;color:var(--panel-faint);
+    margin-bottom:.5rem}
+  .verdict{font-size:1.02rem;font-weight:600;color:#fff;line-height:1.35}
+  .verdict .em{color:#6fd0a8}
+  .costgrid{display:flex;gap:1.2rem;margin:.7rem 0;flex-wrap:wrap}
+  .costgrid .c .k{font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--panel-faint)}
+  .costgrid .c .v{font-family:var(--mono);font-size:1.05rem;color:#fff}
+  .arch{font-family:var(--mono);font-size:.82rem;color:var(--panel-ink);background:#0e1622;border:1px solid var(--panel-line);
+    border-radius:7px;padding:.6rem .7rem;margin-top:.4rem}
+  .arch .eq{color:var(--panel-faint);font-size:.72rem;margin-top:.35rem;line-height:1.5}
+  .arch .eq b{color:#cfe0d6}
+  .callout{margin-top:.55rem;font-size:.75rem;color:#d8be86;background:#241c0c;border:1px solid #4a3a17;
+    border-radius:6px;padding:.45rem .6rem}
+
+  /* annotation callouts (light layer) */
+  .annot{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:.9rem;margin-top:1.1rem}
+  .annot .a{border-left:3px solid var(--accent);background:var(--canvas);border-radius:0 8px 8px 0;padding:.7rem .9rem;
+    font-size:.83rem}
+  .annot .a b{font-family:var(--mono);font-size:.74rem}
+
+  /* option cards */
+  .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem}
+  .opt{border:1px solid var(--line);border-radius:10px;background:var(--canvas);padding:1rem;position:relative}
+  .opt.primary{border-color:var(--rec);box-shadow:0 0 0 1px var(--rec) inset}
+  .opt .tag{font-family:var(--mono);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;font-weight:600;
+    display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem}
+  .opt .cfg{font-family:var(--mono);font-size:.85rem;font-weight:600}
+  .opt .price{font-family:var(--mono);font-size:1.15rem;margin:.35rem 0}
+  .opt .delta{font-family:var(--mono);font-size:.78rem;color:var(--ink-soft)}
+  .opt .to{font-size:.8rem;color:var(--ink-soft);margin-top:.5rem}
+  .opt.reject{background:#f3f5f8;border-style:dashed}
+  .opt.reject .cfg{color:var(--ink-soft);font-weight:500}
+  .reject-list{font-family:var(--mono);font-size:.78rem;color:var(--ink-soft);line-height:1.9}
+  .reject-list .x{color:#b23b3b}
+
+  /* trust panel */
+  details.trust{border:1px solid var(--line);border-radius:10px;background:var(--canvas);overflow:hidden}
+  details.trust summary{cursor:pointer;list-style:none;padding:.9rem 1.1rem;font-family:var(--mono);font-size:.85rem;
+    font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+  details.trust summary::-webkit-details-marker{display:none}
+  details.trust summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  details.trust .body{padding:0 1.1rem 1.1rem;border-top:1px solid var(--line-soft)}
+  .prov{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1.1rem;font-size:.83rem;margin:.9rem 0}
+  .prov dt{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)}
+  .prov dd{margin:0;font-family:var(--mono);font-size:.82rem}
+  .why{background:#fbf6ec;border:1px solid #ecdcbf;border-radius:7px;padding:.7rem .85rem;font-size:.82rem;margin-top:.4rem}
+  .why b{font-family:var(--mono);font-size:.74rem}
+  .disc{font-size:.78rem;color:var(--ink-soft);margin-top:.7rem;border-top:1px dashed var(--line);padding-top:.6rem}
+
+  /* expert drawers */
+  .drawers{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}
+  .drawer{border:1px solid var(--line);border-radius:10px;background:var(--canvas);overflow:hidden}
+  .drawer .dh{background:#eef2f7;padding:.6rem .85rem;font-family:var(--mono);font-size:.78rem;font-weight:600;
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:.5rem}
+  .drawer .dh .expert-badge{margin-left:auto}
+  .drawer .dl{padding:.7rem .85rem}
+  .drow{display:flex;justify-content:space-between;gap:.7rem;padding:.4rem 0;border-bottom:1px solid var(--line-soft);
+    font-size:.82rem;align-items:baseline}
+  .drow:last-child{border-bottom:0}
+  .drow .rv{font-family:var(--mono);font-size:.8rem;color:var(--ink)}
+  .drow .rv .rec-note{display:block;font-size:.68rem;color:var(--rec);font-family:var(--sans)}
+
+  /* result hierarchy ladder */
+  .ladder{display:grid;gap:.55rem}
+  .rung{display:grid;grid-template-columns:2.2rem 1fr;gap:.9rem;align-items:start;
+    border:1px solid var(--line);border-radius:8px;background:var(--canvas);padding:.7rem .9rem}
+  .rung .num{font-family:var(--mono);font-weight:600;color:#fff;background:var(--accent);border-radius:5px;
+    text-align:center;padding:.15rem 0;font-size:.82rem}
+  .rung .t{font-weight:600;font-size:.9rem}
+  .rung .d{font-size:.82rem;color:var(--ink-soft)}
+  .rung .src{font-family:var(--mono);font-size:.68rem;color:var(--ink-faint);margin-top:.2rem}
+
+  /* file map */
+  .files{columns:2;column-gap:2rem;font-size:.85rem}
+  @media(max-width:620px){.files{columns:1}}
+  .files a{display:block;padding:.2rem 0;font-family:var(--mono);font-size:.8rem}
+  footer{margin:3rem 0 1rem;padding-top:1.2rem;border-top:1px solid var(--line);color:var(--ink-faint);font-size:.8rem}
+
+  @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="eyebrow">RAG Cost Calculator · UX v2 · Phase 0</div>
+    <h1>From configuration form to decision tool</h1>
+    <p class="lede">Wireframes and the field/confidence systems for a calculator an AWS Solution
+      Architect drives in a live customer conversation. <strong>Ask for business truth → recommend the
+      infrastructure → expose engineering assumptions progressively → explain every recommendation in
+      customer-ready language.</strong></p>
+    <div class="tagrow">
+      <span class="badge exp">Experimental</span>
+      <span class="badge br">branch: ux/v2</span>
+      <span class="badge frozen">engine frozen · rc-qa-11</span>
+      <span class="faint mono" style="font-size:.72rem">design-only · not wired · not deployed</span>
+    </div>
+  </header>
+
+  <!-- LEGEND: the two encoded systems -->
+  <section>
+    <div class="sec-head"><span class="n">A</span><h2>Two color systems you'll see everywhere</h2></div>
+    <p class="sec-note">Every input carries a <em>taxonomy</em> chip (who supplies it). Every fleet
+      recommendation carries a <em>confidence</em> chip (how good the evidence is). They are visually
+      distinct on purpose: taxonomy is outlined, confidence is filled.</p>
+    <div class="legend">
+      <div class="card">
+        <h3>Field taxonomy — who supplies it</h3>
+        <div class="chiprow">
+          <div class="chip-line"><span class="tax fact">Fact</span><span>The SA enters it — a value a customer plausibly knows.</span></div>
+          <div class="chip-line"><span class="tax derived">Derived</span><span>Calculated from other inputs — read-only unless Expert.</span></div>
+          <div class="chip-line"><span class="tax rec">Recommended</span><span>App default, chosen with a reason — editable.</span></div>
+          <div class="chip-line"><span class="tax expert">Expert</span><span>Hidden until you open a Tune drawer.</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Confidence ladder — beside the fleet</h3>
+        <div class="chiprow">
+          <div class="chip-line"><span class="conf measured">Measured</span><span>Exact model, GPU, precision, sequence, topology, traceable run.</span></div>
+          <div class="chip-line"><span class="conf scaled">Measured·scaled</span><span>Exact serving group; input throughput scaled to your ISL.</span></div>
+          <div class="chip-line"><span class="conf extrap">Extrapolated</span><span>Sequence / precision / topology differs.</span></div>
+          <div class="chip-line"><span class="conf proxy">Proxy</span><span>Another model's benchmark used as a stand-in.</span></div>
+          <div class="chip-line"><span class="conf heur">Heuristic</span><span>No applicable benchmark — a rough estimate.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MODE TOGGLE + MOCK -->
+  <section>
+    <div class="sec-head" style="justify-content:space-between">
+      <div style="display:flex;align-items:baseline;gap:.8rem"><span class="n">B</span><h2>The product — two modes, one engine</h2></div>
+      <div class="toggle" role="group" aria-label="Preview mode">
+        <button id="btn-simple" aria-pressed="true">Simple</button>
+        <button id="btn-expert" aria-pressed="false">Expert</button>
+      </div>
+    </div>
+
+    <!-- SIMPLE -->
+    <div class="mode-simple">
+      <p class="sec-note">One progressive page that reads like the customer conversation, with a
+        persistent recommendation rail. The new SA never chooses a GPU, precision, concurrency, or
+        fleet count — those are recommended or derived, each with confidence in place.</p>
+      <div class="device">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="url">rag-calculator · self-host vs API</span></div>
+        <div class="screen">
+          <div class="col inputs">
+            <div class="stage">
+              <div class="stage-h"><span class="s">A</span> Decide</div>
+              <div class="field"><span class="lab">What are you deciding?</span><span class="val">Compare API vs self-host</span></div>
+              <div class="field"><span class="lab">What matters most?</span>
+                <span class="seg"><span>Cost</span><span class="on">Balanced</span><span>Latency</span></span></div>
+            </div>
+            <div class="stage">
+              <div class="stage-h"><span class="s">B</span> Workload facts <span class="tax fact taxdot">Fact</span></div>
+              <div class="field"><span class="lab">Monthly question volume</span><span class="val tnum">200,000,000</span></div>
+              <div class="field"><span class="lab">Typical answer length</span><span class="val tnum">500 tok</span></div>
+              <div class="field"><span class="lab">Sources given to the model</span><span class="val tnum">6</span></div>
+              <div class="field"><span class="lab">Busiest hour vs average</span><span class="val">2.0×</span></div>
+            </div>
+            <div class="stage">
+              <div class="stage-h"><span class="s">C</span> Experience → SLA <span class="tax derived taxdot">Derived</span></div>
+              <div class="field"><span class="lab">Response experience</span><span class="val">Interactive RAG</span></div>
+              <div class="field"><span class="lab">Wait to first word (P99)</span><span class="val readonly">≤ 2.0 s · derived</span></div>
+              <div class="field"><span class="lab">Streaming speed / user</span><span class="val readonly">30 tok/s · derived</span></div>
+              <div class="field"><span class="lab">Availability</span><span class="val">24×7 · N+1 on</span></div>
+            </div>
+            <div class="stage">
+              <div class="stage-h"><span class="s">D</span> Recommended config <span class="tax rec taxdot">Recommended</span></div>
+              <div class="field"><span class="lab">GPU</span><span class="val">p6-b200 · INT4</span></div>
+              <div class="field"><span class="lab">Fleet size</span><span class="val readonly">87 · derived (auto-size)</span></div>
+              <div class="field"><span class="lab">Context window</span><span class="val readonly">4,500 tok · derived</span></div>
+            </div>
+          </div>
+
+          <div class="col rail">
+            <div class="rh">Recommendation</div>
+            <div class="verdict">Calling the <span class="em">API is cheaper today</span> — self-hosting
+              pays off above ~135M questions/mo.</div>
+            <div class="costgrid">
+              <div class="c"><div class="k">API / mo</div><div class="v tnum">$331k</div></div>
+              <div class="c"><div class="k">Self-host / mo</div><div class="v tnum">$7.2M</div></div>
+              <div class="c"><div class="k">Per query</div><div class="v tnum">$0.0011</div></div>
+            </div>
+            <div style="margin:.5rem 0"><span class="conf scaled">Measured·scaled</span></div>
+            <div class="arch">DeepSeek-V4-Pro · p6-b200.48xlarge · INT4 · <b>87 instances</b>
+              <div class="eq">Prefill-bound: <b>221,461</b> input tok/s ÷ (3,715 prefill tok/s/replica
+                × 70% = 2,600) → <b>86</b> replicas + 1 N+1 × 1 box = <b>87 boxes</b></div></div>
+            <div class="callout">⚠ Rests on measured-but-scaled prefill (ISL 1,024 → 2,910). Treat as
+              qualified; load-test before committing.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="annot">
+        <div class="a"><b>Derived, not asked.</b> Fleet size, context window, concurrency and the SLA
+          numbers are outputs — the SA sees them, doesn't guess them.</div>
+        <div class="a"><b>Confidence in place.</b> The chip sits on the rail next to the fleet, not in a
+          card far below it.</div>
+        <div class="a"><b>Reconciled equation.</b> The displayed math is the binding dimension's real
+          arithmetic (from the rc-qa-10 <span class="mono">fleet-explain</span> contract).</div>
+      </div>
+    </div>
+
+    <!-- EXPERT -->
+    <div class="mode-expert">
+      <p class="sec-note">Same engine, more control. Each section opens a <em>Tune assumptions</em>
+        drawer exposing every lever. Overriding a recommended value flips its chip to
+        <span class="tax expert">Expert</span> and, where it weakens evidence, qualifies the verdict.</p>
+      <div class="drawers">
+        <div class="drawer"><div class="dh">GPU &amp; precision <span class="tax expert expert-badge">Expert</span></div>
+          <div class="dl">
+            <div class="drow"><span>GPU instance</span><span class="rv">p6-b200.48xlarge<span class="rec-note">recommended · balanced</span></span></div>
+            <div class="drow"><span>Weight precision</span><span class="rv">INT4<span class="rec-note">measured for this model</span></span></div>
+          </div></div>
+        <div class="drawer"><div class="dh">KV &amp; context <span class="tax expert expert-badge">Expert</span></div>
+          <div class="dl">
+            <div class="drow"><span>KV-cache precision</span><span class="rv">BF16<span class="rec-note">conservative default</span></span></div>
+            <div class="drow"><span>Context window</span><span class="rv">4,500 tok<span class="rec-note">derived + headroom</span></span></div>
+          </div></div>
+        <div class="drawer"><div class="dh">Concurrency &amp; latency <span class="tax expert expert-badge">Expert</span></div>
+          <div class="dl">
+            <div class="drow"><span>Max concurrent seqs</span><span class="rv">32<span class="rec-note">from operating point</span></span></div>
+            <div class="drow"><span>P99 TTFT target</span><span class="rv">2.0 s<span class="rec-note">tail, not average</span></span></div>
+            <div class="drow"><span>Streaming speed</span><span class="rv">30 tok/s/user</span></div>
+          </div></div>
+        <div class="drawer"><div class="dh">Utilization &amp; fleet <span class="tax expert expert-badge">Expert</span></div>
+          <div class="dl">
+            <div class="drow"><span>Utilization target</span><span class="rv">70% balanced<span class="rec-note">50 / 70 / 85 profiles</span></span></div>
+            <div class="drow"><span>Auto-size fleet</span><span class="rv">On<span class="rec-note">off → manual cap (override)</span></span></div>
+          </div></div>
+        <div class="drawer"><div class="dh">Redundancy <span class="tax expert expert-badge">Expert</span></div>
+          <div class="dl">
+            <div class="drow"><span>Spare replica (N+1)</span><span class="rv">On<span class="rec-note">serving redundancy only — not HA/DR</span></span></div>
+          </div></div>
+        <div class="drawer"><div class="dh">Pricing &amp; purchasing <span class="tax expert expert-badge">Expert</span></div>
+          <div class="dl">
+            <div class="drow"><span>GPU price</span><span class="rv">$113.93/hr<span class="rec-note">live · editing → qualified</span></span></div>
+            <div class="drow"><span>Purchasing</span><span class="rv">On-demand<span class="rec-note">RI/Savings indicative only</span></span></div>
+          </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RECOMMENDATION PRESENTATION -->
+  <section>
+    <div class="sec-head"><span class="n">C</span><h2>Ranked options — never one opaque "best GPU"</h2></div>
+    <p class="sec-note">Ranked by hard feasibility → SLA → minimum evidence → your optimization
+      preference → cost. Captioned <em>"Recommended among the AWS configurations currently modeled."</em></p>
+    <div class="opts">
+      <div class="opt primary">
+        <div class="tag" style="color:var(--rec)">✓ Recommended · balanced</div>
+        <div class="cfg">p6-b200 · INT4 · 87</div>
+        <div class="price tnum">$7.2M</div>
+        <div class="delta">baseline</div>
+        <div style="margin-top:.5rem"><span class="conf scaled">Measured·scaled</span></div>
+        <div class="to">Meets 2 s P99 TTFT &amp; 30 tok/s/user at the lowest cost among feasible measured configs.</div>
+      </div>
+      <div class="opt">
+        <div class="tag" style="color:var(--c-proxy)">$ Lowest cost (feasible)</div>
+        <div class="cfg">p5e · FP8 · 96</div>
+        <div class="price tnum">$6.8M</div>
+        <div class="delta">−6% vs recommended</div>
+        <div style="margin-top:.5rem"><span class="conf proxy">Proxy</span></div>
+        <div class="to">Relies on a proxy benchmark — validate throughput before committing.</div>
+      </div>
+      <div class="opt">
+        <div class="tag" style="color:var(--c-measured)">◎ Highest confidence</div>
+        <div class="cfg">p6-b200 · FP8 · 92</div>
+        <div class="price tnum">$7.5M</div>
+        <div class="delta">+4% vs recommended</div>
+        <div style="margin-top:.5rem"><span class="conf measured">Measured</span></div>
+        <div class="to">Exact measured point — slightly more GPUs than the INT4 option.</div>
+      </div>
+      <div class="opt reject">
+        <div class="tag" style="color:var(--ink-faint)">✕ Rejected (4)</div>
+        <div class="reject-list">
+          <span class="x">✕</span> p5 · INT4 — memory floor &gt; SLA-feasible fleet<br>
+          <span class="x">✕</span> p6 · BF16 — 2.1× cost at equal confidence<br>
+          <span class="x">✕</span> p5e · INT4 — below evidence threshold<br>
+          <span class="x">✕</span> p5 · FP8 — no point meets 2 s P99 TTFT
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRUST -->
+  <section>
+    <div class="sec-head"><span class="n">D</span><h2>"Where did this come from?" — the specialist's panel</h2></div>
+    <p class="sec-note">Read-only, structured, deterministic — it serializes engine fields (all present
+      as of rc-qa-11); it never authors claims or infers from values.</p>
+    <details class="trust" open>
+      <summary>Where did this come from? <span class="conf scaled">Measured·scaled</span></summary>
+      <div class="body">
+        <dl class="prov">
+          <dt>Benchmark</dt><dd>SemiAnalysis InferenceX · independent third-party · methodology ↗</dd>
+          <dt>Run</dt><dd>run 27434759052 ↗ (GitHub Actions)</dd>
+          <dt>Recipe</dt><dd>commit 45126b036e</dd>
+          <dt>Measured</dt><dd>2026-06-12</dd>
+          <dt>Hardware</dt><dd>B200 · TP8 · 8 GPUs handle prefill and decode (aggregated) · no spec-decode</dd>
+          <dt>Precision</dt><dd>fp4 (requested INT4)</dd>
+          <dt>Sequence</dt><dd>measured 1024 / 1024 · your workload 2,910 / 500</dd>
+          <dt>Statistic</dt><dd>TTFT is the P99 tail (worst-case), not the average</dd>
+        </dl>
+        <div class="why"><b>Why "Measured·scaled", not "Measured":</b> input length 2,910 ≠ benchmarked
+          ISL 1,024 → prefill throughput measured at 1,024 and scaled to 2,910. Output 500 ≠ OSL 1,024.</div>
+        <div class="disc">Planning capacity, not an availability or tail-latency guarantee. Validate with
+          your intended serving stack and a production-shaped load test before committing.</div>
+      </div>
+    </details>
+  </section>
+
+  <!-- RESULT HIERARCHY -->
+  <section>
+    <div class="sec-head"><span class="n">E</span><h2>Customer-ready result hierarchy</h2></div>
+    <p class="sec-note">The order a customer conversation flows — decision first, evidence last. The
+      export reads in this exact order. Every rung maps to an engine field.</p>
+    <div class="ladder">
+      <div class="rung"><span class="num">1</span><div><div class="t">Recommendation</div><div class="d">API · self-host · inconclusive, with the confidence chip.</div><div class="src">verdict · verdictQualified · capacity.source</div></div></div>
+      <div class="rung"><span class="num">2</span><div><div class="t">Why</div><div class="d">The 1–3 drivers — volume, binding constraint, price relationship.</div><div class="src">breakEvenTokens · bindingDim · top sensitivity lever</div></div></div>
+      <div class="rung"><span class="num">3</span><div><div class="t">Estimated cost</div><div class="d">Monthly · annual · per-query, both sides.</div><div class="src">selfHostedMonthly$ · apiMonthly$</div></div></div>
+      <div class="rung"><span class="num">4</span><div><div class="t">Recommended architecture</div><div class="d">Model · GPU · fleet, with the reconciled equation on expand.</div><div class="src">fleet-explain equation · topology</div></div></div>
+      <div class="rung"><span class="num">5</span><div><div class="t">Confidence</div><div class="d">The ladder chip + "Where did this come from?"</div><div class="src">capacity.source · reasons · prefillIslScale</div></div></div>
+      <div class="rung"><span class="num">6</span><div><div class="t">Risks &amp; exclusions</div><div class="d">N+1 ≠ HA/DR · planning-only · quota · load-test.</div><div class="src">INF-004 disclaimer · verdictQualified · flags</div></div></div>
+      <div class="rung"><span class="num">7</span><div><div class="t">Advanced evidence</div><div class="d">Operating point, memory/throughput math, sensitivity, raw provenance.</div><div class="src">capacity / crossover fields (collapsed)</div></div></div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="eyebrow" style="margin-bottom:.6rem">Phase 0 deliverables · docs/ux-v2/</div>
+    <div class="files">
+      <a href="01-journey-map.md">01 · Customer journey map</a>
+      <a href="02-field-inventory.md">02 · Field inventory &amp; taxonomy</a>
+      <a href="03-gpu-comprehension-matrix.md">03 · GPU comprehension matrix</a>
+      <a href="04-guessing-points.md">04 · Guessing-points inventory</a>
+      <a href="05-copy-deck.md">05 · Copy deck</a>
+      <a href="06-recommendation-presentation.md">08 · Recommendation presentation</a>
+      <a href="07-presets.md">09 · Presets</a>
+      <a href="08-unknown-range-handling.md">10 · Unknown &amp; range handling</a>
+      <a href="09-trust-provenance.md">11 · Trust &amp; provenance</a>
+      <a href="10-result-hierarchy.md">12 · Result hierarchy</a>
+      <a href="11-meeting-scripts.md">13 · Before/after scripts</a>
+      <a href="12-decision-log.md">14 · Decision log (open questions)</a>
+    </div>
+    <p style="margin-top:1rem">Experimental · branch <span class="mono">ux/v2</span> from
+      <span class="mono">rc-qa-11</span>. Design-only: no engine, component, or deployment changes.
+      Promotion requires three-reviewer sign-off.</p>
+  </footer>
+</div>
+
+<script>
+  (function(){
+    var b=document.body, s=document.getElementById('btn-simple'), e=document.getElementById('btn-expert');
+    function set(expert){
+      b.classList.toggle('show-expert',expert);
+      s.setAttribute('aria-pressed',String(!expert));
+      e.setAttribute('aria-pressed',String(expert));
+    }
+    s.addEventListener('click',function(){set(false)});
+    e.addEventListener('click',function(){set(true)});
+  })();
+</script>
