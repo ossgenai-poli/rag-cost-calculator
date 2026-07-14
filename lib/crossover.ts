@@ -49,8 +49,14 @@ function zeroResult(
     peakPrefillDemand: 0,
     prefillBinds: false,
     providedDecodeCapacity: 0,
+    providedPrefillCapacity: 0,
     utilAvg: 0,
     utilPeak: 0,
+    utilAvgPrefill: 0,
+    utilPeakPrefill: 0,
+    bindingDim: "decode",
+    breakEvenBindingDim: "decode",
+    gpuPriceSource: "fallback",
     infeasibility: [],
     minInstancesToLoad: cap.memoryFloorBoxes,
     throughputInstances: 0,
@@ -155,12 +161,24 @@ export function computeCrossover(
     infeasibility.push({ code: "manual-cap", message: `Auto-size is off: ${boxes} box(es) provide only ${usableReplicas} complete serving group(s), but ${fleet.replicas} are required. Enable auto-size or raise instances to a multiple of ${ipr}.`, addingInstancesHelps: true });
 
   // Provided capacity comes ONLY from complete replicas (not stranded boxes).
+  // Provided capacity comes ONLY from complete replicas — for BOTH prefill and decode.
   const providedDecodeCapacity = usableReplicas * cap.perReplicaDecodeTokS; // tok/s @100%
+  const providedPrefillCapacity = usableReplicas * cap.perReplicaPrefillTokS; // input tok/s @100%
   const utilAvg = providedDecodeCapacity > 0 ? avgDecodeDemand / providedDecodeCapacity : 0;
   const utilPeak = providedDecodeCapacity > 0 ? peakDecodeDemand / providedDecodeCapacity : 0;
-  // Peak utilization AFTER losing one serving group (N+1 resilience check, GPU-009).
-  const postLossCapacity = Math.max(0, usableReplicas - 1) * cap.perReplicaDecodeTokS;
-  const utilPeakPostLoss = postLossCapacity > 0 ? peakDecodeDemand / postLossCapacity : Infinity;
+  const utilAvgPrefill = providedPrefillCapacity > 0 ? avgPrefillDemand / providedPrefillCapacity : 0;
+  const utilPeakPrefill = providedPrefillCapacity > 0 ? peakPrefillDemand / providedPrefillCapacity : 0;
+  // The binding dimension is whichever runs hotter (GPU-008 / P2 reporting).
+  const bindingDim: "prefill" | "decode" = utilPeakPrefill > utilPeak ? "prefill" : "decode";
+  // Peak utilization AFTER losing one serving group (N+1 resilience) — for BOTH
+  // dimensions; report the binding one.
+  const postLossReplicas = Math.max(0, usableReplicas - 1);
+  const postLossDecode = postLossReplicas * cap.perReplicaDecodeTokS;
+  const postLossPrefill = postLossReplicas * cap.perReplicaPrefillTokS;
+  const utilPeakPostLoss = Math.max(
+    postLossDecode > 0 ? peakDecodeDemand / postLossDecode : peakDecodeDemand > 0 ? Infinity : 0,
+    postLossPrefill > 0 ? peakPrefillDemand / postLossPrefill : peakPrefillDemand > 0 ? Infinity : 0
+  );
   // Throughput-only fleet (no HA) — kept for the "needs ≥ N" display.
   const throughputInstances = fleet.replicasForThroughput * ipr;
 
@@ -169,11 +187,24 @@ export function computeCrossover(
   const equivalentQPS = breakEvenTokens / tokensPerQuery / SECONDS_PER_MONTH; // calendar
   const activeWindowQPS =
     uptimeSeconds > 0 ? breakEvenTokens / tokensPerQuery / uptimeSeconds : equivalentQPS; // active hours
-  // Decode utilization at break-even volume, from COMPLETE-replica monthly capacity.
+  // P0: break-even feasibility must check PREFILL and DECODE, not decode-only.
+  // Split the break-even token volume back into input/output via the workload's
+  // token mix, then measure each against the fixed fleet's complete-replica
+  // capacity (peak-adjusted). A zero-output workload has zero decode util but real
+  // prefill util — the previous decode-only check wrongly read 0% and "efficient".
+  const inputFraction = tokensPerQuery > 0 ? llmInputTok / tokensPerQuery : 0;
   const monthlyOutputCapacity = usableReplicas * cap.perReplicaDecodeTokS * uptimeSeconds;
-  const utilAtBreakEven =
-    monthlyOutputCapacity > 0 ? (breakEvenTokens * outputFraction) / monthlyOutputCapacity : Infinity;
-  const breakEvenFeasible = utilAtBreakEven <= 1 && cap.slaAchievable;
+  const monthlyInputCapacity = usableReplicas * cap.perReplicaPrefillTokS * uptimeSeconds;
+  const decodeUtilAtBreakEven =
+    monthlyOutputCapacity > 0 ? (breakEvenTokens * outputFraction * peakFactor) / monthlyOutputCapacity : 0;
+  const prefillUtilAtBreakEven =
+    monthlyInputCapacity > 0 ? (breakEvenTokens * inputFraction * peakFactor) / monthlyInputCapacity : 0;
+  const utilAtBreakEven = Math.max(decodeUtilAtBreakEven, prefillUtilAtBreakEven);
+  const breakEvenBindingDim: "prefill" | "decode" =
+    prefillUtilAtBreakEven > decodeUtilAtBreakEven ? "prefill" : "decode";
+  // Feasible ⇔ BOTH prefill and decode fit at break-even volume AND the SLAs hold.
+  const breakEvenFeasible =
+    prefillUtilAtBreakEven <= 1 && decodeUtilAtBreakEven <= 1 && cap.slaAchievable;
   // GPU-001/004: NEVER a positive verdict when the config can't actually serve the
   // load at the required SLAs, or when break-even exceeds physical capacity.
   const verdict: CrossoverResult["verdict"] =
@@ -185,8 +216,13 @@ export function computeCrossover(
   // bound (GPU-008), OR non-live/estimated GPU pricing (fallback SKU, or a
   // commitment/Spot discount rather than on-demand) — PRICING-018.
   const gpuRec = priceBook.gpus?.find((x) => x.instanceType === generation.gpuInstanceType);
-  const pricingEstimated =
-    gpuRec?.priceSource === "fallback" || generation.gpuPricingModel !== "on-demand";
+  // P1: a manual $/hr edit (differs from the catalog SKU price) is a user OVERRIDE —
+  // it is no longer the live/fallback provenance of that SKU.
+  const priceIsOverride = !!gpuRec && Math.abs(gpuRec.pricePerHr - generation.gpuPricePerHr) > 1e-6;
+  const gpuPriceSource: "live" | "fallback" | "override" = priceIsOverride
+    ? "override"
+    : gpuRec?.priceSource ?? "fallback";
+  const pricingEstimated = gpuPriceSource !== "live" || generation.gpuPricingModel !== "on-demand";
   const verdictQualified =
     verdict === "self-host efficient" &&
     (cap.source !== "measured" ||
@@ -226,8 +262,14 @@ export function computeCrossover(
     peakPrefillDemand,
     prefillBinds: fleet.prefillBinds,
     providedDecodeCapacity,
+    providedPrefillCapacity,
     utilAvg,
     utilPeak,
+    utilAvgPrefill,
+    utilPeakPrefill,
+    bindingDim,
+    breakEvenBindingDim,
+    gpuPriceSource,
     infeasibility,
     minInstancesToLoad: cap.memoryFloorBoxes,
     throughputInstances,

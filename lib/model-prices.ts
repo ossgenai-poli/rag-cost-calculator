@@ -21,6 +21,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "bedrock",
     bedrock: true,
     kind: "llm",
+    maxContextTokens: 200000,
     inPricePer1K: 0.006,
     outPricePer1K: 0.03,
     verifiedAt: VERIFIED_AT,
@@ -31,6 +32,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "openai",
     bedrock: true,
     kind: "llm",
+    maxContextTokens: 400000,
     // AWS Bedrock us-east-1: $5.50 / $33.00 per 1M input/output tokens.
     inPricePer1K: 0.0055,
     outPricePer1K: 0.033,
@@ -42,6 +44,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "bedrock",
     bedrock: true,
     kind: "llm",
+    maxContextTokens: 200000,
     inPricePer1K: 0.015,
     outPricePer1K: 0.075,
     verifiedAt: VERIFIED_AT,
@@ -52,6 +55,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "bedrock",
     bedrock: true,
     kind: "llm",
+    maxContextTokens: 200000,
     inPricePer1K: 0.003,
     outPricePer1K: 0.015,
     verifiedAt: VERIFIED_AT,
@@ -62,6 +66,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "openai",
     bedrock: true,
     kind: "llm",
+    maxContextTokens: 272000,
     // AWS Bedrock us-east-1: $2.75 / $16.50 per 1M input/output tokens.
     inPricePer1K: 0.00275,
     outPricePer1K: 0.0165,
@@ -76,6 +81,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "oss",
     bedrock: false,
     kind: "llm",
+    maxContextTokens: 131072,
     selfHostable: true,
     paramsB: 400,
     // GQA, ~92 layers × 8 KV heads × 128 head_dim × 2 (K+V) × 2 B = 376,832 B/tok
@@ -95,6 +101,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "oss",
     bedrock: false,
     kind: "llm",
+    maxContextTokens: 131072,
     selfHostable: true,
     paramsB: 550,
     // Hybrid Mamba: ~8% attention layers (~10 of ~120) × 2 KV heads × 128 × 2 × 2 B
@@ -112,6 +119,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "oss",
     bedrock: false,
     kind: "llm",
+    maxContextTokens: 1000000,
     selfHostable: true,
     paramsB: 480,
     // Hybrid lightning: ~1/8 softmax-attention layers (~10 of ~80) × 8 KV × 128 × 2 × 2 B
@@ -129,6 +137,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "oss",
     bedrock: false,
     kind: "llm",
+    maxContextTokens: 163840,
     selfHostable: true,
     paramsB: 720,
     // MLA: ~61 layers × (kv_lora 512 + rope 64) × 2 B = 70,272 B/tok (compressed latent)
@@ -146,6 +155,7 @@ export const MODEL_PRICES: ModelPrice[] = [
     provider: "oss",
     bedrock: false,
     kind: "llm",
+    maxContextTokens: 262144,
     selfHostable: true,
     paramsB: 1000,
     // MLA (DeepSeek-arch): ~61 layers × (512 + 64) × 2 B = 70,272 B/tok

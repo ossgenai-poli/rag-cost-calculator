@@ -255,7 +255,11 @@ export function assumptionsToJson(
           feasible: cx.feasible,
           ownedCapacity: cx.ownedCapacity,
           replicas: cx.replicas,
+          usableReplicas: cx.usableReplicas,
+          strandedBoxes: cx.strandedBoxes,
           instancesPerReplica: cx.instancesPerReplica,
+          gpuPriceSource: cx.gpuPriceSource,
+          bindingDimension: cx.bindingDim,
           verdict: cx.verdict,
           verdictQualified: cx.verdictQualified,
           haEnabled: inputs.generation.haEnabled,
@@ -306,6 +310,7 @@ export function assumptionsToJson(
           kind: mo.kind,
           inPricePer1K: mo.inPricePer1K,
           outPricePer1K: mo.outPricePer1K,
+          maxContextTokens: mo.maxContextTokens,
           verifiedAt: mo.verifiedAt,
         })),
         opensearch: priceBook.opensearch,
@@ -395,7 +400,7 @@ export function buildReport(
   lines.push(`## Key assumptions`);
   lines.push("");
   if (selfHosted) {
-    lines.push(`- **GPU:** ${g.gpuInstanceType} at ${usd(g.gpuPricePerHr)}/hr on-demand · ${g.gpuPricingModel} · ${Math.min(730, g.gpuUptimeHoursPerMonth)} hrs/mo uptime`);
+    lines.push(`- **GPU:** ${g.gpuInstanceType} at ${usd(g.gpuPricePerHr)}/hr (price source: ${cx.gpuPriceSource}) · ${g.gpuPricingModel} · ${Math.min(730, g.gpuUptimeHoursPerMonth)} hrs/mo uptime`);
     lines.push(
       cx.autoSized
         ? `- **Fleet:** entered ${cx.userInstances}, billed **${cx.boxes}** — auto-sized from ${cx.userInstances} to ${cx.boxes} to serve this workload (memory floor ${cx.minInstancesToLoad}, throughput needs ${cx.throughputInstances})`

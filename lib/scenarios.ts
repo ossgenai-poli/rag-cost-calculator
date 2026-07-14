@@ -113,15 +113,18 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
       }
     : !cx.feasible
       ? {
-          // Auto-size is OFF and the entered fleet can't serve the load — suppress
-          // the cost/savings rather than show an inadequate fleet as a valid option.
+          // Infeasible — suppress cost/savings. P1: use the SAME coded reasons as the
+          // main card; never blanket-recommend "raise instances" for TTFT/context/etc.
           id: "self-built-gpu",
           label: "Self-built + GPU",
           monthly: null,
           per1000: null,
           diffPct: null,
           difference: "Infeasible",
-          note: `${cx.boxes} × ${inputs.generation.gpuInstanceType} can't serve this load — needs ≥ ${cx.requiredInstances}. Raise instances or enable auto-size.`,
+          note:
+            cx.infeasibility.length > 0
+              ? cx.infeasibility.map((r) => r.message).join(" ")
+              : `${cx.boxes} × ${inputs.generation.gpuInstanceType} can't serve this load — needs ≥ ${cx.requiredInstances}.`,
           complete: false,
           highlight: selfHostedMode,
         }

@@ -2,6 +2,7 @@
 
 import type { CalcInputs, CalcResult, PriceBook } from "@/lib/types";
 import { deriveDisplayMetrics } from "@/lib/derived";
+import { inputClampNotes } from "@/lib/calc-engine";
 import { buildScenarios } from "@/lib/scenarios";
 import { effectiveRequiredInstances } from "@/lib/grounding";
 import { computeSensitivity } from "@/lib/sensitivity";
@@ -79,6 +80,7 @@ export function ResultsPanel({
   };
   const managedKb = resultA.managedKb;
   const grounding = resultA.grounding;
+  const clampNotes = inputClampNotes(inputs); // INPUT-020 transparency
   const selectedModelLabel =
     priceBook.models.find((m) => m.id === inputs.generation.llmModelId)?.label ?? "This model";
   const hasGenVolume = crossover.monthlyGenTokens > 0;
@@ -137,6 +139,20 @@ export function ResultsPanel({
           </span>
         </div>
       </div>
+
+      {/* INPUT-020 transparency: disclose any input that was clamped for the calc. */}
+      {clampNotes.length > 0 && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <span aria-hidden className="mt-0.5 text-amber-400">⚠</span>
+          <div className="text-amber-200/90">
+            <span className="font-medium text-amber-300">Input(s) above the supported maximum — calculated at the cap:</span>{" "}
+            {clampNotes
+              .map((n) => `${n.field}: entered ${n.entered.toLocaleString()}, calculated as ${n.calculated.toLocaleString()}`)
+              .join("; ")}
+            .
+          </div>
+        </div>
+      )}
 
       {/* Selected scenario — what the headline numbers represent */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-sm">
@@ -198,17 +214,23 @@ export function ResultsPanel({
               GPU utilization at this workload
             </div>
             <div className="mt-1 text-lg font-semibold text-slate-100">
-              ~{formatPercent(crossover.utilAvg)} at average{" "}
+              {/* P2: report the BINDING dimension headline. */}
+              ~{formatPercent(crossover.bindingDim === "prefill" ? crossover.utilAvgPrefill : crossover.utilAvg)} at average{" "}
               <span className="text-sm font-normal text-slate-500">
-                · {formatPercent(crossover.utilPeak)} at peak
+                · {formatPercent(crossover.bindingDim === "prefill" ? crossover.utilPeakPrefill : crossover.utilPeak)} at peak ·{" "}
+                <span className="text-slate-400">{crossover.bindingDim}-bound</span>
               </span>
             </div>
             <div className="mt-1 text-xs text-slate-400">
-              {/* Peak reporting: label BOTH demands against the measured provided capacity. */}
-              Avg demand <span className="text-slate-200">{Math.round(crossover.avgDecodeDemand).toLocaleString()}</span> ·
-              peak demand <span className="text-slate-200">{Math.round(crossover.peakDecodeDemand).toLocaleString()}</span> output tok/s
-              {" "}vs provided <span className="text-slate-200">{Math.round(crossover.providedDecodeCapacity).toLocaleString()}</span> tok/s
-              {inputs.traffic.peakFactor > 1 ? ` (${inputs.traffic.peakFactor}× peak)` : ""}.
+              {/* P2: show BOTH prefill and decode utilization + post-loss, labeled. */}
+              Prefill (input): <span className="text-slate-200">{formatPercent(crossover.utilAvgPrefill)}</span> avg ·{" "}
+              {formatPercent(crossover.utilPeakPrefill)} peak. Decode (output):{" "}
+              <span className="text-slate-200">{formatPercent(crossover.utilAvg)}</span> avg ·{" "}
+              {formatPercent(crossover.utilPeak)} peak.
+              {Number.isFinite(crossover.utilPeakPostLoss) && (
+                <span> After one serving-group loss: {formatPercent(crossover.utilPeakPostLoss)} peak.</span>
+              )}
+              {inputs.traffic.peakFactor > 1 ? ` (${inputs.traffic.peakFactor}× peak)` : ""}
               <span className="mt-1 block text-slate-300">
                 Entered fleet: <span className="font-medium">{crossover.userInstances}</span> ·{" "}
                 {crossover.feasible ? "Billed" : "Required"} fleet:{" "}

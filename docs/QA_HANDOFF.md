@@ -1,4 +1,4 @@
-# QA Handoff — RAG Cost Calculator (RC `rc-qa-5`)
+# QA Handoff — RAG Cost Calculator (RC `rc-qa-6`)
 
 This is the single source of truth for the QA engineer. Everything needed to run the test plan is
 here. Live-pricing suites run against the Vercel runtime (§3/§5); all other suites run against the
@@ -17,8 +17,8 @@ static site.
 
 | | Value |
 |---|---|
-| **Git tag** | `rc-qa-5` |
-| **Commit SHA** | run `git rev-parse rc-qa-5` |
+| **Git tag** | `rc-qa-6` |
+| **Commit SHA** | run `git rev-parse rc-qa-6` |
 | **Static site (live + verified rendering)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
 | **Runtime site (LIVE pricing)** | https://rag-cost-calculator-hazel.vercel.app/ |
 | **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
@@ -28,13 +28,13 @@ Check out the exact tree:
 git clone https://github.com/ossgenai-poli/rag-cost-calculator.git
 cd rag-cost-calculator
 git fetch --tags --force        # the rc tags are re-pointed between rounds
-git checkout rc-qa-5            # detached HEAD at the pinned RC
+git checkout rc-qa-6            # detached HEAD at the pinned RC
 ```
 
 **Pre-verified by the developer on this exact SHA** (so an environment problem is distinguishable
 from a product defect):
 - `npm run typecheck` → clean
-- `npm test` → **126 passed** (incl. GPU capacity + remediation, catalog-drift, topN-clamp, QA regressions)
+- `npm test` → **140 passed** (incl. GPU capacity + both remediations, catalog-drift, topN-clamp, QA regressions)
 - `npm run build:static` → emits `./out`
 - `npm run test:e2e` → **PASS** (no console errors)
 
@@ -362,3 +362,26 @@ DeepSeek-V4-Pro · p6-b200 · INT4 weights · BF16 KV · 200M q/mo · 2,910 inpu
 
 Suite total: **126** unit tests. Gates green on `rc-qa-5`: typecheck · 126 tests · build:static ·
 verify:basepath · test:e2e · verify:live.
+
+---
+
+## 12. rc-qa-6 retest checklist — prefill break-even + honesty fixes
+
+| # | Sev | Area | Retest |
+|---|---|---|---|
+| P0 | ★ | Break-even checks prefill AND decode | Zero/short-output no longer reads 0% break-even util; `utilAtBreakEven = max(prefillUtil, decodeUtil)`; a prefill-overloaded break-even is **infeasible** and flips the verdict to API-wins; `breakEvenBindingDim` states which dimension binds |
+| P1 | | Scenario reason codes | The Self-built + GPU scenario row uses the **same coded reasons** as the main card (TTFT/context/etc.) — never a blanket "raise instances / enable auto-size" for causes more fleet can't fix |
+| P1 | | Manual price override | Editing $/hr → `gpuPriceSource = "override"`; UI shows "user override" (input hint + note); the verdict is qualified; CSV/JSON/report record it; re-selecting the GPU restores the catalog price |
+| P1 | | Model context ceilings | Every catalog LLM has `maxContextTokens`; enforcement uses `min(user max, model max)`; overflow ⇒ infeasible; exports carry both limits + the reason code |
+| P2 | | Utilization reporting | Util card shows **prefill** and **decode** utilization (avg + peak), the **binding dimension**, and **post-one-group-loss** peak — the prefill-bound zero-output case no longer shows a misleading 0% |
+| P2 | | Extreme-input transparency | An over-maximum entry shows **"entered X; calculated as Y"** (no silent clamp); applies in the UI (and the clamped value is what exports use) |
+
+Suite total: **140** unit tests. Gates green on `rc-qa-6`: typecheck · 140 tests · build:static ·
+verify:basepath · test:e2e · verify:live.
+
+### Break-even feasibility (P0) — the math now
+`breakEvenTokens` is split into input/output via the workload's token mix; each is measured against
+the fixed fleet's complete-replica capacity (peak-adjusted): `prefillUtil` and `decodeUtil`.
+`utilAtBreakEven = max(...)`, and `breakEvenFeasible ⇔ prefillUtil ≤ 1 AND decodeUtil ≤ 1 AND SLA`.
+A zero-output workload therefore has `decodeUtil = 0` but a real `prefillUtil`, so an overloaded
+prefill correctly suppresses the positive self-host verdict.

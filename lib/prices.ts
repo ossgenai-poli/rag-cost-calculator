@@ -50,6 +50,7 @@ const modelPriceSchema = z.object({
   dim: z.number().optional(),
   selfHostable: z.boolean().optional(),
   paramsB: z.number().optional(),
+  maxContextTokens: z.number().optional(),
   kvBytesPerToken: z.number().optional(),
   attentionType: z.string().optional(),
   inferencexKey: z.string().optional(),

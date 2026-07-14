@@ -311,12 +311,24 @@ export function GenerationPanel(props: {
         <NumberField
           label="On-demand GPU price"
           suffix="$/hr"
+          hint={
+            gpu
+              ? `Catalog ${gpu.priceSource === "live" ? "live" : "reference"} price for ${gpu.instanceType}: $${gpu.pricePerHr}/hr. Editing this is a user override.`
+              : undefined
+          }
           value={generation.gpuPricePerHr}
           min={0}
           step={0.01}
           disabled={!selfHosted}
           onChange={(v) => onChange({ ...generation, gpuPricePerHr: v })}
         />
+        {selfHosted && gpu && Math.abs(gpu.pricePerHr - generation.gpuPricePerHr) > 1e-6 && (
+          <p className="text-xs text-sky-300">
+            ⓘ User override — ${generation.gpuPricePerHr}/hr is NOT the {gpu.priceSource === "live" ? "live" : "catalog"}{" "}
+            ${gpu.pricePerHr}/hr. Any positive self-host verdict on this price is qualified. Re-select
+            the GPU to restore its catalog price.
+          </p>
+        )}
 
         <SegmentedToggle<GpuPricingModel>
           label="Purchasing model"

@@ -388,8 +388,14 @@ export interface CrossoverResult {
   peakPrefillDemand: number;       // input tok/s at peak
   prefillBinds: boolean;           // prefill (not decode) sets the fleet size
   providedDecodeCapacity: number;  // output tok/s the billed fleet delivers at 100% util
-  utilAvg: number;                 // avg demand ÷ provided capacity
-  utilPeak: number;                // peak demand ÷ provided capacity
+  providedPrefillCapacity: number; // input tok/s the billed fleet delivers at 100% util
+  utilAvg: number;                 // avg DECODE demand ÷ provided decode capacity
+  utilPeak: number;                // peak decode demand ÷ provided decode capacity
+  utilAvgPrefill: number;          // avg PREFILL demand ÷ provided prefill capacity
+  utilPeakPrefill: number;         // peak prefill demand ÷ provided prefill capacity
+  bindingDim: "prefill" | "decode"; // which dimension runs hotter at the current workload
+  breakEvenBindingDim: "prefill" | "decode"; // which dimension binds at break-even volume
+  gpuPriceSource: "live" | "fallback" | "override"; // provenance of the $/hr used (P1)
   /** Coded infeasibility reasons for targeted UI guidance (GPU-013). Empty ⇒ feasible. */
   infeasibility: Array<{ code: string; message: string; addingInstancesHelps: boolean }>;
   minInstancesToLoad: number;  // memory floor — min instances to hold the weights

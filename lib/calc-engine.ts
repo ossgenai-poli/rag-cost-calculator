@@ -315,27 +315,55 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
  */
 // INPUT-020: practical maxima so a finite-but-absurd entry (e.g. 1e308 queries)
 // can never produce Infinity/NaN replicas, utilization or cost.
+export const INPUT_MAXIMA = {
+  numDocs: 1e11,
+  avgTokensPerDoc: 1e7,
+  outTokens: 1e6,
+  promptOverhead: 1e6,
+  maxContextLen: 1e7,
+  maxConcurrentSeqs: 1e5,
+  overheadPct: 1e4,
+  queriesPerMonth: 1e12,
+  queryTokens: 1e6,
+} as const;
 const clampPos = (v: number, max: number) =>
   !Number.isFinite(v) || v < 0 ? 0 : Math.min(v, max);
 function clampExtremes(inputs: CalcInputs): CalcInputs {
+  const M = INPUT_MAXIMA;
   return {
     ...inputs,
     corpus: {
       ...inputs.corpus,
-      numDocs: clampPos(inputs.corpus.numDocs, 1e11),
-      avgTokensPerDoc: clampPos(inputs.corpus.avgTokensPerDoc, 1e7),
+      numDocs: clampPos(inputs.corpus.numDocs, M.numDocs),
+      avgTokensPerDoc: clampPos(inputs.corpus.avgTokensPerDoc, M.avgTokensPerDoc),
     },
     generation: {
       ...inputs.generation,
-      outTokens: clampPos(inputs.generation.outTokens, 1e6),
-      promptOverhead: clampPos(inputs.generation.promptOverhead, 1e6),
-      maxContextLen: Math.max(1, clampPos(inputs.generation.maxContextLen, 1e7)),
-      maxConcurrentSeqs: Math.max(1, clampPos(inputs.generation.maxConcurrentSeqs, 1e5)),
+      outTokens: clampPos(inputs.generation.outTokens, M.outTokens),
+      promptOverhead: clampPos(inputs.generation.promptOverhead, M.promptOverhead),
+      maxContextLen: Math.max(1, clampPos(inputs.generation.maxContextLen, M.maxContextLen)),
+      maxConcurrentSeqs: Math.max(1, clampPos(inputs.generation.maxConcurrentSeqs, M.maxConcurrentSeqs)),
     },
-    ops: { ...inputs.ops, overheadPct: clampPos(inputs.ops.overheadPct, 1e4) },
-    traffic: { ...inputs.traffic, queriesPerMonth: clampPos(inputs.traffic.queriesPerMonth, 1e12) },
-    queryTokens: clampPos(inputs.queryTokens, 1e6),
+    ops: { ...inputs.ops, overheadPct: clampPos(inputs.ops.overheadPct, M.overheadPct) },
+    traffic: { ...inputs.traffic, queriesPerMonth: clampPos(inputs.traffic.queriesPerMonth, M.queriesPerMonth) },
+    queryTokens: clampPos(inputs.queryTokens, M.queryTokens),
   };
+}
+
+/** INPUT-020 transparency: which inputs the calc had to clamp, and to what. */
+export function inputClampNotes(inputs: CalcInputs): Array<{ field: string; entered: number; calculated: number }> {
+  const notes: Array<{ field: string; entered: number; calculated: number }> = [];
+  const check = (field: string, v: number, max: number) => {
+    if (Number.isFinite(v) && v > max) notes.push({ field, entered: v, calculated: max });
+  };
+  check("queries/month", inputs.traffic.queriesPerMonth, INPUT_MAXIMA.queriesPerMonth);
+  check("documents", inputs.corpus.numDocs, INPUT_MAXIMA.numDocs);
+  check("tokens/doc", inputs.corpus.avgTokensPerDoc, INPUT_MAXIMA.avgTokensPerDoc);
+  check("output tokens", inputs.generation.outTokens, INPUT_MAXIMA.outTokens);
+  check("max context", inputs.generation.maxContextLen, INPUT_MAXIMA.maxContextLen);
+  check("max concurrency", inputs.generation.maxConcurrentSeqs, INPUT_MAXIMA.maxConcurrentSeqs);
+  check("overhead %", inputs.ops.overheadPct, INPUT_MAXIMA.overheadPct);
+  return notes;
 }
 
 export function calculate(rawInputs: CalcInputs, priceBook: PriceBook): CalcResult {
