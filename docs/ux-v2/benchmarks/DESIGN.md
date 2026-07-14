@@ -92,7 +92,7 @@ control, differsFromControl, differenceCause, provenance }`.
 | Model | `record.modelId + checkpoint` == request | ineligible (`model-mismatch`) |
 | Precision | weight **and** KV precision match (KV unknown → qualify, not silent) | ineligible / qualified |
 | Engine | framework compatible with request (or recorded proxy) | qualify (`engine-mismatch`) |
-| Sequence | ISL/OSL within tolerance bucket | exact / qualify (`seq-mismatch`) |
+| Sequence | measured-exact requires the **identical** ISL **and** OSL bucket (fixed reviewed policy — no caller tolerance); a non-identical in-bounds ISL → disclosed `measured-scaled`; OSL differs → `osl-mismatch` | exact / measured-scaled / ineligible |
 | Topology | whole serving group; TP/PP/EP/DP + node/interconnect compatible | ineligible (`topology-mismatch`) |
 | Latency | if request has an interactive TTFT SLA, record must carry a **latency-qualified** curve point meeting it | ineligible (`latency-gate`) — a max-load throughput number cannot satisfy it |
 | Per-GPU | per-GPU metric only if the source **explicitly** reports a valid one | reject fictional split (`no-per-gpu`) |
@@ -246,11 +246,32 @@ Plus determinism: the selector is a pure function of (RequestSpec, pinned catalo
   ints/enums/ranges; invalid → `invalid-request`.
 - **Strict non-numeric raw validation** — `strictBool`/`strictStrOpt` across every adapter; no truthiness;
   `validateRecord` type-checks `kvPrecision`/`prefixCache`/`specDecode`.
-- **Immutable production policy** — `HOST_ALLOWLIST` frozen; equivalence + `evaluate`/`selectBest`/
-  `resolveOperatingPoint` accept an injected `hostAllowlist` (tests only).
+- **Immutable production policy** — `HOST_ALLOWLIST` frozen; the internal `evaluate`/`selectBest`
+  accept an injected `hostAllowlist` (tests only; see Round-5 for the public-API restriction).
 - **Architecture-only slice:** the pinned catalog yields **zero** measured-exact selections (InferenceX
   lacks a reviewed AWS-host mapping and prefix-cache metadata — neither inferred); measured-exact is
   exercised end-to-end via a fully-specified synthetic record.
+
+### Round-5 hardening
+- **Validation at the *public* boundary (P1-BENCH-006):** `resolveOperatingPoint()` runs
+  `requestBoundaryErrors()` (completeness + type/range) **before** catalog selection and returns a
+  distinct `invalid-request` status with detailed reasons. `unbenchmarked` is now reserved
+  **exclusively** for a valid, complete request with no qualified evidence. Validation precedes catalog
+  access, so it fires even on an empty catalog. (The earlier "evaluate/resolve boundary" claim is now
+  literally true at the public resolver, not only inside per-record `evaluate`.)
+- **Fixed sequence policy (P1-BENCH-007):** the caller-controlled `seqTolerance` knob is **removed**.
+  measured-exact requires the identical ISL/OSL bucket; a non-identical in-bounds ISL is a disclosed
+  `measured-scaled` transform, never exact — a 4× sequence gap can no longer be labelled exact.
+- **Strict string identifiers in *every* adapter (P1-BENCH-008):** MLPerf and TensorRT-LLM no longer
+  `String()`-coerce decision-critical identifiers. Every raw accelerator/GPU, host/system name, model,
+  checkpoint, framework, weight & KV precision, form factor, interconnect, and scenario/row-kind is
+  `strictStr`/`strictStrOpt`-validated before normalization; a numeric/boolean there fails closed.
+  (Provenance URL/date/hash strings continue to be validated in `validateRecord`.)
+- **Frozen policy registries + no public override (P1/P2-BENCH-009):** `ACCELERATOR_ALLOWLIST`,
+  `AWS_INSTANCE_ACCELERATOR`, and `HOST_ALLOWLIST` are all `Object.freeze`-immutable. The public
+  `ResolveOptions` **no longer exposes** any trust-policy injection — an ordinary caller cannot supply
+  an unreviewed equivalence. Injection remains only on the internal `evaluate`/`selectBest` for test
+  fixtures.
 
 ---
 

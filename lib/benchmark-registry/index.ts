@@ -3,9 +3,10 @@
 // authoritative operating point PLUS full provenance and a comparison against the
 // frozen rc-qa-11 control. EXPERIMENTAL; the engine is unchanged. See DESIGN.md.
 // ============================================================================
-import type { BenchmarkRecord, OperatingPoint, RequestSpec, SelectionResult } from "./schema";
+import type { BenchmarkRecord, OperatingPoint, Reason, RequestSpec, SelectionResult } from "./schema";
 import { loadCatalog } from "./sources";
 import { selectBest } from "./select";
+import { requestBoundaryErrors } from "./eligibility";
 import { controlResolve, type ControlRequest } from "./legacy-control";
 import { explain } from "./explain";
 
@@ -20,8 +21,10 @@ export interface ResolveOptions {
   control?: ControlRequest;
   /** Override the pinned catalog (tests). Defaults to loadCatalog(). */
   catalog?: BenchmarkRecord[];
-  /** Injected host-equivalence allowlist (tests). Production uses the frozen empty allowlist. */
-  hostAllowlist?: import("./equivalence").HostEquivalenceEntry[];
+  // NOTE: the public resolver deliberately exposes NO trust-policy injection (P1/P2-BENCH-009).
+  // Host/accelerator equivalence is always the frozen production policy; there is no way for an
+  // ordinary caller to inject an unreviewed equivalence. Test fixtures inject via the internal
+  // evaluate()/selectBest() EvalOptions, never through this production API.
 }
 
 export function resolveOperatingPoint(req: RequestSpec, opts: ResolveOptions): SelectionResult {
@@ -41,8 +44,26 @@ export function resolveOperatingPoint(req: RequestSpec, opts: ResolveOptions): S
     };
   }
 
+  // P1-BENCH-006: validate the request at the PUBLIC boundary, BEFORE catalog selection. A
+  // malformed/incomplete request is `invalid-request` (with detailed reasons) — never a coverage
+  // gap. This runs independently of the catalog (so it also fires for an empty catalog).
+  const problems = requestBoundaryErrors(req);
+  if (problems.length) {
+    const reasons: Reason[] = problems.map((message) => ({ code: "invalid-request", dimension: "request", message }));
+    return {
+      status: "invalid-request",
+      mode: "experimental",
+      confidence: "unbenchmarked",
+      reasons,
+      control,
+      differsFromControl: false,
+      differenceCause: "none",
+    };
+  }
+
   const catalog = opts.catalog ?? loadCatalog();
-  const best = selectBest(catalog, req, { hostAllowlist: opts.hostAllowlist });
+  // Production policy only — no injected trust override reaches selection from the public API.
+  const best = selectBest(catalog, req);
 
   if (!best) {
     // No qualified measurement → unbenchmarked. NEVER fabricate from FLOPS/bandwidth.

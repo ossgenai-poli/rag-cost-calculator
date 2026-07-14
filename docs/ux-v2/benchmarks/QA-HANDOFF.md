@@ -20,10 +20,19 @@ The layer **imports** the frozen `lib/benchmarks.ts` read-only (the control wrap
 ## Run the tests
 
 ```
-npx vitest run lib/benchmark-registry     # 25/25 — the guarantees + all P1/P2 reproductions (three rounds)
-npx vitest run                            # 209/209 — frozen 184 + new 25 (no regression)
+npx vitest run lib/benchmark-registry     # 34/34 — the guarantees + all P1/P2 reproductions (five rounds)
+npx vitest run                            # 218/218 — frozen 184 + new 34 (no regression)
 npx tsc --noEmit                          # clean
 ```
+
+**Round 5 (fifth HOLD) — public-boundary + policy-immutability fixes:**
+
+| Finding | Fix |
+|---|---|
+| **P1-BENCH-006** public resolver misreports bad input as a coverage gap | `resolveOperatingPoint()` validates the request (`requestBoundaryErrors` = completeness + type/range) **before** catalog selection and returns a distinct `invalid-request` status with detailed reasons; `unbenchmarked` is now reserved for a valid request with no evidence. Validation precedes catalog access (fires on an empty catalog). Public acceptance tests added (invalid → invalid-request incl. empty catalog; valid+empty → unbenchmarked) |
+| **P1-BENCH-007** caller tolerance could label a 4× ISL gap measured-exact | removed the caller-controlled `seqTolerance`; measured-exact requires the **identical** ISL/OSL bucket; a non-identical in-bounds ISL → disclosed `measured-scaled`, OSL differs → `osl-mismatch`. Public resolver test: record ISL 1024 vs request ISL 4096 → `measured-scaled` (factor 4), never exact |
+| **P1-BENCH-008** MLPerf/TRT still `String()`-coerced identifiers | every raw accelerator/GPU, host/system name, model, checkpoint, framework, precision, form factor, interconnect, scenario/row-kind is `strictStr`/`strictStrOpt`-validated before normalization in **all** adapters. Reproductions added: MLPerf `accelerator=123` / `name=123` and TRT `gpu=123` all throw |
+| **P1/P2-BENCH-009** policy partly mutable / publicly overrideable | `ACCELERATOR_ALLOWLIST` + `AWS_INSTANCE_ACCELERATOR` are now `Object.freeze`-immutable (with `HOST_ALLOWLIST`); the public `ResolveOptions` no longer exposes `hostAllowlist` — injection is confined to the internal `evaluate`/`selectBest` for tests. Tests assert all three registries are frozen and that `resolveOperatingPoint` cannot proxy an unreviewed host |
 
 **Round 4 (fourth HOLD) — final fail-closed + hygiene fixes:**
 

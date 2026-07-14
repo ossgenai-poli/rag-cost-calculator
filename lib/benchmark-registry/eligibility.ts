@@ -10,8 +10,11 @@ import { acceleratorEquivalence, hostEquivalence, type HostEquivalenceEntry } fr
 import { acceleratorForInstance } from "./instance-map";
 import { islLinearScale, islScaleInBounds } from "./transform";
 
-const DEFAULT_SEQ_TOL = 1.5;
-const SEQ_TOL_MAX = 4;
+// Sequence policy is a FIXED reviewed constant — NEVER a caller-supplied tolerance (P1-BENCH-007).
+// measured-exact requires the IDENTICAL measured sequence bucket (same ISL AND same OSL). A
+// non-identical but in-bounds ISL is a DISCLOSED `measured-scaled` transform, never exact; OSL has
+// no transform, so any OSL difference is a hard mismatch. This removes the earlier tolerance knob
+// that let a 4× sequence gap be silently labelled measured-exact.
 const PCTL_RANK: Record<Percentile, number> = { mean: 0, p50: 0, p90: 1, p95: 2, p99: 3, unknown: -1 };
 const REQUEST_PERCENTILES: Percentile[] = ["p50", "p90", "p95", "p99", "mean"];
 
@@ -30,8 +33,23 @@ const posInt = (v: unknown) => typeof v === "number" && Number.isInteger(v) && N
 const posFinite = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v > 0;
 const nonEmptyStr = (v: unknown) => typeof v === "string" && v.length > 0;
 
+/** Decision-critical fields that must be PRESENT for a resolvable request. */
+export function missingRequestFields(req: RequestSpec): string[] {
+  const missing: string[] = REQUIRED_REQUEST.filter((k) => req[k] == null).map((k) => String(k));
+  if (!req.parallelism || req.parallelism.tp == null || req.parallelism.pp == null || req.parallelism.ep == null) missing.push("parallelism{tp,pp,ep}");
+  return missing;
+}
+
+/** Public-boundary request validation (P1-BENCH-006): completeness + type/range, INDEPENDENT of any
+ *  catalog. The experimental resolver runs this BEFORE selection so malformed input is reported as
+ *  `invalid-request` (with reasons) — never misattributed to a benchmark-coverage gap. Returns []
+ *  for a well-formed, complete request. */
+export function requestBoundaryErrors(req: RequestSpec): string[] {
+  return [...missingRequestFields(req).map((f) => `missing ${f}`), ...validateRequest(req)];
+}
+
 /** Runtime type/range validation of the request (P1-BENCH-002). Invalid → invalid-request. */
-function validateRequest(req: RequestSpec): string[] {
+export function validateRequest(req: RequestSpec): string[] {
   const p: string[] = [];
   for (const k of ["modelId", "checkpoint", "weightPrecision", "kvPrecision", "framework", "gpuSku", "awsInstance", "specDecode"] as const) {
     if (!nonEmptyStr(req[k])) p.push(`${k} must be a non-empty string`);
@@ -42,9 +60,6 @@ function validateRequest(req: RequestSpec): string[] {
   if (req.parallelism) for (const k of ["tp", "pp", "ep"] as const) if (!posInt(req.parallelism[k])) p.push(`parallelism.${k} must be a positive finite integer`);
   if (typeof req.prefixCache !== "boolean") p.push("prefixCache must be a boolean");
   if (req.serving !== "aggregated" && req.serving !== "disaggregated") p.push("serving must be aggregated|disaggregated");
-  if (req.seqTolerance != null && !(typeof req.seqTolerance === "number" && Number.isFinite(req.seqTolerance) && req.seqTolerance > 1 && req.seqTolerance <= SEQ_TOL_MAX)) {
-    p.push(`seqTolerance must be a finite number in (1, ${SEQ_TOL_MAX}]`);
-  }
   if (req.interactivity) {
     if (!REQUEST_PERCENTILES.includes(req.interactivity.ttftPercentile)) p.push(`interactivity.ttftPercentile must be one of ${REQUEST_PERCENTILES.join("|")}`);
     if (!posFinite(req.interactivity.ttftSlaMs)) p.push("interactivity.ttftSlaMs must be positive & finite");
@@ -64,8 +79,7 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec, opts: EvalOp
   });
 
   // Request completeness — missing identity/topology/config fields → unbenchmarked.
-  const missing: string[] = REQUIRED_REQUEST.filter((k) => req[k] == null).map((k) => String(k));
-  if (!req.parallelism || req.parallelism.tp == null || req.parallelism.pp == null || req.parallelism.ep == null) missing.push("parallelism{tp,pp,ep}");
+  const missing = missingRequestFields(req);
   if (missing.length) return deny("incomplete-request", "request", `request missing decision-critical field(s): ${missing.join(", ")}`);
 
   // Request type/range validation — malformed values never produce measured-exact.
@@ -123,9 +137,8 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec, opts: EvalOp
   if (record.specDecode == null) return deny("spec-decode-unknown", "config", "record does not report speculative-decoding state; cannot be measured-exact");
   if (record.specDecode !== req.specDecode) return deny("spec-decode-mismatch", "config", `spec-decode ${record.specDecode} ≠ requested ${req.specDecode}`);
 
-  // OSL mismatch → unbenchmarked (no OSL transform).
-  const tol = req.seqTolerance ?? DEFAULT_SEQ_TOL;
-  if (offBucket(record.osl, req.osl, tol)) return deny("osl-mismatch", "sequence", `OSL ${record.osl} not within ${tol}× of requested ${req.osl}`);
+  // OSL has no transform — measured-exact requires the IDENTICAL OSL bucket; any difference denies.
+  if (record.osl !== req.osl) return deny("osl-mismatch", "sequence", `OSL ${record.osl} ≠ requested ${req.osl}; no OSL transform (identical bucket required)`);
 
   // Per-GPU + operating concurrency.
   const requirePerGpu = req.requirePerGpu !== false;
@@ -136,8 +149,10 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec, opts: EvalOp
     return deny("concurrency-not-measured", "operating-point", `requested concurrency ${req.concurrency} was not measured (record @ ${record.concurrency}); no interpolation`);
   }
 
-  // ISL: exact within tolerance, or a bounded disclosed scale; out-of-bounds → unbenchmarked.
-  const islScaled = offBucket(record.isl, req.isl, tol);
+  // ISL: measured-exact ONLY for the identical bucket; any other ISL is a bounded, DISCLOSED scale
+  // (→ measured-scaled), and out-of-bounds → unbenchmarked. There is no "near-bucket exact" fuzz —
+  // a non-identical ISL is never labelled exact (P1-BENCH-007).
+  const islScaled = record.isl !== req.isl;
   const transformations: Transformation[] = [];
   let operatingPoint: OperatingPoint | undefined;
   if (islScaled) {
@@ -175,10 +190,4 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec, opts: EvalOp
     operatingPoint,
     transformations: transformations.length ? transformations : undefined,
   };
-}
-
-function offBucket(have: number, want: number, tol: number): boolean {
-  if (have <= 0 || want <= 0) return false;
-  const r = want / have;
-  return r > tol || r < 1 / tol;
 }

@@ -1,7 +1,7 @@
 // MLPerf Inference adapter — independent-reviewed validation anchor. Pure & deterministic.
 // A single result is a latency/accuracy-qualified point, NOT a full concurrency curve.
 import type { BenchmarkRecord, Reason, SourceAdapter } from "../schema";
-import { SchemaError, strictNum, strictNumOpt } from "../raw-validate";
+import { SchemaError, strictNum, strictNumOpt, strictStr, strictStrOpt } from "../raw-validate";
 import { sha256 } from "../hash";
 
 export const mlperfAdapter: SourceAdapter = {
@@ -18,18 +18,34 @@ export const mlperfAdapter: SourceAdapter = {
     const sys = res.system;
     const meas = res.measured;
     const perGpuReported = meas.per_accelerator_tokens_per_second != null;
+    // Every decision-critical raw identifier is strict-validated BEFORE normalization — a number/
+    // boolean where a string identifier is required fails closed, never String()-coerced (P1-BENCH-008).
+    const accel = strictStr(sys.accelerator, "system.accelerator");
+    const sku = skuKey(accel);
+    const hostName = strictStr(sys.name, "system.name");
+    const benchmark = strictStr(res.benchmark, "result.benchmark");
+    const checkpoint = strictStr(res.checkpoint, "result.checkpoint");
+    const framework = strictStr(res.software.framework, "software.framework");
+    const weightPrecision = strictStr(res.software.precision, "software.precision");
+    const kvPrecision = strictStrOpt(res.software.kv_precision, "software.kv_precision");
+    const frameworkVersion = strictStrOpt(res.software.version, "software.version") ?? undefined;
+    const formFactor = strictStr(sys.form_factor, "system.form_factor");
+    const interconnect = strictStr(sys.interconnect, "system.interconnect");
+    const scenario = strictStr(res.scenario, "result.scenario");
+    const isl = strictNum(res.workload.isl, "workload.isl");
+    const osl = strictNum(res.workload.osl, "workload.osl");
+    const gpuCount = strictNum(sys.accelerator_count, "system.accelerator_count");
     const intrinsic: Reason[] = [];
     // Rule: never call a submitter system an AWS configuration.
     if (sys.host && String(sys.host).toLowerCase().includes("not-an-aws")) {
-      intrinsic.push({ code: "not-aws-system", dimension: "hardware", message: `Submitted system "${sys.name}" is not an AWS instance; usable only as an explicit host proxy.` });
+      intrinsic.push({ code: "not-aws-system", dimension: "hardware", message: `Submitted system "${hostName}" is not an AWS instance; usable only as an explicit host proxy.` });
     }
     if (snap.kind === "illustrative-pending-ingestion") {
       intrinsic.push({ code: "illustrative-snapshot", dimension: "provenance", message: "Illustrative pinned snapshot; numeric result pending real ingestion — not a verified measurement." });
     }
-    const gpuCount = strictNum(sys.accelerator_count, "system.accelerator_count");
     return [
       {
-        id: `mlp:${res.benchmark}:${skuKey(sys.accelerator)}:${res.workload.isl}/${res.workload.osl}:${res.scenario}`,
+        id: `mlp:${benchmark}:${sku}:${isl}/${osl}:${scenario}`,
         provenance: {
           sourceName: "MLPerf Inference",
           sourceClass: "independent-reviewed",
@@ -41,26 +57,26 @@ export const mlperfAdapter: SourceAdapter = {
           attribution: snap.attribution,
           snapshotKind: snap.kind,
         },
-        modelId: res.benchmark,
-        checkpoint: res.checkpoint,
-        weightPrecision: res.software.precision,
-        kvPrecision: res.software.kv_precision ?? null,
-        framework: res.software.framework,
-        frameworkVersion: res.software.version,
-        gpuSku: skuKey(sys.accelerator),
-        formFactor: sys.form_factor,
+        modelId: benchmark,
+        checkpoint,
+        weightPrecision,
+        kvPrecision,
+        framework,
+        frameworkVersion,
+        gpuSku: sku,
+        formFactor,
         gpuMemGB: strictNum(sys.gpu_mem_gb, "system.gpu_mem_gb"),
         gpuCount,
         nodeCount: 1,
-        topology: `${res.scenario} · ${gpuCount}× ${skuKey(sys.accelerator)}`,
-        interconnect: sys.interconnect,
+        topology: `${scenario} · ${gpuCount}× ${sku}`,
+        interconnect,
         parallelism: { tp: gpuCount, pp: 1, ep: 1, dp: 1 },
         serving: "aggregated",
         // A submitter system is NOT an AWS instance → represents no AWS instances directly.
-        hostSystem: String(sys.name),
+        hostSystem: hostName,
         awsRepresentativeInstances: [],
-        isl: strictNum(res.workload.isl, "workload.isl"),
-        osl: strictNum(res.workload.osl, "workload.osl"),
+        isl,
+        osl,
         concurrency: null, // Server scenario is request-rate driven, not fixed concurrency
         requestRate: null,
         prefixCache: null,
@@ -84,7 +100,7 @@ export const mlperfAdapter: SourceAdapter = {
 };
 
 function skuKey(accel: string): string {
-  const a = String(accel).toUpperCase();
+  const a = accel.toUpperCase(); // `accel` is already strict-validated as a non-empty string
   if (a.includes("H200")) return "H200";
   if (a.includes("H100")) return "H100";
   if (a.includes("B200")) return "B200";

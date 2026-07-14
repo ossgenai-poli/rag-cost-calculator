@@ -13,8 +13,9 @@ export interface EquivalenceEntry {
 
 // Reviewed allowlist. Intentionally EMPTY for the vertical slice — no cross-accelerator
 // substitution is approved yet, so every SKU mismatch fails closed to `unbenchmarked`.
+// FROZEN (P1/P2-BENCH-009): a production policy registry must not be mutable by any caller.
 // (A future entry must set every `compatible` flag true and record the differences.)
-export const ACCELERATOR_ALLOWLIST: EquivalenceEntry[] = [];
+export const ACCELERATOR_ALLOWLIST: readonly EquivalenceEntry[] = Object.freeze([]);
 
 /** Returns the reviewed equivalence entry, or null (→ deny → unbenchmarked). */
 export function acceleratorEquivalence(from: string, to: string): EquivalenceEntry | null {

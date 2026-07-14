@@ -12,6 +12,8 @@ import { tensorrtllmAdapter } from "./sources/tensorrtllm";
 import { normalizeSafe, validateRecord } from "./normalize";
 import { evaluate } from "./eligibility";
 import { selectBest } from "./select";
+import { ACCELERATOR_ALLOWLIST, HOST_ALLOWLIST } from "./equivalence";
+import { AWS_INSTANCE_ACCELERATOR } from "./instance-map";
 import { canonicalJson, sha256 } from "./hash";
 import { getBenchmarkCurve, operatingPointAt } from "../benchmarks";
 import manifest from "./raw/MANIFEST.json";
@@ -76,7 +78,7 @@ describe("R4-P1-BENCH-002 — malformed requests are rejected (invalid-request),
   it("zero / NaN / Infinity / bad-enum inputs are denied", () => {
     expect(codes(mk({ id: "x" }), fullReq({ isl: 0 }))).toContain("invalid-request");
     expect(codes(mk({ id: "x" }), fullReq({ osl: 0 }))).toContain("invalid-request");
-    expect(codes(mk({ id: "x" }), fullReq({ isl: 1_000_000, seqTolerance: Infinity }))).toContain("invalid-request");
+    expect(codes(mk({ id: "x" }), fullReq({ gpuCount: Infinity }))).toContain("invalid-request");
     expect(codes(mk({ id: "x" }), fullReq({ concurrency: -4 }))).toContain("invalid-request");
     expect(codes(mk({ id: "x" }), fullReq({ interactivity: { ttftSlaMs: NaN, ttftPercentile: "bogus" as any } }))).toContain("invalid-request");
   });
@@ -218,5 +220,72 @@ describe("schema validation fails closed", () => {
   it("normalizeSafe rejects a record missing a required field", () => {
     const adapter = { sourceName: "x", sourceClass: "vendor-measured" as const, normalize: () => [{ ...mk({ id: "x" }), modelId: undefined as unknown as string }] };
     expect(() => normalizeSafe(adapter, {})).toThrow();
+  });
+});
+
+describe("R5-P1-BENCH-006 — public resolver validates the request BEFORE catalog selection", () => {
+  it("malformed input → invalid-request with reasons, NEVER unbenchmarked", () => {
+    const r1 = resolveOperatingPoint(fullReq({ isl: 0 }), { mode: "experimental" });
+    expect(r1.status).toBe("invalid-request");
+    expect(r1.reasons.length).toBeGreaterThan(0);
+    expect(r1.reasons.every((x) => x.code === "invalid-request")).toBe(true);
+    const r2 = resolveOperatingPoint(fullReq({ interactivity: { ttftSlaMs: NaN, ttftPercentile: "bogus" as any } }), { mode: "experimental" });
+    expect(r2.status).toBe("invalid-request");
+  });
+  it("validation precedes catalog access — invalid on an EMPTY catalog is still invalid-request", () => {
+    expect(resolveOperatingPoint(fullReq({ isl: 0 }), { mode: "experimental", catalog: [] }).status).toBe("invalid-request");
+  });
+  it("a valid, complete request with no evidence → unbenchmarked (the reserved meaning)", () => {
+    const res = resolveOperatingPoint(fullReq(), { mode: "experimental", catalog: [] });
+    expect(res.status).toBe("unbenchmarked");
+    expect(res.reasons.some((x) => x.code === "unbenchmarked")).toBe(true);
+  });
+});
+
+describe("R5-P1-BENCH-007 — a non-identical sequence bucket is never measured-exact", () => {
+  it("record ISL 1024 vs request ISL 4096 → measured-scaled (disclosed), not exact", () => {
+    const rec = mk({ id: "s4x", isl: 1024, inputTputPerGpu: 590 });
+    const m = evaluate(rec, fullReq({ isl: 4096 }));
+    expect(m.eligible).toBe(true);
+    expect(m.evidenceStatus).toBe("measured-scaled");
+    expect(m.evidenceStatus).not.toBe("measured-exact");
+    expect(m.transformations![0].factor).toBe(4);
+    const res = resolveOperatingPoint(fullReq({ isl: 4096 }), { mode: "experimental", catalog: [rec] });
+    expect(res.status).toBe("selected");
+    expect(res.record!.id).toBe("s4x");
+    expect(res.confidence).toBe("extrapolated"); // measured-scaled never carries a source-class exact confidence
+  });
+  it("a different OSL bucket is a hard mismatch (no OSL transform)", () => {
+    expect(codes(mk({ id: "o", osl: 512 }), fullReq({ osl: 1024 }))).toContain("osl-mismatch");
+  });
+});
+
+describe("R5-P1-BENCH-008 — every adapter strict-validates raw string identifiers", () => {
+  const clone = (o: unknown) => JSON.parse(JSON.stringify(o));
+  it("MLPerf rejects a numeric accelerator or a numeric system name", () => {
+    const a = clone(mlpRaw); a.result.system.accelerator = 123;
+    expect(() => mlperfAdapter.normalize(a)).toThrow();
+    const b = clone(mlpRaw); b.result.system.name = 123;
+    expect(() => mlperfAdapter.normalize(b)).toThrow();
+  });
+  it("TensorRT-LLM rejects a numeric GPU identifier", () => {
+    const t = clone(trtRaw); t.rows[0].gpu = 123;
+    expect(() => tensorrtllmAdapter.normalize(t)).toThrow();
+  });
+});
+
+describe("R5-P1/P2-BENCH-009 — production trust policy is frozen and not publicly overridable", () => {
+  it("all production policy registries are frozen (immutable)", () => {
+    expect(Object.isFrozen(ACCELERATOR_ALLOWLIST)).toBe(true);
+    expect(Object.isFrozen(AWS_INSTANCE_ACCELERATOR)).toBe(true);
+    expect(Object.isFrozen(HOST_ALLOWLIST)).toBe(true);
+  });
+  it("a normal resolveOperatingPoint cannot inject an unreviewed host equivalence", () => {
+    // Same-SKU, non-AWS-representative record: only an INJECTED (internal) allowlist could proxy it.
+    // The public resolver exposes no such injection → the record stays unbenchmarked.
+    const rec = mk({ id: "h", hostSystem: "hgx-h200-reviewed", awsRepresentativeInstances: [] });
+    expect(resolveOperatingPoint(fullReq(), { mode: "experimental", catalog: [rec] }).status).toBe("unbenchmarked");
+    // …while the internal evaluator CAN inject a reviewed fixture (tests only):
+    expect(evaluate(rec, fullReq(), { hostAllowlist: TEST_HOST }).evidenceStatus).toBe("proxy");
   });
 });

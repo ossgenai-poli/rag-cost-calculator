@@ -154,8 +154,6 @@ export interface RequestSpec {
   /** An interactive SLA. The percentile is REQUIRED — a mean/p50 record cannot satisfy a P99 SLA.
    *  streamingTokPerSecPerUser (optional) is enforced against the record's measured interactivity. */
   interactivity?: { ttftSlaMs: number; ttftPercentile: Percentile; streamingTokPerSecPerUser?: number };
-  /** ISL/OSL tolerance for an "exact" bucket match (default 1.5×, matching rc-qa-11). */
-  seqTolerance?: number;
   /** Require a valid per-GPU metric (fleet sizing needs it). Default true. */
   requirePerGpu?: boolean;
 }
@@ -195,7 +193,10 @@ export interface ProvenanceView {
 }
 
 export interface SelectionResult {
-  status: "selected" | "unbenchmarked";
+  /** `invalid-request` = the request itself is malformed/incomplete (validated at the public
+   *  resolver boundary, before catalog selection); `unbenchmarked` is reserved EXCLUSIVELY for a
+   *  valid, complete request that simply has no qualified evidence (P1-BENCH-006). */
+  status: "selected" | "unbenchmarked" | "invalid-request";
   mode: "control" | "experimental";
   operatingPoint?: OperatingPoint;
   record?: BenchmarkRecord;

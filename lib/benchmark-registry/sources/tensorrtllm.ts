@@ -1,7 +1,7 @@
 // NVIDIA TensorRT-LLM adapter — vendor-measured supplement. Pure & deterministic.
 // Max-load rows are a capacity CEILING, not an interactive result unless latency-qualified.
 import type { BenchmarkRecord, Reason, SourceAdapter } from "../schema";
-import { SchemaError, strictBool, strictNum, strictNumOpt, strictStr } from "../raw-validate";
+import { SchemaError, strictBool, strictNum, strictNumOpt, strictStr, strictStrOpt } from "../raw-validate";
 import { sha256 } from "../hash";
 
 export const tensorrtllmAdapter: SourceAdapter = {
@@ -15,16 +15,33 @@ export const tensorrtllmAdapter: SourceAdapter = {
     }
     const checksum = sha256(raw);
     return r.rows.map((row: any, i: number): BenchmarkRecord => {
-      const maxLoad = strictStr(row.row_kind, "row.row_kind") === "max-throughput";
+      // Every decision-critical raw identifier is strict-validated BEFORE normalization — a number/
+      // boolean where a string identifier is required fails closed, never String()-coerced (P1-BENCH-008).
+      const rowKind = strictStr(row.row_kind, "row.row_kind");
+      const maxLoad = rowKind === "max-throughput";
       const perGpuReported = strictBool(row.per_gpu_reported, "row.per_gpu_reported");
       const multinode = strictBool(row.multinode, "row.multinode");
+      const gpu = strictStr(row.gpu, "row.gpu").toUpperCase();
+      const model = strictStr(r.model, "model");
+      const checkpoint = strictStr(r.checkpoint, "checkpoint");
+      const framework = strictStr(r.framework, "framework");
+      const frameworkVersion = strictStrOpt(r.version, "version") ?? undefined;
+      const weightPrecision = strictStr(row.precision, "row.precision");
+      const kvPrecision = strictStrOpt(row.kv_precision, "row.kv_precision");
+      const formFactor = strictStr(row.form_factor, "row.form_factor");
+      const interconnect = strictStr(row.interconnect, "row.interconnect");
+      const tp = strictNum(row.tp, "row.tp");
+      const pp = strictNum(row.pp, "row.pp");
+      const gpuCount = strictNum(row.gpu_count, "row.gpu_count");
+      const isl = strictNum(row.isl, "row.isl");
+      const osl = strictNum(row.osl, "row.osl");
+      const concurrency = strictNum(row.concurrency, "row.concurrency");
       const intrinsic: Reason[] = [];
       if (maxLoad) intrinsic.push({ code: "max-load-ceiling", dimension: "latency", message: "Max-load throughput is a capacity ceiling, not an interactive-RAG operating point." });
-      if (multinode && !perGpuReported) intrinsic.push({ code: "no-per-gpu-metric", dimension: "topology", message: `Multi-node ${row.gpu} result reports only a system total; no valid per-GPU metric — must not be split into a fictional per-GPU number.` });
+      if (multinode && !perGpuReported) intrinsic.push({ code: "no-per-gpu-metric", dimension: "topology", message: `Multi-node ${gpu} result reports only a system total; no valid per-GPU metric — must not be split into a fictional per-GPU number.` });
       if (snap.kind === "illustrative-pending-ingestion") intrinsic.push({ code: "illustrative-snapshot", dimension: "provenance", message: "Illustrative pinned snapshot; numbers pending real ingestion — not a verified measurement." });
-      const gpuCount = strictNum(row.gpu_count, "row.gpu_count");
       return {
-        id: `trt:${r.model}:${row.gpu}:${row.precision}:${row.isl}/${row.osl}:c${row.concurrency}:${row.row_kind}`,
+        id: `trt:${model}:${gpu}:${weightPrecision}:${isl}/${osl}:c${concurrency}:${rowKind}`,
         provenance: {
           sourceName: "NVIDIA TensorRT-LLM",
           sourceClass: "vendor-measured",
@@ -36,27 +53,27 @@ export const tensorrtllmAdapter: SourceAdapter = {
           attribution: snap.attribution,
           snapshotKind: snap.kind,
         },
-        modelId: r.model,
-        checkpoint: r.checkpoint,
-        weightPrecision: row.precision,
-        kvPrecision: row.kv_precision ?? null,
-        framework: r.framework,
-        frameworkVersion: r.version,
-        gpuSku: String(row.gpu).toUpperCase(),
-        formFactor: row.form_factor,
+        modelId: model,
+        checkpoint,
+        weightPrecision,
+        kvPrecision,
+        framework,
+        frameworkVersion,
+        gpuSku: gpu,
+        formFactor,
         gpuMemGB: strictNum(row.gpu_mem_gb, "row.gpu_mem_gb"),
         gpuCount,
         nodeCount: multinode ? Math.ceil(gpuCount / 8) : 1,
-        topology: `TP${strictNum(row.tp, "row.tp")}${multinode ? " multi-node" : " single-node"}`,
-        interconnect: row.interconnect,
-        parallelism: { tp: strictNum(row.tp, "row.tp"), pp: strictNum(row.pp, "row.pp"), ep: 1, dp: 1 },
+        topology: `TP${tp}${multinode ? " multi-node" : " single-node"}`,
+        interconnect,
+        parallelism: { tp, pp, ep: 1, dp: 1 },
         serving: "aggregated",
         // Vendor perf tables are not an AWS-instance measurement → represent no AWS instances.
-        hostSystem: `${String(row.gpu).toUpperCase()}-nvidia-perf`,
+        hostSystem: `${gpu}-nvidia-perf`,
         awsRepresentativeInstances: [],
-        isl: strictNum(row.isl, "row.isl"),
-        osl: strictNum(row.osl, "row.osl"),
-        concurrency: strictNum(row.concurrency, "row.concurrency"),
+        isl,
+        osl,
+        concurrency,
         requestRate: null,
         prefixCache: null,
         specDecode: null,
