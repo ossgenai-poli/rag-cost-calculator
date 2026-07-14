@@ -48,6 +48,8 @@ export interface ModelPrice {
   selfHostable?: boolean;
   /** total parameter count in billions — drives GPU memory sizing for self-hosting. */
   paramsB?: number;
+  /** model's supported maximum context window (tokens); undefined = not constrained here. */
+  maxContextTokens?: number;
   /** KV-cache bytes per token at FP16, summed over attention layers (arch-derived). */
   kvBytesPerToken?: number;
   /** attention family — explains the KV footprint: "MLA" | "GQA" | "hybrid". */
@@ -322,6 +324,14 @@ export interface CapacityResult {
   perGpuDecodeTokS: number;
   perReplicaDecodeTokS: number;
   perInstanceDecodeTokS: number;
+  // Prefill (input) throughput — ALWAYS estimated (no benchmark prefill data), so
+  // when prefill binds the fleet the result can never be an unqualified "measured".
+  perReplicaPrefillTokS: number;
+  prefillEstimated: boolean;
+  // Context feasibility (GPU-012):
+  contextRequiredTokens: number;   // input + max output for one request
+  maxContextConfigured: number;    // the configured KV context window
+  contextOverflow: boolean;        // requiredTokens > configured (or model max)
   chosenConcurrency: number;
   achievedInteractivity: number;
   ttftS: number;
@@ -371,9 +381,14 @@ export interface CrossoverResult {
   // Peak/uptime telemetry (label both — GPU peak reporting):
   avgDecodeDemand: number;         // output tok/s, monthly average
   peakDecodeDemand: number;        // output tok/s at peak (× peakFactor)
+  avgPrefillDemand: number;        // input tok/s, monthly average (GPU-008)
+  peakPrefillDemand: number;       // input tok/s at peak
+  prefillBinds: boolean;           // prefill (not decode) sets the fleet size
   providedDecodeCapacity: number;  // output tok/s the billed fleet delivers at 100% util
   utilAvg: number;                 // avg demand ÷ provided capacity
   utilPeak: number;                // peak demand ÷ provided capacity
+  /** Coded infeasibility reasons for targeted UI guidance (GPU-013). Empty ⇒ feasible. */
+  infeasibility: Array<{ code: string; message: string; addingInstancesHelps: boolean }>;
   minInstancesToLoad: number;  // memory floor — min instances to hold the weights
   throughputInstances: number; // instances the current load would need for decode throughput
   realizedUtil: number;        // actual decode utilization of the fleet at the current workload

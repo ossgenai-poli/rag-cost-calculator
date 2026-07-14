@@ -45,9 +45,13 @@ function zeroResult(
     utilPeakPostLoss: 0,
     avgDecodeDemand,
     peakDecodeDemand,
+    avgPrefillDemand: 0,
+    peakPrefillDemand: 0,
+    prefillBinds: false,
     providedDecodeCapacity: 0,
     utilAvg: 0,
     utilPeak: 0,
+    infeasibility: [],
     minInstancesToLoad: cap.memoryFloorBoxes,
     throughputInstances: 0,
     realizedUtil: 0,
@@ -94,11 +98,16 @@ export function computeCrossover(
   const apiBlendedPricePerToken =
     tokensPerQuery > 0 ? perQuery.apiComparisonGen$ / tokensPerQuery : 0;
 
-  // Decode demand (output tok/s): average over uptime, and peak.
+  // Decode demand (output tok/s) AND prefill demand (input tok/s): average over
+  // uptime, and peak. Prefill (GPU-008) means zero/short-output workloads are
+  // still real GPU work.
   const monthlyOutputTokens = traffic.queriesPerMonth * outTokens;
-  const avgDecodeDemand = uptimeSeconds > 0 ? monthlyOutputTokens / uptimeSeconds : 0;
+  const monthlyInputTokens = traffic.queriesPerMonth * llmInputTok;
   const peakFactor = traffic.peakFactor > 0 ? traffic.peakFactor : 1;
+  const avgDecodeDemand = uptimeSeconds > 0 ? monthlyOutputTokens / uptimeSeconds : 0;
   const peakDecodeDemand = avgDecodeDemand * peakFactor;
+  const avgPrefillDemand = uptimeSeconds > 0 ? monthlyInputTokens / uptimeSeconds : 0;
+  const peakPrefillDemand = avgPrefillDemand * peakFactor;
 
   if (apiBlendedPricePerToken <= 0 || capacity100 <= 0) {
     return zeroResult(
@@ -108,9 +117,9 @@ export function computeCrossover(
   }
 
   // Fleet sizing from authoritative capacity (topology + replicas + N+1 HA),
-  // sized against capacity × utilTarget (GPU-009).
+  // sized against capacity × utilTarget (GPU-009), covering prefill AND decode.
   const utilTarget = generation.utilTarget > 0 && generation.utilTarget <= 1 ? generation.utilTarget : 1;
-  const fleet = sizeFleet(cap, peakDecodeDemand, generation.haEnabled !== false, utilTarget);
+  const fleet = sizeFleet(cap, peakDecodeDemand, peakPrefillDemand, generation.haEnabled !== false, utilTarget);
   const requiredInstances = fleet.requiredInstances;
   const ipr = fleet.instancesPerReplica;
   const autoSize = generation.autoSizeFleet !== false;
@@ -129,6 +138,20 @@ export function computeCrossover(
   // partial/stranded box contributes NO usable capacity (GPU-011).
   const feasible = usableReplicas >= fleet.replicas && cap.slaAchievable;
   const selfHostedMonthly$ = boxes * gpuMonthly$; // you still pay for stranded boxes
+
+  // GPU-013: coded infeasibility reasons with targeted guidance. Only a genuine
+  // CAPACITY shortage should ever suggest "add instances / enable auto-size".
+  const infeasibility: CrossoverResult["infeasibility"] = [];
+  if (!cap.concWithinLimit)
+    infeasibility.push({ code: "concurrency-below-min", message: `Concurrency cap ${cap.maxConcurrency} is below the benchmark's minimum batch — raise max concurrent sequences.`, addingInstancesHelps: false });
+  if (!cap.interactivityMet)
+    infeasibility.push({ code: "interactivity", message: `No operating point delivers ${cap.chosenConcurrency > 0 ? generation.interactivityTarget : generation.interactivityTarget} tok/s/user under the concurrency cap — lower the interactivity target or pick a faster GPU/precision.`, addingInstancesHelps: false });
+  if (!cap.ttftMet)
+    infeasibility.push({ code: "ttft", message: `TTFT ${cap.ttftS.toFixed(2)}s exceeds the ${(generation.ttftTargetMs / 1000).toFixed(2)}s target. Adding instances does NOT reduce per-request TTFT — raise the TTFT budget, shorten the prompt, or pick a faster GPU/precision.`, addingInstancesHelps: false });
+  if (cap.contextOverflow)
+    infeasibility.push({ code: "context-overflow", message: `Requested ${Math.round(cap.contextRequiredTokens)} tokens (input + max output) exceeds the ${cap.maxContextConfigured}-token context window — reduce input/output or raise max context (up to the model's limit).`, addingInstancesHelps: false });
+  if (!autoSize && usableReplicas < fleet.replicas)
+    infeasibility.push({ code: "manual-cap", message: `Auto-size is off: ${boxes} box(es) provide only ${usableReplicas} complete serving group(s), but ${fleet.replicas} are required. Enable auto-size or raise instances to a multiple of ${ipr}.`, addingInstancesHelps: true });
 
   // Provided capacity comes ONLY from complete replicas (not stranded boxes).
   const providedDecodeCapacity = usableReplicas * cap.perReplicaDecodeTokS; // tok/s @100%
@@ -155,8 +178,11 @@ export function computeCrossover(
       ? "self-host efficient"
       : "API wins in practice below sustained load";
   // A positive verdict built on non-measured capacity (proxy/extrapolated/heuristic)
-  // must be presented QUALIFIED — never an unconditional "self-host" recommendation.
-  const verdictQualified = verdict === "self-host efficient" && cap.source !== "measured";
+  // OR resting on an estimated prefill bound must be presented QUALIFIED — never an
+  // unconditional "self-host" recommendation (GPU-008).
+  const verdictQualified =
+    verdict === "self-host efficient" &&
+    (cap.source !== "measured" || (fleet.prefillBinds && cap.prefillEstimated));
 
   const maxTokens = Math.max(monthlyGenTokens, breakEvenTokens) * 1.5;
   const curve: CrossoverResult["curve"] = [];
@@ -187,9 +213,13 @@ export function computeCrossover(
     utilPeakPostLoss,
     avgDecodeDemand,
     peakDecodeDemand,
+    avgPrefillDemand,
+    peakPrefillDemand,
+    prefillBinds: fleet.prefillBinds,
     providedDecodeCapacity,
     utilAvg,
     utilPeak,
+    infeasibility,
     minInstancesToLoad: cap.memoryFloorBoxes,
     throughputInstances,
     realizedUtil: utilAvg,

@@ -52,6 +52,14 @@ export function computeCapacity(
     generation.kvBits
   );
 
+  // GPU-012: a single request needs input + its max output tokens of KV context.
+  // If that exceeds the configured window (or the model's supported max), the
+  // config is infeasible — we never silently truncate to the smaller window.
+  const contextRequiredTokens = perQuery.llmInputTok + generation.outTokens;
+  const modelMaxContext = model?.maxContextTokens ?? Infinity;
+  const maxContextConfigured = Math.min(generation.maxContextLen, modelMaxContext);
+  const contextOverflow = contextRequiredTokens > maxContextConfigured;
+
   const base = {
     weightsGB,
     kvCacheGB: kvGB,
@@ -61,7 +69,13 @@ export function computeCapacity(
     maxConcurrency: maxConc,
     weightPrecisionBits: generation.weightBits,
     kvPrecisionBits: generation.kvBits,
+    contextRequiredTokens,
+    maxContextConfigured,
+    contextOverflow,
   };
+  // Prefill (input) throughput is not in the benchmark set — estimate it as a
+  // conservative multiple of decode and ALWAYS flag it as estimated (GPU-008).
+  const PREFILL_OVER_DECODE = 8;
 
   const curve = getBenchmarkCurve(
     model?.inferencexKey,
@@ -86,13 +100,17 @@ export function computeCapacity(
       perGpuDecodeTokS: perGpuHeur,
       perReplicaDecodeTokS: perGpuHeur * perBox,
       perInstanceDecodeTokS: generation.sustainedTokPerSec * precisionThroughputFactor(generation.weightBits),
+      perReplicaPrefillTokS: perGpuHeur * perBox * PREFILL_OVER_DECODE,
+      prefillEstimated: true,
       chosenConcurrency: maxConc,
       achievedInteractivity: target,
       ttftS: 0,
       interactivityMet: true,
       ttftMet: true,
       concWithinLimit: true,
-      slaAchievable: true, // no benchmark to reject against — heuristic can't verify SLAs
+      // Heuristic can't verify throughput SLAs, but context overflow IS checkable
+      // and is a hard infeasibility even without a benchmark.
+      slaAchievable: !contextOverflow,
       instancesPerReplica: Math.max(1, memoryFloorBoxes),
       gpusInConfig: perBox,
       note,
@@ -188,13 +206,15 @@ export function computeCapacity(
     perGpuDecodeTokS: chosen.tputPerGpu,
     perReplicaDecodeTokS: perReplicaDecode,
     perInstanceDecodeTokS: perInstanceDecode,
+    perReplicaPrefillTokS: perReplicaDecode * PREFILL_OVER_DECODE,
+    prefillEstimated: true,
     chosenConcurrency: chosen.conc,
     achievedInteractivity: chosen.intvty,
     ttftS: chosen.ttft,
     interactivityMet,
     ttftMet,
     concWithinLimit,
-    slaAchievable: interactivityMet && ttftMet && concWithinLimit,
+    slaAchievable: interactivityMet && ttftMet && concWithinLimit && !contextOverflow,
     instancesPerReplica,
     gpusInConfig,
     benchModelKey: model?.inferencexKey,
@@ -218,6 +238,9 @@ export function computeCapacity(
 /** Fleet sizing from authoritative capacity + demand (GPU-006 topology/replicas/HA). */
 export interface FleetSizing {
   replicasForThroughput: number;
+  replicasDecode: number;
+  replicasPrefill: number;
+  prefillBinds: boolean;         // prefill needs more replicas than decode (GPU-008)
   replicas: number;              // after HA
   instancesPerReplica: number;
   requiredInstances: number;     // replicas × instancesPerReplica
@@ -227,18 +250,28 @@ export interface FleetSizing {
 export function sizeFleet(
   cap: CapacityResult,
   peakDecodeDemandTokS: number,
+  peakPrefillDemandTokS: number,
   haEnabled: boolean,
   utilTarget: number
 ): FleetSizing {
   // GPU-009: size against the EFFECTIVE serving capacity (capacity × target
-  // utilization), not 100% — you never plan a fleet to run pinned at 100%.
+  // utilization), not 100%. GPU-008: the fleet must serve BOTH prefill (input)
+  // and decode (output) — replicas = max of the two, so zero/short-output
+  // workloads are never treated as zero GPU work.
   const ut = utilTarget > 0 && utilTarget <= 1 ? utilTarget : 1;
-  const effPerReplica = cap.perReplicaDecodeTokS > 0 ? cap.perReplicaDecodeTokS * ut : Infinity;
-  const replicasForThroughput = Math.max(1, Math.ceil(peakDecodeDemandTokS / effPerReplica));
+  const effDecode = cap.perReplicaDecodeTokS > 0 ? cap.perReplicaDecodeTokS * ut : Infinity;
+  const effPrefill = cap.perReplicaPrefillTokS > 0 ? cap.perReplicaPrefillTokS * ut : Infinity;
+  const replicasDecode = Math.ceil(peakDecodeDemandTokS / effDecode) || 0;
+  const replicasPrefill = Math.ceil(peakPrefillDemandTokS / effPrefill) || 0;
+  const replicasForThroughput = Math.max(1, replicasDecode, replicasPrefill);
+  const prefillBinds = replicasPrefill > replicasDecode;
   // HA (GPU-006): N+1, minimum two replicas, so a replica loss still serves peak.
   const replicas = haEnabled ? Math.max(2, replicasForThroughput + 1) : replicasForThroughput;
   return {
     replicasForThroughput,
+    replicasDecode,
+    replicasPrefill,
+    prefillBinds,
     replicas,
     instancesPerReplica: cap.instancesPerReplica,
     requiredInstances: replicas * cap.instancesPerReplica,

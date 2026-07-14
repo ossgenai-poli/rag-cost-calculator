@@ -224,12 +224,34 @@ export function ResultsPanel({
                   {crossover.boxes} or more to remove this notice.
                 </span>
               )}
-              {!crossover.feasible && (
+              {!crossover.feasible && crossover.infeasibility.length > 0 && (
                 <span className="mt-1 block text-rose-300">
-                  Infeasible: {crossover.userInstances} instance
-                  {crossover.userInstances === 1 ? "" : "s"} can&apos;t serve this load (needs ≥{" "}
-                  {crossover.requiredInstances}). Auto-size is off, so cost and savings are suppressed
-                  — enable auto-size or raise instances to {crossover.requiredInstances}.
+                  <span className="font-medium">Infeasible — cost &amp; savings suppressed.</span>
+                  {crossover.infeasibility.map((r) => (
+                    <span key={r.code} className="mt-0.5 block">
+                      • {r.message}
+                    </span>
+                  ))}
+                </span>
+              )}
+              {crossover.strandedBoxes > 0 && (
+                <span className="mt-1 block text-amber-300">
+                  {crossover.strandedBoxes} box(es) are stranded — they don&apos;t complete a{" "}
+                  {crossover.instancesPerReplica}-box serving group, so they add cost but no serving
+                  capacity. Usable: {crossover.usableReplicas} replica(s).
+                </span>
+              )}
+              {crossover.prefillBinds && (
+                <span className="mt-1 block text-amber-300">
+                  Fleet size is set by <span className="font-medium">prefill</span> (input tokens),
+                  not decode — and prefill throughput is estimated, so this sizing is not a direct
+                  measurement.
+                </span>
+              )}
+              {crossover.utilPeakPostLoss > 1 && Number.isFinite(crossover.utilPeakPostLoss) && (
+                <span className="mt-1 block text-amber-300">
+                  After losing one serving group, peak utilization would be{" "}
+                  {formatPercent(crossover.utilPeakPostLoss)} (&gt;100%) — N+1 does not fully cover peak.
                 </span>
               )}
               {crossover.ownedCapacity && (

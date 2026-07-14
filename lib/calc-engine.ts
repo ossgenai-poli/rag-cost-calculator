@@ -313,7 +313,33 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
  * reflect the managed service (HNSW-only, redundant OCUs, API-only
  * generation) so the managed premium shows up naturally in the totals.
  */
-export function calculate(inputs: CalcInputs, priceBook: PriceBook): CalcResult {
+// INPUT-020: practical maxima so a finite-but-absurd entry (e.g. 1e308 queries)
+// can never produce Infinity/NaN replicas, utilization or cost.
+const clampPos = (v: number, max: number) =>
+  !Number.isFinite(v) || v < 0 ? 0 : Math.min(v, max);
+function clampExtremes(inputs: CalcInputs): CalcInputs {
+  return {
+    ...inputs,
+    corpus: {
+      ...inputs.corpus,
+      numDocs: clampPos(inputs.corpus.numDocs, 1e11),
+      avgTokensPerDoc: clampPos(inputs.corpus.avgTokensPerDoc, 1e7),
+    },
+    generation: {
+      ...inputs.generation,
+      outTokens: clampPos(inputs.generation.outTokens, 1e6),
+      promptOverhead: clampPos(inputs.generation.promptOverhead, 1e6),
+      maxContextLen: Math.max(1, clampPos(inputs.generation.maxContextLen, 1e7)),
+      maxConcurrentSeqs: Math.max(1, clampPos(inputs.generation.maxConcurrentSeqs, 1e5)),
+    },
+    ops: { ...inputs.ops, overheadPct: clampPos(inputs.ops.overheadPct, 1e4) },
+    traffic: { ...inputs.traffic, queriesPerMonth: clampPos(inputs.traffic.queriesPerMonth, 1e12) },
+    queryTokens: clampPos(inputs.queryTokens, 1e6),
+  };
+}
+
+export function calculate(rawInputs: CalcInputs, priceBook: PriceBook): CalcResult {
+  const inputs = clampExtremes(rawInputs);
   if (inputs.ragMode === "B") {
     const effectiveInputs: CalcInputs = {
       ...inputs,
