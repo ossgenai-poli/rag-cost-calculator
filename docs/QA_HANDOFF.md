@@ -1,4 +1,4 @@
-# QA Handoff — RAG Cost Calculator (RC `rc-qa-10`)
+# QA Handoff — RAG Cost Calculator (RC `rc-qa-11`)
 
 This is the single source of truth for the QA engineer. Everything needed to run the test plan is
 here. Live-pricing suites run against the Vercel runtime (§3/§5); all other suites run against the
@@ -17,8 +17,8 @@ static site.
 
 | | Value |
 |---|---|
-| **Git tag** | `rc-qa-10` |
-| **Commit SHA** | run `git rev-parse rc-qa-10` |
+| **Git tag** | `rc-qa-11` |
+| **Commit SHA** | run `git rev-parse rc-qa-11` |
 | **Static site (live + verified rendering)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
 | **Runtime site (LIVE pricing)** | https://rag-cost-calculator-hazel.vercel.app/ |
 | **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
@@ -28,7 +28,7 @@ Check out the exact tree:
 git clone https://github.com/ossgenai-poli/rag-cost-calculator.git
 cd rag-cost-calculator
 git fetch --tags --force        # the rc tags are re-pointed between rounds
-git checkout rc-qa-10           # detached HEAD at the pinned RC
+git checkout rc-qa-11           # detached HEAD at the pinned RC
 ```
 
 **Pre-verified by the developer on this exact SHA** (so an environment problem is distinguishable
@@ -470,10 +470,17 @@ reconciles with `CrossoverResult`, so the card can never show an equation the fl
 |---|---|---|
 | **INF-005** | False fleet arithmetic | The grounded card + Markdown show the **binding dimension's** real equation: `peak input/output tok/s ÷ (per-replica prefill/decode tok/s × utilization target) → N replicas for throughput`, then `+ N+1 replicas × boxes/replica = boxes required`. Canonical DeepSeek repro renders `221,461 input tok/s ÷ (3,715 prefill tok/s/replica × 70% target = 2,600) → 86 replicas + 1 N+1 × 1 box/replica = 87 boxes required` — 221,461 ÷ 2,600 = 85.2 → 86. `CrossoverResult.utilTargetUsed` is exposed so the displayed target is the sizing target. UI-level tests prove the equation reconciles and the old decode-÷-decode pattern is gone. |
 | **INF-006** | Measured prefill called estimated | The prefill-binds notice now has three provenance-gated wordings: `prefillEstimated=false` + ISL match → "sized from the **measured** input throughput"; measured-but-scaled (`prefillIslScale` ≠ 1) → "measured at ISL X and scaled to the requested ISL Y … extrapolated"; only the heuristic path says "estimated". Exact 1024/1024 measured repro shows the measured wording with `source: measured`. |
-| **INF-007** | Heuristic range hidden | The heuristic card, JSON (`fleet.capacity.prefillRange` incl. `ratioUsed`, low/base/high, headline note) and Markdown ("Heuristic prefill range:") now show the low/base/high prefill capacity **and the resulting fleet band** (e.g. 6–12 replicas, headline 6 = base estimate). Positive heuristic verdicts remain qualified. |
+| **INF-007** | Heuristic range hidden | The heuristic card, JSON (`fleet.capacity.prefillRange`) and Markdown ("Heuristic prefill range:") now show the low/base/high prefill capacity **and the resulting fleet band**. As of **rc-qa-11** the JSON serializes the *complete* `heuristicPrefillRange()` result — `ratioUsed`, `perReplicaLow/Base/HighTokS`, **`fleetMinReplicas` / `fleetBaseReplicas` / `fleetMaxReplicas`**, and the headline note — matching UI/Markdown; `fleetBaseReplicas === explainFleetSizing(cx).throughputReplicas` is asserted. Positive heuristic verdicts remain qualified. |
 | **INF-008** | Disclaimer missing on heuristic card | The planning-capacity disclaimer now renders on **both** grounded-card branches (measured/extrapolated and heuristic fallback). |
 | **INF-009** | Wrong provenance badge | The Sources modal's *Inference benchmarks* section uses a distinct **"independent benchmark"** badge (violet), added to the legend as "third-party measured (SemiAnalysis InferenceX)" — never "AWS published". |
 | **INF-010** | Topology double-count | Aggregated deployments render "TP8 · 8 GPUs handle prefill and decode (aggregated)"; the plus-sign form is reserved for genuinely disaggregated prefill/decode GPU pools. |
 
 Coverage: `lib/rc-qa10.test.ts` (+17). Suite total: **184** unit tests. Gates green on
-`rc-qa-10`: typecheck · 184 tests · build:static · verify:basepath · test:e2e · verify:live.
+`rc-qa-11`: typecheck · 184 tests · build:static · verify:basepath · test:e2e · verify:live.
+
+**rc-qa-11 addendum (P2 export completion):** the CONDITIONAL-PASS retest found the JSON
+`fleet.capacity.prefillRange` carried the capacity bounds but omitted the fleet band
+(`fleetMin/Base/MaxReplicas`) because `assumptionsToJson()` reconstructed the capacity portion by
+hand. Fixed by serializing the complete `heuristicPrefillRange(cx)` result; the `rc-qa10` JSON test
+now asserts all three fleet fields plus `fleetBaseReplicas === explainFleetSizing(cx).throughputReplicas`.
+No other change from `rc-qa-10` (which stays pinned at `8069bda`).

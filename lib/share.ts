@@ -286,19 +286,24 @@ export function assumptionsToJson(
             perGpuPrefillTokS: cx.capacity.perGpuPrefillTokS ?? null, // INF-002 (real input throughput)
             prefillEstimated: cx.capacity.prefillEstimated,
             prefillIslScale: cx.capacity.prefillIslScale ?? null, // INF-006 (measured-but-scaled disclosure)
-            // INF-007: the heuristic prefill uncertainty band. The headline fleet uses
-            // the BASE estimate; low/high bound the plausible fleet if the real input
-            // throughput differs from the ISL/OSL-ratio estimate.
-            prefillRange:
-              cx.capacity.prefillEstimated && cx.capacity.perReplicaPrefillTokSLow != null
+            // INF-007: the heuristic prefill uncertainty band — the COMPLETE helper
+            // result (capacity bounds AND the resulting fleet-replica band), so JSON,
+            // UI and Markdown all serialize the identical object. Headline uses base.
+            prefillRange: (() => {
+              const hr = heuristicPrefillRange(cx);
+              return hr
                 ? {
-                    ratioUsed: cx.capacity.prefillRatioUsed ?? null,
-                    perReplicaLowTokS: cx.capacity.perReplicaPrefillTokSLow,
-                    perReplicaBaseTokS: cx.capacity.perReplicaPrefillTokS,
-                    perReplicaHighTokS: cx.capacity.perReplicaPrefillTokSHigh,
+                    ratioUsed: hr.ratioUsed,
+                    perReplicaLowTokS: hr.perReplicaLowTokS,
+                    perReplicaBaseTokS: hr.perReplicaBaseTokS,
+                    perReplicaHighTokS: hr.perReplicaHighTokS,
+                    fleetMinReplicas: hr.fleetMinReplicas,
+                    fleetBaseReplicas: hr.fleetBaseReplicas,
+                    fleetMaxReplicas: hr.fleetMaxReplicas,
                     note: "headline fleet is sized from the base estimate",
                   }
-                : null,
+                : null;
+            })(),
             achievedInteractivity: cx.capacity.achievedInteractivity,
             ttftS: cx.capacity.ttftS,
             ttftPercentile: cx.capacity.ttftPercentile ?? null, // INF-003

@@ -147,13 +147,22 @@ describe("INF-007 — heuristic prefill uncertainty range is surfaced", () => {
     expect(hr.fleetBaseReplicas).toBe(eq.throughputReplicas);
   });
 
-  it("range appears in the JSON export with the headline note; null on measured paths", () => {
+  it("JSON export serializes the COMPLETE helper result incl. the fleet band; null on measured paths", () => {
     const iH = heuristic();
     const rH = calculate(iH, priceBook);
     const jH = JSON.parse(assumptionsToJson(iH, priceBook, "2026-01-01", rH));
-    expect(jH.fleet.capacity.prefillRange).toBeTruthy();
-    expect(jH.fleet.capacity.prefillRange.perReplicaLowTokS).toBeGreaterThan(0);
-    expect(jH.fleet.capacity.prefillRange.note).toMatch(/base estimate/i);
+    const pr = jH.fleet.capacity.prefillRange;
+    const hr = heuristicPrefillRange(rH.crossover)!;
+    expect(pr).toBeTruthy();
+    expect(pr.perReplicaLowTokS).toBeGreaterThan(0);
+    expect(pr.note).toMatch(/base estimate/i);
+    // The QA gap: the resulting FLEET band must be serialized, not just capacity.
+    expect(pr.ratioUsed).toBe(hr.ratioUsed);
+    expect(pr.fleetMinReplicas).toBe(hr.fleetMinReplicas);
+    expect(pr.fleetBaseReplicas).toBe(hr.fleetBaseReplicas);
+    expect(pr.fleetMaxReplicas).toBe(hr.fleetMaxReplicas);
+    // The headline fleet really is the base estimate → the engine's throughput replicas.
+    expect(pr.fleetBaseReplicas).toBe(explainFleetSizing(rH.crossover).throughputReplicas);
     const iM = exactMeasured();
     const rM = calculate(iM, priceBook);
     const jM = JSON.parse(assumptionsToJson(iM, priceBook, "2026-01-01", rM));
