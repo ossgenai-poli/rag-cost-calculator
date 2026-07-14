@@ -44,14 +44,19 @@ describe("GPU-001 — grounded capacity drives utilization + break-even (not gen
     const r = calculate(deepseek(), priceBook);
     const c = r.crossover;
     expect(c.capacity.source).not.toBe("heuristic"); // benchmark-driven
-    expect(c.capacity.chosenConcurrency).toBe(16); // GPU-002 cap honored
-    expect(Math.round(c.capacity.perGpuDecodeTokS)).toBe(214); // measured @ conc 16 (NOT 327 uncapped)
-    // Demand ≈ 38,052 tok/s. Sized against capacity × 70% target (GPU-009), so
-    // average utilization lands AT/below the target — not the false generic ~27%.
+    expect(c.capacity.chosenConcurrency).toBe(32); // GPU-002 cap honored (default 32)
+    // Decode capacity = measured OUTPUT tok/s/GPU (output_tput_per_gpu), not the
+    // total-throughput figure the old build mislabeled as decode (INF-002).
+    expect(Math.round(c.capacity.perGpuDecodeTokS)).toBe(164); // measured decode @ conc 32
     expect(Math.round(c.avgDecodeDemand)).toBe(38052);
-    expect(c.utilAvg).toBeGreaterThan(0.5);
-    expect(c.utilAvg).toBeLessThanOrEqual(0.72); // sized to the 70% target
-
+    // This input-heavy RAG workload (2,910 in / 500 out) is PREFILL-bound: the
+    // fleet is sized by input throughput, so the BINDING (prefill) dimension lands
+    // at/below the 70% target and decode runs slacker (INF-002).
+    expect(c.prefillBinds).toBe(true);
+    expect(c.bindingDim).toBe("prefill");
+    expect(c.utilAvgPrefill).toBeGreaterThan(0.5);
+    expect(c.utilAvgPrefill).toBeLessThanOrEqual(0.72); // sized to the 70% target
+    expect(c.utilAvg).toBeLessThan(c.utilAvgPrefill); // decode is not the binding dim
   });
 
   it("break-even feasibility uses the same authoritative capacity", () => {
@@ -63,17 +68,21 @@ describe("GPU-001 — grounded capacity drives utilization + break-even (not gen
 });
 
 describe("GPU-001/DeepSeek — exact crossover figures", () => {
-  it("p6 price + utilTarget sizing ⇒ 32 throughput + 1 N+1 HA = 33 boxes (QA-014/GPU-009)", () => {
+  it("p6 price + PREFILL-bound utilTarget sizing ⇒ 86 throughput + 1 N+1 HA = 87 boxes (QA-014/GPU-009/INF-002)", () => {
     const i = deepseek();
     const c = calculate(i, priceBook).crossover;
     expect(i.generation.gpuPricePerHr).toBe(113); // QA-014: p6 price, NOT the p5 $55
-    expect(c.throughputInstances).toBe(32); // ceil(demand / (perReplica × 0.7))
-    expect(c.replicas).toBe(33); // +1 N+1 HA
+    // Input-heavy RAG binds on PREFILL. Fleet = ceil(prefill demand / (perReplica
+    // prefill capacity × 0.7)), sized from the ISL-scaled measured input throughput
+    // (INF-002) — no longer the fixed-8× decode heuristic.
+    expect(c.bindingDim).toBe("prefill");
+    expect(c.throughputInstances).toBe(86);
+    expect(c.replicas).toBe(87); // +1 N+1 HA
     expect(c.instancesPerReplica).toBe(1);
     expect(c.haReplicasAdded).toBe(1);
-    expect(c.requiredInstances).toBe(33);
-    expect(c.boxes).toBe(33);
-    expect(c.usableReplicas).toBe(33);
+    expect(c.requiredInstances).toBe(87);
+    expect(c.boxes).toBe(87);
+    expect(c.usableReplicas).toBe(87);
     expect(c.strandedBoxes).toBe(0);
     expect(c.feasible).toBe(true);
   });
@@ -238,7 +247,7 @@ describe("provenance gate — non-measured capacity never gives an UNCONDITIONAL
         i.generation.llmModelId = "glm-5.2-oss"; // benchmarkProvenance: proxy
         useGpu(i, "p6-b200.48xlarge");
         i.generation.weightBits = 4;
-        i.traffic.queriesPerMonth = 50_000_000;
+        i.traffic.queriesPerMonth = 200_000_000; // high enough that self-host is efficient
       }),
       priceBook
     ).crossover;

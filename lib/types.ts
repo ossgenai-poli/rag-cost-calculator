@@ -331,10 +331,18 @@ export interface CapacityResult {
   perGpuDecodeTokS: number;
   perReplicaDecodeTokS: number;
   perInstanceDecodeTokS: number;
-  // Prefill (input) throughput — ALWAYS estimated (no benchmark prefill data), so
-  // when prefill binds the fleet the result can never be an unqualified "measured".
+  // Prefill (input) throughput. When a benchmark curve is used this is the REAL
+  // measured input_tput_per_gpu at the selected operating point (INF-002); only the
+  // no-benchmark heuristic path leaves it estimated. When estimated AND prefill
+  // binds the fleet, the result can never be an unqualified "measured".
   perReplicaPrefillTokS: number;
   prefillEstimated: boolean;
+  perGpuPrefillTokS?: number;      // measured input tok/s per GPU at the operating point
+  // When prefill throughput is NOT measured (heuristic path), we size it from the
+  // ISL/OSL ratio and report a RANGE (low/high replicas) instead of one precise count.
+  prefillRatioUsed?: number;       // input/decode throughput ratio applied (heuristic only)
+  perReplicaPrefillTokSLow?: number;   // conservative bound (heuristic only)
+  perReplicaPrefillTokSHigh?: number;  // optimistic bound (heuristic only)
   // Context feasibility (GPU-012):
   contextRequiredTokens: number;   // input + max output for one request
   maxContextConfigured: number;    // the configured KV context window
@@ -362,7 +370,29 @@ export interface CapacityResult {
   kvPrecisionBits: number;
   seqUsed?: string;            // benchmarked ISL/OSL bucket
   seqRequested?: string;       // requested ISL/OSL (GPU-010)
+  // INF-003: the statistic the TTFT figure represents ("p99"), so a UI/export never
+  // silently compares an unspecified TTFT against a customer's tail-latency SLA.
+  ttftPercentile?: string;
+  // INF-001: full measurement provenance for the selected curve, so a "measured"
+  // point is independently auditable back to the exact InferenceX run.
+  benchmarkProvenance?: BenchmarkProvenance;
   note?: string;
+}
+
+/** INF-001: per-curve measurement provenance surfaced to UI + exports. */
+export interface BenchmarkProvenance {
+  source: string;        // "SemiAnalysis InferenceX"
+  sourceUrl: string;
+  methodologyUrl: string;
+  asOf: string;          // snapshot date the app baked
+  runId: string;
+  runUrl: string;        // direct GitHub Actions run URL
+  commit: string;        // recipe/source commit
+  date: string;          // measurement date
+  image: string;         // container/image
+  specMethod: string;    // speculative-decode method
+  disagg: boolean;
+  topology: string;      // e.g. "TP8 / 8 prefill GPU + 8 decode GPU, single-node"
 }
 
 export interface CrossoverResult {

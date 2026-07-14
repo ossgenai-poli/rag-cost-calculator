@@ -10,8 +10,15 @@
 // once a benchmark point is selected.
 // ============================================================================
 
-import type { CalcInputs, PriceBook, PerQueryResult, CapacityResult, CapacitySource } from "./types";
-import { getBenchmarkCurve } from "./benchmarks";
+import type { CalcInputs, PriceBook, PerQueryResult, CapacityResult, CapacitySource, BenchmarkProvenance } from "./types";
+import {
+  getBenchmarkCurve,
+  BENCHMARK_SOURCE,
+  BENCHMARK_SOURCE_URL,
+  BENCHMARK_METHODOLOGY_URL,
+  BENCHMARK_AS_OF,
+  BENCHMARK_TTFT_PERCENTILE,
+} from "./benchmarks";
 import { instancesToLoad, precisionThroughputFactor, modelWeightsGB, kvCacheGB, RUNTIME_RESERVE } from "./self-host";
 
 export const HOURS_PER_MONTH = 730;
@@ -73,9 +80,13 @@ export function computeCapacity(
     maxContextConfigured,
     contextOverflow,
   };
-  // Prefill (input) throughput is not in the benchmark set — estimate it as a
-  // conservative multiple of decode and ALWAYS flag it as estimated (GPU-008).
-  const PREFILL_OVER_DECODE = 8;
+  // INF-002: prefill (input) and decode (output) throughput are read as SEPARATE
+  // measured quantities from the benchmark operating point (below). Only when NO
+  // benchmark curve exists do we estimate prefill — and then from the workload's
+  // own input/output ratio (prefill tok/s ≈ decode tok/s × ISL/OSL), not a single
+  // universal 8× constant, and we report a RANGE rather than one precise count.
+  const islOslRatio =
+    generation.outTokens > 0 ? Math.max(0.25, perQuery.llmInputTok / generation.outTokens) : 8;
 
   const curve = getBenchmarkCurve(
     model?.inferencexKey,
@@ -100,8 +111,12 @@ export function computeCapacity(
       perGpuDecodeTokS: perGpuHeur,
       perReplicaDecodeTokS: perGpuHeur * perBox,
       perInstanceDecodeTokS: generation.sustainedTokPerSec * precisionThroughputFactor(generation.weightBits),
-      perReplicaPrefillTokS: perGpuHeur * perBox * PREFILL_OVER_DECODE,
+      // No measured prefill throughput → estimate from ISL/OSL and report a range.
+      perReplicaPrefillTokS: perGpuHeur * perBox * islOslRatio,
       prefillEstimated: true,
+      prefillRatioUsed: islOslRatio,
+      perReplicaPrefillTokSLow: perGpuHeur * perBox * islOslRatio * 0.5,
+      perReplicaPrefillTokSHigh: perGpuHeur * perBox * islOslRatio * 2,
       chosenConcurrency: maxConc,
       achievedInteractivity: target,
       ttftS: 0,
@@ -152,7 +167,22 @@ export function computeCapacity(
   const gpusInConfig = curve.gpusInConfig;
   const boxesForTopology = Math.ceil(gpusInConfig / perBox);
   const instancesPerReplica = Math.max(1, boxesForTopology, memoryFloorBoxes);
+  // INF-002: decode capacity = measured output_tput_per_gpu; prefill capacity =
+  // measured input_tput_per_gpu — both at the SAME operating point, so no fixed
+  // 8× ratio is applied and prefill is no longer an estimate on the benchmark path.
+  //
+  // Prefill throughput (input tok/s) is measured at the benchmark's ISL bucket.
+  // Prefill work is ~proportional to input tokens, and the data confirms input
+  // tok/s scales roughly linearly with ISL (1024→8192 ≈ 7×). When the workload's
+  // ISL differs from the bucket, scale the measured input throughput to the actual
+  // ISL so a long-context RAG prompt isn't sized against a short-prompt prefill
+  // rate (which would grossly over-size the prefill fleet). Clamped to keep the
+  // extrapolation bounded; the ISL mismatch is already flagged as a reason below.
+  const benchISL = Number(curve.seqUsed.split("/")[0]) || perQuery.llmInputTok || 1;
+  const prefillIslScale = Math.min(8, Math.max(0.125, (perQuery.llmInputTok || benchISL) / benchISL));
+  const perGpuPrefill = chosen.inputTputPerGpu * prefillIslScale;
   const perReplicaDecode = chosen.tputPerGpu * gpusInConfig;
+  const perReplicaPrefill = perGpuPrefill * gpusInConfig;
   const perInstanceDecode = perReplicaDecode / instancesPerReplica;
 
   // GPU-005/010: provenance / extrapolation labeling.
@@ -192,6 +222,35 @@ export function computeCapacity(
       ? `Measured on a ${gpusInConfig}-GPU (${boxesForTopology}-box) serving group; multiple replicas assume linear scaling.`
       : undefined;
 
+  // INF-001: a point can only be "measured" if it is traceable to a specific
+  // InferenceX run (workflow URL + recipe commit). Our baked curves always carry
+  // this, but the gate enforces the rule so an un-sourced curve is downgraded.
+  const prov = curve.provenance;
+  const traceable = !!(prov?.runUrl && prov?.commit);
+  if (!traceable) reasons.push("benchmark provenance is not traceable to a specific run");
+
+  const benchmarkProvenance: BenchmarkProvenance | undefined = traceable
+    ? {
+        source: BENCHMARK_SOURCE,
+        sourceUrl: BENCHMARK_SOURCE_URL,
+        methodologyUrl: BENCHMARK_METHODOLOGY_URL,
+        asOf: BENCHMARK_AS_OF,
+        runId: prov.runId,
+        runUrl: prov.runUrl,
+        commit: prov.commit,
+        date: prov.date,
+        image: prov.image,
+        specMethod: prov.specMethod,
+        disagg: prov.disagg,
+        topology: `TP${prov.prefillTp} · ${prov.numPrefillGpu} prefill + ${prov.numDecodeGpu} decode GPU · ${
+          prov.disagg ? "disaggregated" : "aggregated"
+        }${prov.isMultinode ? " · multi-node" : ""}${
+          prov.specMethod && prov.specMethod !== "none" ? ` · spec-decode:${prov.specMethod}` : " · no spec-decode"
+        }`,
+      }
+    : undefined;
+  const ttftPercentile = prov?.ttftPercentile ?? BENCHMARK_TTFT_PERCENTILE;
+
   const provenance = model?.benchmarkProvenance;
   let source: CapacitySource;
   if (provenance === "proxy") source = "proxy";
@@ -206,11 +265,13 @@ export function computeCapacity(
     perGpuDecodeTokS: chosen.tputPerGpu,
     perReplicaDecodeTokS: perReplicaDecode,
     perInstanceDecodeTokS: perInstanceDecode,
-    perReplicaPrefillTokS: perReplicaDecode * PREFILL_OVER_DECODE,
-    prefillEstimated: true,
+    perReplicaPrefillTokS: perReplicaPrefill,
+    perGpuPrefillTokS: perGpuPrefill,
+    prefillEstimated: false, // real measured input throughput at this operating point
     chosenConcurrency: chosen.conc,
     achievedInteractivity: chosen.intvty,
     ttftS: chosen.ttft,
+    ttftPercentile,
     interactivityMet,
     ttftMet,
     concWithinLimit,
@@ -223,6 +284,7 @@ export function computeCapacity(
     precisionRequested: requestedPrecision,
     seqUsed: curve.seqUsed,
     seqRequested,
+    benchmarkProvenance,
     note:
       [
         provenance === "proxy"

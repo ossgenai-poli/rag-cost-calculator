@@ -16,9 +16,9 @@ const priceBook: PriceBook = {
 
 // A synthetic curve: interactivity falls as concurrency (and per-GPU throughput) rise.
 const CURVE = [
-  { conc: 1, intvty: 100, tputPerGpu: 20, ttft: 0.2 },
-  { conc: 2, intvty: 50, tputPerGpu: 40, ttft: 0.3 },
-  { conc: 4, intvty: 25, tputPerGpu: 70, ttft: 0.4 },
+  { conc: 1, intvty: 100, tputPerGpu: 20, inputTputPerGpu: 20, ttft: 0.2 },
+  { conc: 2, intvty: 50, tputPerGpu: 40, inputTputPerGpu: 40, ttft: 0.3 },
+  { conc: 4, intvty: 25, tputPerGpu: 70, inputTputPerGpu: 70, ttft: 0.4 },
 ];
 
 describe("operatingPointAt", () => {

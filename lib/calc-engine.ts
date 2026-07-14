@@ -473,7 +473,11 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       apiComparisonInPricePer1K: llmModel.inPricePer1K,
       apiComparisonOutPricePer1K: llmModel.outPricePer1K,
       maxContextLen: 8192,
-      maxConcurrentSeqs: 16,
+      // A serving deployment runs many concurrent sequences; 32 is a conservative
+      // floor (real vLLM/TRT/SGLang configs run far higher). It also lets the
+      // benchmark selector reach a well-sampled operating point rather than being
+      // pinned to a low-concurrency point whose P99 TTFT is warmup-dominated.
+      maxConcurrentSeqs: 32,
       interactivityTarget: 30,
     },
     managedKb: {

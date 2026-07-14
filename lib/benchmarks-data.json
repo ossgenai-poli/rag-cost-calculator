@@ -1,6 +1,10 @@
 {
   "source": "SemiAnalysis InferenceX",
-  "generatedAt": "2026-07-13",
+  "sourceUrl": "https://inferencex.semianalysis.com",
+  "methodologyUrl": "https://inferencex.semianalysis.com/about",
+  "generatedAt": "2026-07-14",
+  "ttftPercentile": "p99",
+  "notes": "Curves ingested from the InferenceX benchmark DB (latest_benchmarks). tputPerGpu = output_tput_per_gpu (decode, tok/s/GPU); inputTputPerGpu = input_tput_per_gpu (prefill, tok/s/GPU); ttft = p99_ttft (seconds). Each series carries the exact workflow run, recipe commit, container image and TP/EP topology it was measured on. Speculative decoding is OFF (spec_method=none) for every baked series.",
   "models": {
     "dsv4": {
       "b200": {
@@ -8,85 +12,59 @@
           "1024/1024": {
             "framework": "trt",
             "gpusInConfig": 8,
+            "provenance": {
+              "runId": "27434759052",
+              "runUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27434759052",
+              "commit": "45126b036efafc9d7ecee0f242ebab9790ba887c",
+              "date": "2026-06-12",
+              "image": "ghcr.io/semianalysisai/trtllm-deepseek-v4:feat-deepseek_v4-c185066",
+              "specMethod": "none",
+              "disagg": false,
+              "prefillTp": 8,
+              "decodeTp": 8,
+              "numPrefillGpu": 8,
+              "numDecodeGpu": 8,
+              "isMultinode": false,
+              "isl": 1024,
+              "osl": 1024,
+              "ttftPercentile": "p99"
+            },
             "points": [
-              {
-                "conc": 1,
-                "intvty": 99.16,
-                "tputPerGpu": 22.8,
-                "ttft": 0.202
-              },
-              {
-                "conc": 2,
-                "intvty": 94.25,
-                "tputPerGpu": 43.1,
-                "ttft": 0.23
-              },
-              {
-                "conc": 4,
-                "intvty": 85.24,
-                "tputPerGpu": 76.8,
-                "ttft": 0.226
-              },
-              {
-                "conc": 8,
-                "intvty": 72.41,
-                "tputPerGpu": 132,
-                "ttft": 0.228
-              },
-              {
-                "conc": 16,
-                "intvty": 56.67,
-                "tputPerGpu": 213.9,
-                "ttft": 0.231
-              },
-              {
-                "conc": 32,
-                "intvty": 42.8,
-                "tputPerGpu": 327.2,
-                "ttft": 0.237
-              }
+              { "conc": 1, "intvty": 99.2, "tputPerGpu": 11.4, "inputTputPerGpu": 11.4, "ttft": 3.91 },
+              { "conc": 2, "intvty": 94.3, "tputPerGpu": 21.7, "inputTputPerGpu": 21.3, "ttft": 4.27 },
+              { "conc": 4, "intvty": 85.2, "tputPerGpu": 38.2, "inputTputPerGpu": 38.6, "ttft": 4.52 },
+              { "conc": 8, "intvty": 72.4, "tputPerGpu": 66.2, "inputTputPerGpu": 65.8, "ttft": 3.22 },
+              { "conc": 16, "intvty": 56.7, "tputPerGpu": 106.4, "inputTputPerGpu": 107.5, "ttft": 2.24 },
+              { "conc": 32, "intvty": 42.8, "tputPerGpu": 163.9, "inputTputPerGpu": 163.4, "ttft": 1.22 }
             ]
           },
           "8192/1024": {
             "framework": "trt",
             "gpusInConfig": 8,
+            "provenance": {
+              "runId": "27434759052",
+              "runUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27434759052",
+              "commit": "45126b036efafc9d7ecee0f242ebab9790ba887c",
+              "date": "2026-06-12",
+              "image": "ghcr.io/semianalysisai/trtllm-deepseek-v4:feat-deepseek_v4-c185066",
+              "specMethod": "none",
+              "disagg": false,
+              "prefillTp": 8,
+              "decodeTp": 8,
+              "numPrefillGpu": 8,
+              "numDecodeGpu": 8,
+              "isMultinode": false,
+              "isl": 8192,
+              "osl": 1024,
+              "ttftPercentile": "p99"
+            },
             "points": [
-              {
-                "conc": 1,
-                "intvty": 96.06,
-                "tputPerGpu": 104.2,
-                "ttft": 0.31
-              },
-              {
-                "conc": 2,
-                "intvty": 92.63,
-                "tputPerGpu": 199.5,
-                "ttft": 0.32
-              },
-              {
-                "conc": 4,
-                "intvty": 82.73,
-                "tputPerGpu": 353.2,
-                "ttft": 0.321
-              },
-              {
-                "conc": 8,
-                "intvty": 69.36,
-                "tputPerGpu": 589.7,
-                "ttft": 0.326
-              },
-              {
-                "conc": 16,
-                "intvty": 52.77,
-                "tputPerGpu": 904.7,
-                "ttft": 0.331
-              },
-              {
-                "conc": 32,
-                "intvty": 38.26,
-                "tputPerGpu": 1315.1,
-                "ttft": 0.343
-              }
+              { "conc": 1, "intvty": 96.1, "tputPerGpu": 11.6, "inputTputPerGpu": 92.6, "ttft": 0.33 },
+              { "conc": 2, "intvty": 92.6, "tputPerGpu": 22.4, "inputTputPerGpu": 177.1, "ttft": 0.56 },
+              { "conc": 4, "intvty": 82.7, "tputPerGpu": 39.3, "inputTputPerGpu": 313.9, "ttft": 1.12 },
+              { "conc": 8, "intvty": 69.4, "tputPerGpu": 66.3, "inputTputPerGpu": 523.4, "ttft": 2.21 },
+              { "conc": 16, "intvty": 52.8, "tputPerGpu": 100.3, "inputTputPerGpu": 804.5, "ttft": 4.27 },
+              { "conc": 32, "intvty": 38.3, "tputPerGpu": 147.1, "inputTputPerGpu": 1168.1, "ttft": 8.16 }
             ]
           }
         }
@@ -98,97 +76,61 @@
           "1024/1024": {
             "framework": "sglang",
             "gpusInConfig": 4,
+            "provenance": {
+              "runId": "27431570825",
+              "runUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27431570825",
+              "commit": "7fe8c8d0a4eea1ed21c2840b3b55d4e7526652ce",
+              "date": "2026-06-12",
+              "image": "lmsysorg/sglang:nightly-dev-cu13-20260605-7dc73766",
+              "specMethod": "none",
+              "disagg": false,
+              "prefillTp": 4,
+              "decodeTp": 4,
+              "numPrefillGpu": 4,
+              "numDecodeGpu": 4,
+              "isMultinode": false,
+              "isl": 1024,
+              "osl": 1024,
+              "ttftPercentile": "p99"
+            },
             "points": [
-              {
-                "conc": 4,
-                "intvty": 84.44,
-                "tputPerGpu": 162.2,
-                "ttft": 0.162
-              },
-              {
-                "conc": 8,
-                "intvty": 74.55,
-                "tputPerGpu": 287,
-                "ttft": 0.16
-              },
-              {
-                "conc": 16,
-                "intvty": 62.08,
-                "tputPerGpu": 482.3,
-                "ttft": 0.178
-              },
-              {
-                "conc": 32,
-                "intvty": 49.33,
-                "tputPerGpu": 761,
-                "ttft": 0.208
-              },
-              {
-                "conc": 64,
-                "intvty": 38.24,
-                "tputPerGpu": 1186,
-                "ttft": 0.276
-              },
-              {
-                "conc": 128,
-                "intvty": 29.77,
-                "tputPerGpu": 1843.4,
-                "ttft": 0.333
-              },
-              {
-                "conc": 256,
-                "intvty": 22.01,
-                "tputPerGpu": 2759.4,
-                "ttft": 0.424
-              }
+              { "conc": 4, "intvty": 84.4, "tputPerGpu": 80.7, "inputTputPerGpu": 81.5, "ttft": 0.48 },
+              { "conc": 8, "intvty": 74.6, "tputPerGpu": 144.0, "inputTputPerGpu": 143.0, "ttft": 0.42 },
+              { "conc": 16, "intvty": 62.1, "tputPerGpu": 239.9, "inputTputPerGpu": 242.4, "ttft": 0.55 },
+              { "conc": 32, "intvty": 49.3, "tputPerGpu": 381.1, "inputTputPerGpu": 379.9, "ttft": 0.96 },
+              { "conc": 64, "intvty": 38.2, "tputPerGpu": 592.9, "inputTputPerGpu": 593.1, "ttft": 2.20 },
+              { "conc": 128, "intvty": 29.8, "tputPerGpu": 920.7, "inputTputPerGpu": 922.7, "ttft": 3.36 },
+              { "conc": 256, "intvty": 22.0, "tputPerGpu": 1380.3, "inputTputPerGpu": 1379.0, "ttft": 6.14 }
             ]
           },
           "8192/1024": {
             "framework": "sglang",
             "gpusInConfig": 4,
+            "provenance": {
+              "runId": "27431570825",
+              "runUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27431570825",
+              "commit": "7fe8c8d0a4eea1ed21c2840b3b55d4e7526652ce",
+              "date": "2026-06-12",
+              "image": "lmsysorg/sglang:nightly-dev-cu13-20260605-7dc73766",
+              "specMethod": "none",
+              "disagg": false,
+              "prefillTp": 4,
+              "decodeTp": 4,
+              "numPrefillGpu": 4,
+              "numDecodeGpu": 4,
+              "isMultinode": false,
+              "isl": 8192,
+              "osl": 1024,
+              "ttftPercentile": "p99"
+            },
             "points": [
-              {
-                "conc": 4,
-                "intvty": 75.19,
-                "tputPerGpu": 636.5,
-                "ttft": 0.425
-              },
-              {
-                "conc": 8,
-                "intvty": 62.32,
-                "tputPerGpu": 1054.7,
-                "ttft": 0.436
-              },
-              {
-                "conc": 16,
-                "intvty": 47.54,
-                "tputPerGpu": 1599.4,
-                "ttft": 0.482
-              },
-              {
-                "conc": 32,
-                "intvty": 33.8,
-                "tputPerGpu": 2287.3,
-                "ttft": 0.68
-              },
-              {
-                "conc": 64,
-                "intvty": 22.14,
-                "tputPerGpu": 3051.5,
-                "ttft": 0.937
-              },
-              {
-                "conc": 128,
-                "intvty": 14.04,
-                "tputPerGpu": 3844.2,
-                "ttft": 1.852
-              },
-              {
-                "conc": 256,
-                "intvty": 13.87,
-                "tputPerGpu": 3863.5,
-                "ttft": 68.263
-              }
+              { "conc": 4, "intvty": 75.2, "tputPerGpu": 70.8, "inputTputPerGpu": 565.7, "ttft": 1.32 },
+              { "conc": 8, "intvty": 62.3, "tputPerGpu": 118.6, "inputTputPerGpu": 936.1, "ttft": 2.54 },
+              { "conc": 16, "intvty": 47.5, "tputPerGpu": 177.2, "inputTputPerGpu": 1422.2, "ttft": 5.10 },
+              { "conc": 32, "intvty": 33.8, "tputPerGpu": 255.8, "inputTputPerGpu": 2031.5, "ttft": 10.30 },
+              { "conc": 64, "intvty": 22.1, "tputPerGpu": 338.5, "inputTputPerGpu": 2713.0, "ttft": 20.09 },
+              { "conc": 128, "intvty": 14.0, "tputPerGpu": 425.8, "inputTputPerGpu": 3418.4, "ttft": 38.63 },
+              { "conc": 256, "intvty": 13.9, "tputPerGpu": 429.4, "inputTputPerGpu": 3434.1, "ttft": 102.40 }
             ]
           }
         },
@@ -196,97 +138,61 @@
           "1024/1024": {
             "framework": "sglang",
             "gpusInConfig": 8,
+            "provenance": {
+              "runId": "27431570825",
+              "runUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27431570825",
+              "commit": "7fe8c8d0a4eea1ed21c2840b3b55d4e7526652ce",
+              "date": "2026-06-12",
+              "image": "lmsysorg/sglang:nightly-dev-cu13-20260605-7dc73766",
+              "specMethod": "none",
+              "disagg": false,
+              "prefillTp": 8,
+              "decodeTp": 8,
+              "numPrefillGpu": 8,
+              "numDecodeGpu": 8,
+              "isMultinode": false,
+              "isl": 1024,
+              "osl": 1024,
+              "ttftPercentile": "p99"
+            },
             "points": [
-              {
-                "conc": 4,
-                "intvty": 77.71,
-                "tputPerGpu": 75,
-                "ttft": 0.101
-              },
-              {
-                "conc": 8,
-                "intvty": 67.25,
-                "tputPerGpu": 130.1,
-                "ttft": 0.103
-              },
-              {
-                "conc": 16,
-                "intvty": 56.75,
-                "tputPerGpu": 222.3,
-                "ttft": 0.107
-              },
-              {
-                "conc": 32,
-                "intvty": 45,
-                "tputPerGpu": 350.1,
-                "ttft": 0.112
-              },
-              {
-                "conc": 64,
-                "intvty": 34.77,
-                "tputPerGpu": 541.3,
-                "ttft": 0.121
-              },
-              {
-                "conc": 128,
-                "intvty": 25.27,
-                "tputPerGpu": 796.1,
-                "ttft": 0.135
-              },
-              {
-                "conc": 256,
-                "intvty": 17.85,
-                "tputPerGpu": 1132.8,
-                "ttft": 0.175
-              }
+              { "conc": 4, "intvty": 77.7, "tputPerGpu": 37.3, "inputTputPerGpu": 37.7, "ttft": 0.37 },
+              { "conc": 8, "intvty": 67.2, "tputPerGpu": 65.3, "inputTputPerGpu": 64.8, "ttft": 0.38 },
+              { "conc": 16, "intvty": 56.7, "tputPerGpu": 110.6, "inputTputPerGpu": 111.8, "ttft": 0.43 },
+              { "conc": 32, "intvty": 45.0, "tputPerGpu": 175.3, "inputTputPerGpu": 174.8, "ttft": 0.77 },
+              { "conc": 64, "intvty": 34.8, "tputPerGpu": 270.6, "inputTputPerGpu": 270.7, "ttft": 1.97 },
+              { "conc": 128, "intvty": 25.3, "tputPerGpu": 397.6, "inputTputPerGpu": 398.5, "ttft": 3.35 },
+              { "conc": 256, "intvty": 17.9, "tputPerGpu": 566.7, "inputTputPerGpu": 566.1, "ttft": 5.98 }
             ]
           },
           "8192/1024": {
             "framework": "sglang",
             "gpusInConfig": 8,
+            "provenance": {
+              "runId": "27431570825",
+              "runUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27431570825",
+              "commit": "7fe8c8d0a4eea1ed21c2840b3b55d4e7526652ce",
+              "date": "2026-06-12",
+              "image": "lmsysorg/sglang:nightly-dev-cu13-20260605-7dc73766",
+              "specMethod": "none",
+              "disagg": false,
+              "prefillTp": 8,
+              "decodeTp": 8,
+              "numPrefillGpu": 8,
+              "numDecodeGpu": 8,
+              "isMultinode": false,
+              "isl": 8192,
+              "osl": 1024,
+              "ttftPercentile": "p99"
+            },
             "points": [
-              {
-                "conc": 4,
-                "intvty": 69.27,
-                "tputPerGpu": 296.2,
-                "ttft": 0.371
-              },
-              {
-                "conc": 8,
-                "intvty": 56.74,
-                "tputPerGpu": 473.4,
-                "ttft": 0.364
-              },
-              {
-                "conc": 16,
-                "intvty": 44.08,
-                "tputPerGpu": 742.1,
-                "ttft": 0.377
-              },
-              {
-                "conc": 32,
-                "intvty": 31.99,
-                "tputPerGpu": 1089.6,
-                "ttft": 0.387
-              },
-              {
-                "conc": 64,
-                "intvty": 21.1,
-                "tputPerGpu": 1472.5,
-                "ttft": 0.397
-              },
-              {
-                "conc": 128,
-                "intvty": 13.05,
-                "tputPerGpu": 1824.4,
-                "ttft": 0.444
-              },
-              {
-                "conc": 256,
-                "intvty": 11.94,
-                "tputPerGpu": 1942.8,
-                "ttft": 62.269
-              }
+              { "conc": 4, "intvty": 69.3, "tputPerGpu": 33.0, "inputTputPerGpu": 263.3, "ttft": 1.23 },
+              { "conc": 8, "intvty": 56.7, "tputPerGpu": 53.2, "inputTputPerGpu": 420.2, "ttft": 5.09 },
+              { "conc": 16, "intvty": 44.1, "tputPerGpu": 82.2, "inputTputPerGpu": 659.9, "ttft": 4.72 },
+              { "conc": 32, "intvty": 32.0, "tputPerGpu": 121.8, "inputTputPerGpu": 967.8, "ttft": 9.52 },
+              { "conc": 64, "intvty": 21.1, "tputPerGpu": 163.4, "inputTputPerGpu": 1309.1, "ttft": 19.32 },
+              { "conc": 128, "intvty": 13.0, "tputPerGpu": 202.1, "inputTputPerGpu": 1622.3, "ttft": 37.98 },
+              { "conc": 256, "intvty": 11.9, "tputPerGpu": 215.9, "inputTputPerGpu": 1726.9, "ttft": 103.81 }
             ]
           }
         }
@@ -298,157 +204,65 @@
           "1024/1024": {
             "framework": "vllm",
             "gpusInConfig": 64,
+            "provenance": {
+              "runId": "27575062546",
+              "runUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27575062546",
+              "commit": "417202931e3754cdd565a82294b0a45c6df8f59f",
+              "date": "2026-06-15",
+              "image": "vllm/vllm-openai:minimax-m3",
+              "specMethod": "none",
+              "disagg": false,
+              "prefillTp": 8,
+              "decodeTp": 8,
+              "numPrefillGpu": 64,
+              "numDecodeGpu": 64,
+              "isMultinode": true,
+              "isl": 1024,
+              "osl": 1024,
+              "ttftPercentile": "p99"
+            },
             "points": [
-              {
-                "conc": 1,
-                "intvty": 85.36,
-                "tputPerGpu": 21.2,
-                "ttft": 0.054
-              },
-              {
-                "conc": 2,
-                "intvty": 83.64,
-                "tputPerGpu": 41,
-                "ttft": 0.076
-              },
-              {
-                "conc": 4,
-                "intvty": 81.29,
-                "tputPerGpu": 78.2,
-                "ttft": 0.068
-              },
-              {
-                "conc": 8,
-                "intvty": 75.98,
-                "tputPerGpu": 146.5,
-                "ttft": 0.069
-              },
-              {
-                "conc": 16,
-                "intvty": 67.1,
-                "tputPerGpu": 262.4,
-                "ttft": 0.072
-              },
-              {
-                "conc": 32,
-                "intvty": 56.42,
-                "tputPerGpu": 433.7,
-                "ttft": 0.078
-              },
-              {
-                "conc": 64,
-                "intvty": 47.77,
-                "tputPerGpu": 735.2,
-                "ttft": 0.084
-              },
-              {
-                "conc": 128,
-                "intvty": 39.17,
-                "tputPerGpu": 1207.3,
-                "ttft": 0.113
-              },
-              {
-                "conc": 256,
-                "intvty": 18.9,
-                "tputPerGpu": 1221.8,
-                "ttft": 0.315
-              },
-              {
-                "conc": 256,
-                "intvty": 30.51,
-                "tputPerGpu": 1887.1,
-                "ttft": 0.147
-              },
-              {
-                "conc": 512,
-                "intvty": 12.64,
-                "tputPerGpu": 1661.9,
-                "ttft": 0.447
-              },
-              {
-                "conc": 512,
-                "intvty": 20.91,
-                "tputPerGpu": 2595.6,
-                "ttft": 0.227
-              },
-              {
-                "conc": 1024,
-                "intvty": 8.21,
-                "tputPerGpu": 2192.7,
-                "ttft": 0.674
-              }
+              { "conc": 1, "intvty": 85.4, "tputPerGpu": 10.6, "inputTputPerGpu": 10.6, "ttft": 0.06 },
+              { "conc": 2, "intvty": 83.6, "tputPerGpu": 20.7, "inputTputPerGpu": 20.3, "ttft": 0.41 },
+              { "conc": 4, "intvty": 81.3, "tputPerGpu": 38.9, "inputTputPerGpu": 39.3, "ttft": 0.56 },
+              { "conc": 8, "intvty": 76.0, "tputPerGpu": 73.5, "inputTputPerGpu": 73.0, "ttft": 0.39 },
+              { "conc": 16, "intvty": 67.1, "tputPerGpu": 130.5, "inputTputPerGpu": 131.9, "ttft": 0.51 },
+              { "conc": 32, "intvty": 56.4, "tputPerGpu": 217.2, "inputTputPerGpu": 216.5, "ttft": 2.30 },
+              { "conc": 64, "intvty": 47.8, "tputPerGpu": 367.5, "inputTputPerGpu": 367.7, "ttft": 2.66 },
+              { "conc": 128, "intvty": 39.2, "tputPerGpu": 603.0, "inputTputPerGpu": 604.3, "ttft": 4.93 },
+              { "conc": 256, "intvty": 30.5, "tputPerGpu": 944.0, "inputTputPerGpu": 943.1, "ttft": 8.14 }
             ]
           },
           "8192/1024": {
             "framework": "vllm",
             "gpusInConfig": 64,
+            "provenance": {
+              "runId": "27575062546",
+              "runUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27575062546",
+              "commit": "417202931e3754cdd565a82294b0a45c6df8f59f",
+              "date": "2026-06-15",
+              "image": "vllm/vllm-openai:minimax-m3",
+              "specMethod": "none",
+              "disagg": false,
+              "prefillTp": 8,
+              "decodeTp": 8,
+              "numPrefillGpu": 64,
+              "numDecodeGpu": 64,
+              "isMultinode": true,
+              "isl": 8192,
+              "osl": 1024,
+              "ttftPercentile": "p99"
+            },
             "points": [
-              {
-                "conc": 1,
-                "intvty": 86.38,
-                "tputPerGpu": 94.7,
-                "ttft": 0.231
-              },
-              {
-                "conc": 2,
-                "intvty": 81.38,
-                "tputPerGpu": 176.4,
-                "ttft": 0.26
-              },
-              {
-                "conc": 4,
-                "intvty": 76.22,
-                "tputPerGpu": 326.8,
-                "ttft": 0.263
-              },
-              {
-                "conc": 8,
-                "intvty": 68.47,
-                "tputPerGpu": 583,
-                "ttft": 0.257
-              },
-              {
-                "conc": 16,
-                "intvty": 56.47,
-                "tputPerGpu": 966.9,
-                "ttft": 0.262
-              },
-              {
-                "conc": 32,
-                "intvty": 43.07,
-                "tputPerGpu": 1475.8,
-                "ttft": 0.275
-              },
-              {
-                "conc": 64,
-                "intvty": 30.91,
-                "tputPerGpu": 2160.4,
-                "ttft": 0.404
-              },
-              {
-                "conc": 128,
-                "intvty": 20.5,
-                "tputPerGpu": 2882.7,
-                "ttft": 0.462
-              },
-              {
-                "conc": 128,
-                "intvty": 16.63,
-                "tputPerGpu": 2396.3,
-                "ttft": 0.667
-              },
-              {
-                "conc": 256,
-                "intvty": 12.88,
-                "tputPerGpu": 3631.9,
-                "ttft": 0.645
-              },
-              {
-                "conc": 256,
-                "intvty": 10.31,
-                "tputPerGpu": 2990.7,
-                "ttft": 0.935
-              }
+              { "conc": 1, "intvty": 86.4, "tputPerGpu": 10.6, "inputTputPerGpu": 84.1, "ttft": 0.25 },
+              { "conc": 2, "intvty": 81.4, "tputPerGpu": 19.8, "inputTputPerGpu": 156.6, "ttft": 0.63 },
+              { "conc": 4, "intvty": 76.2, "tputPerGpu": 36.4, "inputTputPerGpu": 290.5, "ttft": 0.81 },
+              { "conc": 8, "intvty": 68.5, "tputPerGpu": 65.5, "inputTputPerGpu": 517.4, "ttft": 2.33 },
+              { "conc": 16, "intvty": 56.5, "tputPerGpu": 107.1, "inputTputPerGpu": 859.7, "ttft": 3.23 },
+              { "conc": 32, "intvty": 43.1, "tputPerGpu": 165.0, "inputTputPerGpu": 1310.8, "ttft": 5.70 },
+              { "conc": 64, "intvty": 30.9, "tputPerGpu": 239.7, "inputTputPerGpu": 1920.7, "ttft": 10.71 },
+              { "conc": 128, "intvty": 20.5, "tputPerGpu": 319.3, "inputTputPerGpu": 2563.4, "ttft": 20.49 },
+              { "conc": 256, "intvty": 12.9, "tputPerGpu": 403.7, "inputTputPerGpu": 3228.2, "ttft": 39.74 }
             ]
           }
         }
