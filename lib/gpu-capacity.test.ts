@@ -135,23 +135,42 @@ describe("GPU-004 — TTFT gate", () => {
 });
 
 describe("GPU-005/006 — topology, extrapolation labels, replica granularity", () => {
-  const minimax = () =>
+  // MiniMax with matching precision (FP8) and input near the 8192 bucket.
+  const minimax = (over: (i: CalcInputs) => void = () => {}) =>
     calculate(
       sh((i) => {
         i.generation.llmModelId = "minimax-m3-oss";
         i.generation.gpuInstanceType = "p6-b200.48xlarge";
         i.generation.weightBits = 8;
+        i.corpus.avgTokensPerDoc = 2000;
+        i.retrieval.topK = 8;
+        i.retrieval.topN = 4;
+        i.chunking.chunkSize = 2048; // input ≈ 8.5K → 8192 bucket
         i.traffic.queriesPerMonth = 500_000_000;
+        over(i);
       }),
       priceBook
     ).crossover;
 
-  it("a 64-GPU benchmark maps to 8 boxes/replica and is labeled extrapolated", () => {
+  it("exact 64-GPU topology STAYS measured when model/precision/sequence match", () => {
     const c = minimax();
     expect(c.capacity.gpusInConfig).toBe(64);
-    expect(c.capacity.instancesPerReplica).toBe(8); // ceil(64/8)
-    expect(c.capacity.source).toBe("extrapolated"); // cross-node topology
-    expect(c.capacity.extrapolationReasons.join(" ")).toMatch(/cross-node/i);
+    expect(c.capacity.instancesPerReplica).toBe(8); // ceil(64/8) = one 8-box serving group
+    expect(c.capacity.seqUsed).toBe("8192/1024");
+    expect(c.capacity.source).toBe("measured"); // whole-box multiple + matching precision/seq
+    expect(c.capacity.extrapolationReasons).toHaveLength(0);
+    // The multi-replica linear-scaling assumption is surfaced as a NOTE, not a downgrade.
+    expect(c.capacity.note ?? "").toMatch(/linear scaling/i);
+  });
+
+  it("a sequence mismatch downgrades the SAME 64-GPU config to extrapolated, with a reason", () => {
+    const c = minimax((i) => {
+      i.retrieval.topN = 4;
+      i.chunking.chunkSize = 700; // input ≈ 2.9K → between buckets, >2× the 1024 bucket
+    });
+    expect(c.capacity.gpusInConfig).toBe(64);
+    expect(c.capacity.source).toBe("extrapolated");
+    expect(c.capacity.extrapolationReasons.join(" ")).toMatch(/far from/i);
   });
 
   it("fleet size respects replica granularity (whole serving groups)", () => {
@@ -169,12 +188,82 @@ describe("GPU-005/006 — topology, extrapolation labels, replica granularity", 
 });
 
 describe("GPU-006 — HA adds physical capacity, not just a percentage", () => {
-  it("N+1 HA raises the billed fleet and cost vs HA off", () => {
+  it("N+1 HA raises the billed fleet and cost vs HA off (1-box replica)", () => {
     const on = calculate(deepseek((i) => (i.generation.haEnabled = true)), priceBook).crossover;
     const off = calculate(deepseek((i) => (i.generation.haEnabled = false)), priceBook).crossover;
     expect(on.replicas).toBe(off.replicas + 1);
     expect(on.requiredInstances).toBeGreaterThan(off.requiredInstances);
     expect(on.selfHostedMonthly$).toBeGreaterThan(off.selfHostedMonthly$);
+  });
+
+  it("N+1 adds exactly ONE complete serving group — 8 boxes for an 8-box replica", () => {
+    const cfg = (ha: boolean) => (i: CalcInputs) => {
+      i.generation.llmModelId = "minimax-m3-oss";
+      i.generation.gpuInstanceType = "p6-b200.48xlarge";
+      i.generation.weightBits = 8;
+      i.generation.haEnabled = ha;
+      i.corpus.avgTokensPerDoc = 2000;
+      i.retrieval.topN = 4;
+      i.chunking.chunkSize = 2048;
+      i.traffic.queriesPerMonth = 2_000_000_000;
+    };
+    const on = calculate(sh(cfg(true)), priceBook).crossover;
+    const off = calculate(sh(cfg(false)), priceBook).crossover;
+    expect(on.instancesPerReplica).toBe(8); // 64-GPU replica = 8 boxes
+    expect(on.replicas).toBe(off.replicas + 1); // exactly one extra replica
+    expect(on.haReplicasAdded).toBe(1);
+    // …which is one COMPLETE serving group = 8 boxes, not a fractional/percentage add.
+    expect(on.requiredInstances - off.requiredInstances).toBe(on.instancesPerReplica);
+    expect(on.requiredInstances - off.requiredInstances).toBe(8);
+  });
+});
+
+describe("provenance gate — non-measured capacity never gives an UNCONDITIONAL positive", () => {
+  it("a proxy-capacity positive verdict is flagged qualified", () => {
+    const c = calculate(
+      sh((i) => {
+        i.generation.llmModelId = "glm-5.2-oss"; // benchmarkProvenance: proxy
+        i.generation.gpuInstanceType = "p6-b200.48xlarge";
+        i.generation.weightBits = 4;
+        i.traffic.queriesPerMonth = 50_000_000;
+      }),
+      priceBook
+    ).crossover;
+    expect(c.capacity.source).toBe("proxy");
+    expect(c.verdict).toBe("self-host efficient");
+    expect(c.verdictQualified).toBe(true); // positive, but qualified
+  });
+
+  it("a heuristic (no benchmark) positive verdict is flagged qualified", () => {
+    // Nemotron has no InferenceX key → heuristic capacity.
+    const c = calculate(
+      sh((i) => {
+        i.generation.llmModelId = "nemotron-3-ultra-oss";
+        i.generation.gpuInstanceType = "p5.48xlarge";
+        i.traffic.queriesPerMonth = 5_000_000;
+      }),
+      priceBook
+    ).crossover;
+    expect(c.capacity.source).toBe("heuristic");
+    if (c.verdict === "self-host efficient") expect(c.verdictQualified).toBe(true);
+  });
+
+  it("ONLY a measured-capacity positive verdict is unqualified", () => {
+    const c = calculate(
+      sh((i) => {
+        i.generation.llmModelId = "deepseek-v4-pro-oss";
+        i.generation.gpuInstanceType = "p6-b200.48xlarge";
+        i.generation.weightBits = 4;
+        i.corpus.avgTokensPerDoc = 2000;
+        i.retrieval.topN = 4;
+        i.chunking.chunkSize = 2048; // input ≈ 8192 bucket → measured
+        i.generation.outTokens = 500;
+        i.traffic.queriesPerMonth = 10_000_000; // light → efficient + feasible
+      }),
+      priceBook
+    ).crossover;
+    expect(c.capacity.source).toBe("measured");
+    if (c.verdict === "self-host efficient") expect(c.verdictQualified).toBe(false);
   });
 });
 

@@ -256,6 +256,8 @@ export function assumptionsToJson(
           ownedCapacity: cx.ownedCapacity,
           replicas: cx.replicas,
           instancesPerReplica: cx.instancesPerReplica,
+          verdict: cx.verdict,
+          verdictQualified: cx.verdictQualified,
           haEnabled: inputs.generation.haEnabled,
           haReplicasAdded: cx.haReplicasAdded,
           capacity: {
@@ -379,7 +381,9 @@ export function buildReport(
   const cx = resultA.crossover;
   lines.push(`## Self-host vs API crossover`);
   lines.push("");
-  lines.push(`- **Verdict:** ${cx.verdict}`);
+  lines.push(
+    `- **Verdict:** ${cx.verdict}${cx.verdictQualified ? ` — QUALIFIED (based on ${cx.capacity.source} capacity, not a direct measurement; validate before committing)` : ""}`
+  );
   if (cx.breakEvenTokens > 0) {
     lines.push(`- **Break-even:** ${Math.round(cx.breakEvenTokens).toLocaleString()} tokens/mo (~${cx.equivalentQPS.toFixed(2)} QPS)`);
     lines.push(`- **Utilization to break even:** ${cx.utilAtBreakEven <= 1 ? `${Math.round(cx.utilAtBreakEven * 100)}%` : `${cx.utilAtBreakEven.toFixed(1)}× capacity (infeasible)`}`);

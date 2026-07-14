@@ -58,6 +58,7 @@ function zeroResult(
     tokensPerQuery,
     outputFraction,
     verdict: "API wins in practice below sustained load",
+    verdictQualified: false,
     curve: [],
   };
 }
@@ -139,6 +140,9 @@ export function computeCrossover(
     feasible && breakEvenFeasible && utilAtBreakEven <= SELF_HOST_UTIL_THRESHOLD
       ? "self-host efficient"
       : "API wins in practice below sustained load";
+  // A positive verdict built on non-measured capacity (proxy/extrapolated/heuristic)
+  // must be presented QUALIFIED — never an unconditional "self-host" recommendation.
+  const verdictQualified = verdict === "self-host efficient" && cap.source !== "measured";
 
   const maxTokens = Math.max(monthlyGenTokens, breakEvenTokens) * 1.5;
   const curve: CrossoverResult["curve"] = [];
@@ -182,6 +186,7 @@ export function computeCrossover(
     tokensPerQuery,
     outputFraction,
     verdict,
+    verdictQualified,
     curve,
   };
 }

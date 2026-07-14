@@ -299,3 +299,24 @@ Coverage: `lib/gpu-capacity.test.ts` (15 cases) pins the above; **101** unit tes
 Max TTFT **2 s** · KV precision **BF16** (independent) · **HA N+1 on** by default · cross-node benchmark =
 one measured replica of `ceil(gpus/8)` boxes with linear replica scaling, labeled **extrapolated** on any
 precision / sequence / model / partial-box mismatch.
+
+### §10a — Pre-handoff confirmations (owner requirements)
+1. **Non-measured capacity never gives an unconditional positive.** A "self-host efficient"
+   verdict built on **proxy / extrapolated / heuristic** capacity sets `crossover.verdictQualified =
+   true`; the grounded card, the crossover verdict, the Markdown report, and the JSON `fleet.verdict*`
+   all show it **qualified** ("not a direct measurement — validate before committing"). Only
+   `source: "measured"` yields an unqualified positive. Tests: *provenance gate* (3 cases).
+2. **Exact topology stays measured on a match.** A benchmark whose GPU count is a whole multiple of
+   the 8-GPU box (incl. the exact 64-GPU case) with matching model/precision/sequence is labeled
+   **measured**; the multi-replica linear-scaling assumption is a **note**, not a downgrade. Any
+   partial box, non-whole-multiple, or precision/sequence/model substitution is **extrapolated** with
+   the reason displayed. Tests: *64-GPU stays measured* + *sequence mismatch → extrapolated*.
+3. **N+1 adds one complete serving group.** For an 8-box replica, HA adds exactly **8 boxes**
+   (`requiredInstances(on) − requiredInstances(off) === instancesPerReplica`), never a fractional or
+   percentage bump. Dedicated test: *N+1 adds exactly ONE complete serving group — 8 boxes*.
+4. **TTFT is never labeled p95.** The baked InferenceX field is an unlabeled `ttft`; the UI/report/JSON
+   say plain **"TTFT"** and make no percentile claim. (Confirmed: no `p95`/`p99`/`percentile` string
+   anywhere in the app.) Per your call, the dataset is **not** expanded this release — deterministic
+   gating and honest provenance take priority.
+
+Suite total after these: **106** unit tests.

@@ -251,7 +251,11 @@ export function ResultsPanel({
                 ? `${formatPercent(crossover.utilAtBreakEven)} fleet utilization needed to break even`
                 : `break-even needs ${crossover.utilAtBreakEven.toFixed(1)}× the fleet's capacity — not achievable`}
             </div>
-            <div className="mt-1 text-xs text-slate-400">{crossover.verdict}.</div>
+            <div className="mt-1 text-xs text-slate-400">
+              {crossover.verdict}.
+              {crossover.verdictQualified &&
+                ` (Qualified — based on ${crossover.capacity.source} capacity, not a direct measurement.)`}
+            </div>
           </div>
         )}
 
@@ -310,6 +314,14 @@ export function ResultsPanel({
                     Extrapolated (not a direct measurement): {cap.extrapolationReasons.join("; ")}.
                   </span>
                 )}
+                {crossover.verdictQualified && (
+                  <span className="mt-1 block text-amber-300">
+                    ⚠ Self-host looks favorable, but this rests on <span className="font-medium">{cap.source}</span>{" "}
+                    capacity — not a direct measurement of this exact configuration. Treat the recommendation as
+                    qualified and validate on your own hardware before committing.
+                  </span>
+                )}
+                {cap.note && <span className="mt-1 block text-slate-500">{cap.note}</span>}
                 <span className="mt-1 block text-slate-500">
                   Benchmark: {cap.benchModelKey} · {cap.framework} · {cap.precisionUsed} · {cap.seqUsed} ·{" "}
                   {cap.gpusInConfig} GPUs measured. Weights {Math.round(cap.weightsGB)} GB (

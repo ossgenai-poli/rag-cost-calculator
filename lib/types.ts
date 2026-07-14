@@ -382,6 +382,9 @@ export interface CrossoverResult {
   tokensPerQuery: number;      // total (input+output) LLM tokens per query — converts the token axis to queries/QPS
   outputFraction: number;      // output ÷ total tokens — converts the token axis to output/input tokens and derives decode util
   verdict: "self-host efficient" | "API wins in practice below sustained load";
+  /** True when a POSITIVE verdict rests on non-measured capacity (proxy/extrapolated/
+   * heuristic) — the recommendation must be shown qualified, never unconditional. */
+  verdictQualified: boolean;
   /** sampled points for the Recharts crossover chart */
   curve: Array<{ tokens: number; api$: number; selfHosted$: number }>;
 }

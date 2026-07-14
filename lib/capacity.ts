@@ -145,12 +145,21 @@ export function computeCapacity(
   const islRatio = perQuery.llmInputTok > 0 && islUsed > 0 ? perQuery.llmInputTok / islUsed : 1;
   if (islRatio > 2 || islRatio < 0.5)
     reasons.push(`input length ${Math.round(perQuery.llmInputTok)} far from benchmarked bucket ${islUsed}`);
-  if (gpusInConfig > perBox && gpusInConfig % perBox !== 0)
-    reasons.push(`benchmark topology (${gpusInConfig} GPUs) does not map to whole ${perBox}-GPU boxes`);
+  // Topology: a config that maps to WHOLE 8-GPU boxes (gpusInConfig a multiple of
+  // perBox, incl. the exact 8-GPU or exact 64-GPU case) is a real measurement of
+  // that serving group — it stays "measured" when model/precision/seq also match.
+  // Only a PARTIAL box or a non-whole-multiple is a genuine topology extrapolation.
+  const wholeBoxMultiple = gpusInConfig % perBox === 0;
   if (gpusInConfig < perBox)
     reasons.push(`benchmark used ${gpusInConfig} of ${perBox} GPUs per box (partial box)`);
-  if (gpusInConfig > perBox)
-    reasons.push(`cross-node topology: ${gpusInConfig} GPUs = ${boxesForTopology} boxes per replica (linear-scaling assumption)`);
+  else if (gpusInConfig > perBox && !wholeBoxMultiple)
+    reasons.push(`benchmark topology (${gpusInConfig} GPUs) does not map to whole ${perBox}-GPU boxes`);
+  // Multi-box replica that maps cleanly: measured per replica; scaling to MULTIPLE
+  // replicas assumes replica independence — surfaced as a note, not a downgrade.
+  const scalingNote =
+    gpusInConfig > perBox && wholeBoxMultiple
+      ? `Measured on a ${gpusInConfig}-GPU (${boxesForTopology}-box) serving group; multiple replicas assume linear scaling.`
+      : undefined;
 
   const provenance = model?.benchmarkProvenance;
   let source: CapacitySource;
@@ -180,9 +189,14 @@ export function computeCapacity(
     precisionUsed: curve.precisionUsed,
     seqUsed: curve.seqUsed,
     note:
-      provenance === "proxy"
-        ? `Grounded via a proxy benchmark (${model?.label} not directly measured).`
-        : undefined,
+      [
+        provenance === "proxy"
+          ? `Grounded via a proxy benchmark (${model?.label} not directly measured).`
+          : undefined,
+        scalingNote,
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined,
   };
 }
 
