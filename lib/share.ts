@@ -88,6 +88,7 @@ const calcInputsSchema = z.object({
       .min(1)
       .default(1)
       .transform((v) => Math.max(1, Math.floor(v))),
+    autoSizeFleet: z.boolean().default(true),
     weightBits: num.min(1).default(16),
     apiComparisonModelId: z.string().default(""),
     apiComparisonInPricePer1K: nonNeg.default(0),
@@ -235,11 +236,26 @@ export function inputsToCsv(result: CalcResult, inputs: CalcInputs): string {
 export function assumptionsToJson(
   inputs: CalcInputs,
   priceBook: PriceBook,
-  asOf: string
+  asOf: string,
+  result?: CalcResult
 ): string {
+  const cx = result?.crossover;
+  // Billed/required fleet (M) so the export reflects what's actually charged, not
+  // just the entered count (N) inside `inputs`. Present only for self-hosted mode.
+  const fleet =
+    cx && inputs.generation.mode === "self-hosted"
+      ? {
+          enteredInstances: cx.userInstances,
+          billedInstances: cx.boxes,
+          requiredInstances: cx.requiredInstances,
+          autoSized: cx.autoSized,
+          feasible: cx.feasible,
+        }
+      : undefined;
   return JSON.stringify(
     {
       exportedFor: "AWS RAG Price Calculator",
+      ...(fleet ? { fleet } : {}),
       pricing: {
         asOf,
         region: priceBook.region,
@@ -336,8 +352,14 @@ export function buildReport(
   lines.push(`## Key assumptions`);
   lines.push("");
   if (selfHosted) {
-    lines.push(`- **GPU:** ${g.gpuInstanceType} at ${usd(g.gpuPricePerHr)}/hr on-demand · ${g.gpuPricingModel} · ${g.gpuUptimeHoursPerMonth} hrs/mo uptime`);
-    lines.push(`- **Fleet:** ${cx.boxes} instance(s); memory floor ${cx.minInstancesToLoad}, throughput needs ${cx.throughputInstances}`);
+    lines.push(`- **GPU:** ${g.gpuInstanceType} at ${usd(g.gpuPricePerHr)}/hr on-demand · ${g.gpuPricingModel} · ${Math.min(730, g.gpuUptimeHoursPerMonth)} hrs/mo uptime`);
+    lines.push(
+      cx.autoSized
+        ? `- **Fleet:** entered ${cx.userInstances}, billed **${cx.boxes}** — auto-sized from ${cx.userInstances} to ${cx.boxes} to serve this workload (memory floor ${cx.minInstancesToLoad}, throughput needs ${cx.throughputInstances})`
+        : !cx.feasible
+          ? `- **Fleet:** ${cx.boxes} instance(s) — **infeasible** for this load (needs ≥ ${cx.requiredInstances}); auto-size is off`
+          : `- **Fleet:** ${cx.boxes} instance(s); memory floor ${cx.minInstancesToLoad}, throughput needs ${cx.throughputInstances}`
+    );
     lines.push(`- **Precision:** ${g.weightBits}-bit weights · ${g.maxContextLen} ctx × ${g.maxConcurrentSeqs} concurrent`);
   } else {
     lines.push(`- **API model:** ${g.llmModelId} (in ${usd(g.llmInPricePer1K, 5)} / out ${usd(g.llmOutPricePer1K, 5)} per 1K)`);

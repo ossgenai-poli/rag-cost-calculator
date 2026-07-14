@@ -48,7 +48,7 @@ function makeInputs(overrides: {
       gpuPricingModel: "on-demand", gpuUptimeHoursPerMonth: 730,
       sustainedTokPerSec: overrides.sustainedTokPerSec,
       utilTarget: overrides.utilTarget ?? 0.5,
-      numInstances: overrides.numInstances ?? 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16, interactivityTarget: 30,
+      numInstances: overrides.numInstances ?? 1, autoSizeFleet: true, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16, interactivityTarget: 30,
     },
     managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
     ops: { networkingMonthly$: 0, observabilityMonthly$: 0, overheadPct: 0 },

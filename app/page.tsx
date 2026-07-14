@@ -156,8 +156,12 @@ export default function Page() {
   }, [resultA, inputs]);
   const onExportJson = useCallback(() => {
     if (inputs && prices)
-      downloadText("rag-assumptions.json", assumptionsToJson(inputs, prices.priceBook, prices.asOf), "application/json");
-  }, [inputs, prices]);
+      downloadText(
+        "rag-assumptions.json",
+        assumptionsToJson(inputs, prices.priceBook, prices.asOf, resultA ?? undefined),
+        "application/json"
+      );
+  }, [inputs, prices, resultA]);
   const onExportReport = useCallback(() => {
     if (resultA && inputs && prices)
       downloadText("rag-cost-report.md", buildReport(inputs, resultA, prices.priceBook, prices.asOf), "text/markdown");

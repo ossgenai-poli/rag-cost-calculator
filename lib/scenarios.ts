@@ -99,21 +99,8 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
 
   // --- Self-built + self-hosted GPU (full stack: infra + GPU fleet) ---
   const gpuTotal = opsOn(infra + selfHostedMonthly);
-  const selfHostedGpu: Scenario = hasVolume
+  const selfHostedGpu: Scenario = !hasVolume
     ? {
-        id: "self-built-gpu",
-        label: "Self-built + GPU",
-        monthly: gpuTotal,
-        per1000: per1000(gpuTotal),
-        diffPct: diffOf(gpuTotal),
-        difference: formatDiff(diffOf(gpuTotal)),
-        note: `${cx.boxes} × ${inputs.generation.gpuInstanceType} at ${Math.round(
-          inputs.generation.utilTarget * 100
-        )}% target util${sizingNote}`,
-        complete: true,
-        highlight: selfHostedMode, // highlighted when it's the selected scenario
-      }
-    : {
         id: "self-built-gpu",
         label: "Self-built + GPU",
         monthly: null,
@@ -123,7 +110,34 @@ export function buildScenarios(result: CalcResult, inputs: CalcInputs): Scenario
         note: "Add traffic to project GPU economics",
         complete: false,
         highlight: false,
-      };
+      }
+    : !cx.feasible
+      ? {
+          // Auto-size is OFF and the entered fleet can't serve the load — suppress
+          // the cost/savings rather than show an inadequate fleet as a valid option.
+          id: "self-built-gpu",
+          label: "Self-built + GPU",
+          monthly: null,
+          per1000: null,
+          diffPct: null,
+          difference: "Infeasible",
+          note: `${cx.boxes} × ${inputs.generation.gpuInstanceType} can't serve this load — needs ≥ ${cx.requiredInstances}. Raise instances or enable auto-size.`,
+          complete: false,
+          highlight: selfHostedMode,
+        }
+      : {
+          id: "self-built-gpu",
+          label: "Self-built + GPU",
+          monthly: gpuTotal,
+          per1000: per1000(gpuTotal),
+          diffPct: diffOf(gpuTotal),
+          difference: formatDiff(diffOf(gpuTotal)),
+          note: `${cx.boxes} × ${inputs.generation.gpuInstanceType} at ${Math.round(
+            inputs.generation.utilTarget * 100
+          )}% target util${sizingNote}`,
+          complete: true,
+          highlight: selfHostedMode, // highlighted when it's the selected scenario
+        };
 
   // --- GPU at break-even traffic (the provisioned fleet's own break-even) ---
   const breakEvenQueries = tokensPerQuery > 0 ? cx.breakEvenTokens / tokensPerQuery : 0;

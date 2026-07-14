@@ -8,6 +8,7 @@ import {
   SelectField,
   Section,
   SliderField,
+  Toggle,
 } from "./controls";
 
 export function GenerationPanel(props: {
@@ -255,6 +256,14 @@ export function GenerationPanel(props: {
           onChange={(v) =>
             onChange({ ...generation, numInstances: Math.max(1, Math.floor(v || 1)) })
           }
+        />
+
+        <Toggle
+          label="Auto-size fleet to workload"
+          hint="On (default): the fleet grows to serve the load and the cost reflects the required count. Off: bill exactly the instances above — if that can't serve the load, the GPU option is marked infeasible and its savings are suppressed."
+          checked={generation.autoSizeFleet !== false}
+          disabled={!selfHosted}
+          onChange={(v) => onChange({ ...generation, autoSizeFleet: v })}
         />
 
         <NumberField

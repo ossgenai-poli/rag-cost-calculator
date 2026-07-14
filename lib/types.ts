@@ -157,6 +157,7 @@ export interface GenerationInputs {
   sustainedTokPerSec: number; // patched from instance (editable)
   utilTarget: number;         // (0,1] target GPU utilization
   numInstances: number;       // provisioned GPU instances; defaults to the min needed to load the model
+  autoSizeFleet: boolean;     // when true (default), bill the fleet up to what serves the load; when false, bill exactly numInstances and mark infeasible if that can't serve it
   weightBits: number;         // weight precision: 16 (BF16/FP16), 8 (FP8/INT8), 4 (INT4) — drives memory
   // API cost COMPARISON model (crossover + "Self-built + API" row). Defaults to
   // the selected model (apples-to-apples); can be a different model as a proxy.
@@ -316,6 +317,7 @@ export interface CrossoverResult {
   userInstances: number;       // the integer count the user requested (before auto-sizing)
   requiredInstances: number;   // max(memory floor, throughput need, grounded need) — the minimum feasible fleet
   autoSized: boolean;          // true when boxes had to exceed the user's requested count to serve the load
+  feasible: boolean;           // false only when auto-size is OFF and the entered fleet can't serve the load
   ownedCapacity: boolean;      // true when the GPU $/hr is 0 (owned/free capacity) — crossover savings not meaningful
   minInstancesToLoad: number;  // memory floor — min instances to hold the weights
   throughputInstances: number; // instances the current load would need for decode throughput

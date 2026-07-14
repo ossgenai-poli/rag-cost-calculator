@@ -256,8 +256,11 @@ function computeForMode(effectiveInputs: CalcInputs, priceBook: PriceBook, repor
   const grounding0 = computeGrounding(effectiveInputs, priceBook, perQuery, crossover0);
   const groundedFloor =
     grounding0.available && grounding0.minInstances != null ? grounding0.minInstances : 0;
+  // Re-run with the grounded floor folded into the requirement so that, whether
+  // auto-size is on (fleet grows) or off (fleet capped → feasibility flag), the
+  // measured requirement is respected everywhere downstream.
   const crossover =
-    groundedFloor > crossover0.boxes
+    groundedFloor > 0
       ? computeCrossover(effectiveInputs, priceBook, perQuery, groundedFloor)
       : crossover0;
   const grounding =
@@ -414,6 +417,7 @@ export function defaultInputs(priceBook: PriceBook): CalcInputs {
       sustainedTokPerSec: gpu.sustainedTokPerSec,
       utilTarget: 0.7,
       numInstances: 1,
+      autoSizeFleet: true,
       weightBits: 16,
       apiComparisonModelId: llmModel.id,
       apiComparisonInPricePer1K: llmModel.inPricePer1K,

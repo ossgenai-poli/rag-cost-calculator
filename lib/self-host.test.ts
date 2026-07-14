@@ -80,7 +80,7 @@ describe("crossover memory floor", () => {
         mode: "self-hosted", llmModelId: "big-oss", llmInPricePer1K: 0.00055, llmOutPricePer1K: 0.00219,
         outTokens: 200, promptOverhead: 100, gpuInstanceType: "p5.48xlarge", gpuPricePerHr: 55.04,
         gpuPricingModel: "on-demand", gpuUptimeHoursPerMonth: 730,
-        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16, interactivityTarget: 30,
+        sustainedTokPerSec: 2600, utilTarget: 0.7, numInstances: 1, autoSizeFleet: true, weightBits: 16, apiComparisonModelId: "", apiComparisonInPricePer1K: 0, apiComparisonOutPricePer1K: 0, maxContextLen: 8192, maxConcurrentSeqs: 16, interactivityTarget: 30,
       },
       managedKb: { retrievalMode: "standard", underlyingRetrievalsPerCall: 2, indexedDataGB: 50 },
       ops: { networkingMonthly$: 0, observabilityMonthly$: 0, overheadPct: 0 },

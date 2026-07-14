@@ -28,6 +28,7 @@ function zeroResult(
     userInstances,
     requiredInstances: 1,
     autoSized: false,
+    feasible: true,
     ownedCapacity,
     minInstancesToLoad: 1,
     throughputInstances: 0,
@@ -125,13 +126,21 @@ export function computeCrossover(
   const peakFactor = traffic.peakFactor > 0 ? traffic.peakFactor : 1;
   const throughputInstances = Math.max(1, Math.ceil((monthlyOutputTokens * peakFactor) / capacityEff));
 
-  // Auto-size the billed fleet to what actually SERVES the load: it can never be
-  // below the memory floor, the throughput need, or an externally-supplied floor
-  // (e.g. grounded/measured throughput). Presenting a cheaper-but-inadequate fleet
-  // as a valid savings was the core P1 bug — the comparison must be apples-to-apples.
+  // The minimum feasible fleet: memory floor + throughput need + any external
+  // (grounded/measured) floor. The model physically can't load below the memory
+  // floor, so that is always enforced; throughput/grounded are what auto-sizing adds.
   const requiredInstances = Math.max(1, minInstancesToLoad, throughputInstances, Math.ceil(minRequiredInstances));
-  const boxes = Math.max(userInstances, requiredInstances);
+  // Auto-size (default): bill up to serve the load — the comparison must be
+  // apples-to-apples, never a cheaper-but-inadequate fleet (P1-a). Manual cap
+  // (autoSizeFleet=false): bill exactly what the user entered (still ≥ memory floor,
+  // which is physical), and flag `feasible=false` if that can't serve the load —
+  // scenarios then mark it infeasible and suppress savings.
+  const autoSize = generation.autoSizeFleet !== false;
+  const boxes = autoSize
+    ? Math.max(userInstances, requiredInstances)
+    : Math.max(userInstances, minInstancesToLoad);
   const autoSized = boxes > userInstances;
+  const feasible = boxes >= requiredInstances;
   const selfHostedMonthly$ = boxes * gpuMonthly$;
 
   const realizedUtil = boxes * capacity100 > 0 ? monthlyOutputTokens / (boxes * capacity100) : 0;
@@ -173,6 +182,7 @@ export function computeCrossover(
     userInstances,
     requiredInstances,
     autoSized,
+    feasible,
     ownedCapacity,
     minInstancesToLoad,
     throughputInstances,

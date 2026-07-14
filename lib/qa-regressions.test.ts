@@ -1,7 +1,7 @@
 // Regression coverage for the rc-qa-1 QA findings (#25, #27, #28).
 import { describe, it, expect } from "vitest";
 import { calculate, defaultInputs } from "./calc-engine";
-import { inputsToCsv } from "./share";
+import { inputsToCsv, assumptionsToJson, buildReport } from "./share";
 import { GPU_COMMITMENT_DISCOUNT, effectiveGpuHourly } from "./self-host";
 import { effectiveRequiredInstances } from "./grounding";
 import { coerceInputs } from "./share";
@@ -171,6 +171,56 @@ describe("rc-qa-2 round 2 — end-user AWS decision findings", () => {
       priceBook
     );
     expect(r.crossover.ownedCapacity).toBe(true);
+  });
+});
+
+describe("rc-qa-3 refinements — entered vs billed fleet, manual cap, M in exports", () => {
+  const heavy = (over: (i: CalcInputs) => void = () => {}) =>
+    selfHosted((i) => {
+      i.traffic.queriesPerMonth = 100_000_000;
+      i.generation.numInstances = 2;
+      over(i);
+    });
+
+  it("auto-size ON: entered count is preserved; billed count exceeds it", () => {
+    const r = calculate(heavy(), priceBook);
+    expect(r.crossover.userInstances).toBe(2); // never silently changed
+    expect(r.crossover.boxes).toBeGreaterThan(2);
+    expect(r.crossover.autoSized).toBe(true);
+    expect(r.crossover.feasible).toBe(true);
+  });
+
+  it("manual cap OFF + insufficient: infeasible, savings suppressed", () => {
+    const i = heavy((x) => { x.generation.autoSizeFleet = false; });
+    const r = calculate(i, priceBook);
+    expect(r.crossover.boxes).toBe(2); // billed exactly what was entered
+    expect(r.crossover.feasible).toBe(false);
+    const gpu = buildScenarios(r, i).find((s) => s.id === "self-built-gpu")!;
+    expect(gpu.monthly).toBeNull(); // suppressed
+    expect(gpu.diffPct).toBeNull(); // no savings claim
+    expect(gpu.difference).toMatch(/infeasible/i);
+  });
+
+  it("manual cap OFF + sufficient: feasible, billed exactly the entered count", () => {
+    const i = heavy((x) => { x.generation.autoSizeFleet = false; });
+    // First find how many are actually required, then provision exactly that.
+    const need = calculate(i, priceBook).crossover.requiredInstances;
+    i.generation.numInstances = need;
+    const r = calculate(i, priceBook);
+    expect(r.crossover.feasible).toBe(true);
+    expect(r.crossover.boxes).toBe(need);
+    expect(r.crossover.autoSized).toBe(false); // entered == billed → no notice
+  });
+
+  it("exports carry the billed fleet M (JSON fleet block + MD auto-size line)", () => {
+    const i = heavy();
+    const r = calculate(i, priceBook);
+    const json = JSON.parse(assumptionsToJson(i, priceBook, "2026-01-01", r));
+    expect(json.fleet.enteredInstances).toBe(2);
+    expect(json.fleet.billedInstances).toBe(r.crossover.boxes);
+    expect(json.fleet.autoSized).toBe(true);
+    const md = buildReport(i, r, priceBook, "2026-01-01");
+    expect(md).toMatch(new RegExp(`auto-sized from 2 to ${r.crossover.boxes}`, "i"));
   });
 });
 

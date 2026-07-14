@@ -237,3 +237,14 @@ Local gates all green on `rc-qa-2`: `typecheck`, **75** unit tests (incl. `qa-re
 
 Coverage: `lib/qa-regressions.test.ts` adds cases for every item above; **82** unit tests pass.
 Gates green on `rc-qa-3`: typecheck · 82 tests · build:static · verify:basepath · test:e2e · verify:live.
+
+### §9a — Auto-size behavior contract (refined per owner requirements)
+Auto-size stays the **default**. The entered count is never silently changed; billing uses the
+required count and every surface is consistent:
+- The entered value **N** stays in the input; the util card shows **"Entered fleet: N · Billed fleet: M"**.
+- When M > N: **"Auto-sized from N to M to serve this workload."** M is used in the headline, scenario
+  table, crossover, cost breakdown, CSV/JSON/MD exports (JSON gains a `fleet` block; MD names both),
+  and reproduces from a shared link (N is stored; M is derived). Enter **M or more** → notice clears.
+- **Manual cap:** a "Auto-size fleet to workload" toggle (default ON). When OFF and the entered fleet
+  can't serve the load, the **Self-built + GPU** scenario is marked **Infeasible** and its cost/savings
+  are **suppressed** (not shown as a valid cheap option). Covered by `qa-regressions.test.ts`.

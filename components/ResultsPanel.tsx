@@ -200,13 +200,27 @@ export function ResultsPanel({
               {crossover.realizedUtil < 0.1
                 ? `The fleet is heavily underutilized — you're paying for ${crossover.boxes} instance(s) to serve a fraction of their decode capacity. An API is usually cheaper at this load.`
                 : `Decode demand ≈ ${Math.round(metrics.monthlyOutputTokens / (730 * 3600)).toLocaleString()} output tok/s vs ${Math.round((crossover.boxes * crossover.capacity100) / (730 * 3600)).toLocaleString()} provisioned.`}
+              <span className="mt-1 block text-slate-300">
+                Entered fleet: <span className="font-medium">{crossover.userInstances}</span> ·{" "}
+                {crossover.feasible ? "Billed" : "Required"} fleet:{" "}
+                <span className="font-medium">
+                  {crossover.feasible ? crossover.boxes : crossover.requiredInstances}
+                </span>
+              </span>
               {crossover.autoSized && (
                 <span className="mt-1 block text-amber-300">
-                  Fleet auto-sized from {crossover.userInstances} to{" "}
-                  <span className="font-medium">{crossover.boxes}</span> instance
-                  {crossover.boxes === 1 ? "" : "s"} to serve this load — the cost and savings
-                  reflect the {crossover.boxes}-instance fleet, not the {crossover.userInstances} you
-                  entered.
+                  Auto-sized from {crossover.userInstances} to{" "}
+                  <span className="font-medium">{crossover.boxes}</span> to serve this workload — the
+                  headline, scenarios, crossover, and exports all use {crossover.boxes}. Enter{" "}
+                  {crossover.boxes} or more to remove this notice.
+                </span>
+              )}
+              {!crossover.feasible && (
+                <span className="mt-1 block text-rose-300">
+                  Infeasible: {crossover.userInstances} instance
+                  {crossover.userInstances === 1 ? "" : "s"} can&apos;t serve this load (needs ≥{" "}
+                  {crossover.requiredInstances}). Auto-size is off, so cost and savings are suppressed
+                  — enable auto-size or raise instances to {crossover.requiredInstances}.
                 </span>
               )}
               {crossover.ownedCapacity && (
