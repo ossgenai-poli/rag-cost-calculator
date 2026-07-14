@@ -90,6 +90,29 @@ the live-pricing suites, deploy the **runtime** build (Vercel; the repo already 
 with a least-privilege AWS key. **Credentials go only into Vercel's secret store — never into the
 repo, never into chat.**
 
+### 5.0 How live pricing actually works (read first — three non-obvious things)
+The `/api/prices` route is declared `export const dynamic = "force-static"` + `revalidate = 3600`.
+That has real consequences for this setup:
+
+1. **The live prices are baked at BUILD time, then cached (ISR, 1-hour revalidate) — not fetched
+   per request.** So the AWS credentials must be present **during Vercel's build**, not only at
+   runtime. Practical rule: **add the env vars first, then deploy** (or redeploy after adding them).
+   Adding creds to an already-built deployment does nothing until it redeploys or the hourly
+   revalidation fires.
+2. **`updatedAt` reflects the build/last-revalidation time, not the moment of the request**, and
+   reloading the page repeatedly returns the same cached snapshot. That is correct behavior — Codex
+   should **not** file it as a staleness bug. To force a fresh pull, **redeploy**.
+3. **`source: "live"` means *at least one* sub-fetch (GPU or OpenSearch) succeeded — not that every
+   price is live.** GPU and OpenSearch are fetched independently; if the GPU fetch fails (e.g. a
+   brand-new instance type like `p6-b200.48xlarge` isn't in the AWS Price List Query API under that
+   exact name), the route silently keeps GPU **defaults** while OpenSearch success still flips the
+   label to `live`. → **Verification must check the actual GPU `pricePerHr` differs from the
+   committed fallback, not just trust the badge.** (See §5d. This partial-live case is itself a
+   legitimate QA finding worth filing if the GPU numbers don't move.)
+
+The AWS Price List Query API endpoint is called from `us-east-1` regardless of `AWS_REGION`;
+`AWS_REGION` only selects which region's *prices* are looked up (default `us-east-1`).
+
 ### 5a. Create the least-privilege AWS credential
 1. AWS Console → **IAM → Policies → Create policy** → JSON tab → paste:
    ```json
@@ -114,22 +137,32 @@ repo, never into chat.**
 3. **Git → Production branch / commit:** pin the deploy to tag **`rc-qa-1`** (Deploy Hooks or
    "Deploy a specific commit" = `5773d25`). This keeps runtime and static on the same tree.
 
-### 5c. Add the secrets (Vercel, not the repo)
-Project → **Settings → Environment Variables** → add for **Production** (and Preview if used):
+### 5c. Add the secrets (Vercel, not the repo) — BEFORE the first build
+Project → **Settings → Environment Variables** → add for **Production** (and Preview if used).
+Do this **before** deploying (per §5.0 #1 — the live fetch runs at build time):
 | Name | Value |
 |---|---|
 | `AWS_REGION` | `us-east-1` |
 | `AWS_ACCESS_KEY_ID` | *(from 5a step 4)* |
 | `AWS_SECRET_ACCESS_KEY` | *(from 5a step 4)* |
 
-### 5d. Deploy & confirm "live"
+Do **not** set `STATIC_EXPORT` / `NEXT_PUBLIC_STATIC_EXPORT` here — leaving them unset is what makes
+the frontend call `/api/prices` and ships the runtime API route. (`vercel.json` already pins
+`buildCommand: npm run build`, which is correct — do not change it to `build:static`.)
+
+### 5d. Deploy & confirm "live" (with the partial-live guard)
 1. Trigger the deploy; note the `*.vercel.app` URL — that is the **runtime preview URL**.
-2. Load it. Confirm live pricing is active by any one of:
-   - the Pricing-sources modal / freshness badge shows a **live** source, **or**
-   - **Export JSON** → `pricing.source == "live"` (static export shows `"fallback"`), **or**
-   - browser Network tab shows a successful `GET /api/prices` returning `source: "live"`.
-3. Hand the QA engineer this URL for the deferred suites. Send the developer word that it's live
-   and I'll help diff live-vs-fallback numbers.
+2. **Check the Vercel build log** for the `/api/prices` prerender — if AWS calls failed at build,
+   you'll see it there and the baked response will be `fallback`.
+3. Load the URL and confirm live pricing:
+   - the Pricing-sources modal / freshness badge shows a **live** source, **and**
+   - **Export JSON** → `pricing.source == "live"` (static export shows `"fallback"`), **and**
+   - **the actual GPU `pricePerHr` in the exported JSON differs from the committed fallback**
+     (compare against `public/prices.json`). If `source: "live"` but the GPU numbers are unchanged,
+     that's the partial-live case from §5.0 #3 — **file it** (likely `p6-b200` / `p5e` missing from
+     the Price List API), don't pass it as green.
+4. To force a fresh pull (the response is cached hourly), **redeploy** — don't wait on reloads.
+5. Send the developer word that it's live and I'll help diff live-vs-fallback numbers.
 
 ### 5e. Clean up after QA
 Deactivate/delete the `ragcalc-qa` access key in IAM once testing is complete (or rotate on a
