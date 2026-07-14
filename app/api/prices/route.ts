@@ -56,38 +56,63 @@ function extractOnDemandUsd(entry: unknown): number | null {
   }
 }
 
-async function fetchGpuPrices(client: PricingClient): Promise<GpuInstancePrice[]> {
+// Resilient: fetch each GPU independently. An instance type that has no
+// OnDemand SKU (e.g. newest GPUs sold only via Capacity Blocks) keeps its
+// catalog default price instead of discarding the whole set. Returns which
+// instances resolved live so the caller can mark `source` accurately.
+async function fetchGpuPrices(
+  client: PricingClient,
+  diag?: Record<string, unknown>
+): Promise<{ gpus: GpuInstancePrice[]; liveCount: number }> {
   const location = ec2Location(REGION);
   const results: GpuInstancePrice[] = [];
+  const perGpu: Array<Record<string, unknown>> = [];
+  let liveCount = 0;
 
   for (const gpu of GPU_DEFAULTS) {
-    const command = new GetProductsCommand({
-      ServiceCode: "AmazonEC2",
-      Filters: [
-        { Type: "TERM_MATCH", Field: "instanceType", Value: gpu.instanceType },
-        { Type: "TERM_MATCH", Field: "tenancy", Value: "Shared" },
-        { Type: "TERM_MATCH", Field: "operatingSystem", Value: "Linux" },
-        { Type: "TERM_MATCH", Field: "capacitystatus", Value: "Used" },
-        { Type: "TERM_MATCH", Field: "preInstalledSw", Value: "NA" },
-        { Type: "TERM_MATCH", Field: "location", Value: location },
-      ],
-      MaxResults: 5,
-    });
-    const res = await client.send(command);
-    let usd: number | null = null;
-    for (const entry of res.PriceList ?? []) {
-      usd = extractOnDemandUsd(entry);
-      if (usd !== null) break;
+    try {
+      const command = new GetProductsCommand({
+        ServiceCode: "AmazonEC2",
+        Filters: [
+          { Type: "TERM_MATCH", Field: "instanceType", Value: gpu.instanceType },
+          { Type: "TERM_MATCH", Field: "tenancy", Value: "Shared" },
+          { Type: "TERM_MATCH", Field: "operatingSystem", Value: "Linux" },
+          { Type: "TERM_MATCH", Field: "capacitystatus", Value: "Used" },
+          { Type: "TERM_MATCH", Field: "preInstalledSw", Value: "NA" },
+          { Type: "TERM_MATCH", Field: "location", Value: location },
+        ],
+        MaxResults: 5,
+      });
+      const res = await client.send(command);
+      const priceListLen = (res.PriceList ?? []).length;
+      let usd: number | null = null;
+      for (const entry of res.PriceList ?? []) {
+        usd = extractOnDemandUsd(entry);
+        if (usd !== null) break;
+      }
+      if (usd !== null) {
+        // sustainedTokPerSec isn't in the Pricing API — merged in from defaults.
+        results.push({ ...gpu, pricePerHr: usd });
+        liveCount++;
+        perGpu.push({ it: gpu.instanceType, priceListLen, usd });
+      } else {
+        results.push({ ...gpu });
+        perGpu.push({ it: gpu.instanceType, priceListLen, usd: null });
+      }
+    } catch (e) {
+      results.push({ ...gpu });
+      perGpu.push({ it: gpu.instanceType, err: e instanceof Error ? e.message : String(e) });
     }
-    if (usd === null) throw new Error(`no OnDemand price for ${gpu.instanceType}`);
-    // sustainedTokPerSec isn't in the Pricing API — merged in from defaults.
-    results.push({ ...gpu, pricePerHr: usd });
   }
 
-  return results;
+  if (diag) diag.perGpu = perGpu;
+  return { gpus: results, liveCount };
 }
 
-async function fetchOpenSearchPrices(client: PricingClient): Promise<OpenSearchPrice> {
+async function fetchOpenSearchPrices(
+  client: PricingClient,
+  diag?: Record<string, unknown>
+): Promise<OpenSearchPrice> {
   const command = new GetProductsCommand({
     ServiceCode: "AmazonOpenSearchServerless",
     Filters: [{ Type: "TERM_MATCH", Field: "regionCode", Value: REGION }],
@@ -98,6 +123,7 @@ async function fetchOpenSearchPrices(client: PricingClient): Promise<OpenSearchP
 
   let ocuPricePerHr: number | null = null;
   let storagePricePerGBmo: number | null = null;
+  const seen: Array<{ u: string; p: number | null }> = [];
 
   for (const entry of entries) {
     // Entries are LazyJsonString objects — coerce with String(), don't typeof-filter.
@@ -109,10 +135,16 @@ async function fetchOpenSearchPrices(client: PricingClient): Promise<OpenSearchP
     }
     const usagetype: string = parsed?.product?.attributes?.usagetype || "";
     const price = extractOnDemandUsd(entry);
+    if (seen.length < 40) seen.push({ u: usagetype, p: price });
     if (price === null) continue;
     // OCU compute appears as usagetypes like "...OCU-IndexingHours" / "SearchOCU".
     if (/OCU|ComputeUnit/i.test(usagetype) && ocuPricePerHr === null) ocuPricePerHr = price;
     if (/Storage|GB-Mo|GB-Month/i.test(usagetype) && storagePricePerGBmo === null) storagePricePerGBmo = price;
+  }
+
+  if (diag) {
+    diag.osEntryCount = entries.length;
+    diag.osUsagetypes = seen;
   }
 
   if (ocuPricePerHr === null || storagePricePerGBmo === null) {
@@ -161,15 +193,16 @@ export async function GET() {
     const client = new PricingClient({ region: "us-east-1" });
 
     try {
-      gpus = await fetchGpuPrices(client);
-      gotLive = true;
+      const gpuResult = await fetchGpuPrices(client, diag);
+      gpus = gpuResult.gpus;
+      if (gpuResult.liveCount > 0) gotLive = true; // live if ANY instance resolved
     } catch (e) {
       gpus = GPU_DEFAULTS; // keep accurate defaults for GPU
       diag.gpuErr = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     }
 
     try {
-      opensearch = await fetchOpenSearchPrices(client);
+      opensearch = await fetchOpenSearchPrices(client, diag);
       gotLive = true;
     } catch (e) {
       opensearch = OPENSEARCH_DEFAULTS; // OCU/storage price is stable — default is fine
