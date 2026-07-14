@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PriceBook } from "@/lib/types";
+import {
+  listBakedBenchmarks,
+  BENCHMARK_SOURCE,
+  BENCHMARK_METHODOLOGY_URL,
+  BENCHMARK_AS_OF,
+  BENCHMARK_TTFT_PERCENTILE,
+} from "@/lib/benchmarks";
 
 interface ToolbarProps {
   shareUrl: string;
@@ -312,6 +319,62 @@ function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
         <div className="mt-1 text-[11px] text-slate-500">
           A globally &ldquo;live&rdquo; price book does not mean every GPU price is live — check each SKU.
         </div>
+      </div>
+      {/* INF-001: InferenceX benchmark provenance — the measured throughput curves. */}
+      <div>
+        <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+          Inference benchmarks (GPU sizing) <SourceBadge kind="published" />
+        </div>
+        <div className="text-[11px] text-slate-500">
+          Self-host GPU sizing is grounded in {BENCHMARK_SOURCE} throughput curves (snapshot {BENCHMARK_AS_OF}
+          ). Decode uses measured output tok/s/GPU; prefill uses measured input tok/s/GPU (scaled to the
+          workload&apos;s input length) — no fixed prefill/decode ratio. TTFT is the{" "}
+          {BENCHMARK_TTFT_PERCENTILE.toUpperCase()} tail. Each curve below is traceable to the exact benchmark
+          run.{" "}
+          <a
+            href={BENCHMARK_METHODOLOGY_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="underline hover:text-slate-300"
+          >
+            Methodology
+          </a>
+          .
+        </div>
+        <table className="mt-1 w-full text-xs">
+          <thead>
+            <tr className="text-left text-slate-500">
+              <th className="pb-1 font-medium">Model</th>
+              <th className="pb-1 font-medium">GPU · precision</th>
+              <th className="pb-1 font-medium">Framework · ISL/OSL</th>
+              <th className="pb-1 font-medium">Measured</th>
+              <th className="pb-1 font-medium">Run</th>
+            </tr>
+          </thead>
+          <tbody>
+            {listBakedBenchmarks().map((b) => (
+              <tr key={`${b.model}-${b.gpu}-${b.precision}-${b.seq}`} className="border-t border-slate-800">
+                <td className="py-1 text-slate-300">{b.model}</td>
+                <td className="py-1 text-slate-400">
+                  {b.gpu} · {b.precision}
+                </td>
+                <td className="py-1 text-slate-400">
+                  {b.framework} · {b.seq} · {b.gpusInConfig} GPU
+                </td>
+                <td className="py-1 tabular-nums text-slate-500">{b.date}</td>
+                <td className="py-1 text-slate-500">
+                  {b.runUrl ? (
+                    <a href={b.runUrl} target="_blank" rel="noreferrer" className="underline hover:text-slate-300">
+                      {b.commit.slice(0, 8)}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

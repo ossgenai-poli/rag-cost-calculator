@@ -277,16 +277,24 @@ export function assumptionsToJson(
                   gpusInConfig: cx.capacity.gpusInConfig,
                 }
               : null,
+            // INF-001: full, independently auditable measurement provenance.
+            provenance: cx.capacity.benchmarkProvenance ?? null,
             extrapolationReasons: cx.capacity.extrapolationReasons,
             chosenConcurrency: cx.capacity.chosenConcurrency,
             perGpuDecodeTokS: cx.capacity.perGpuDecodeTokS,
+            perGpuPrefillTokS: cx.capacity.perGpuPrefillTokS ?? null, // INF-002 (real input throughput)
+            prefillEstimated: cx.capacity.prefillEstimated,
             achievedInteractivity: cx.capacity.achievedInteractivity,
             ttftS: cx.capacity.ttftS,
+            ttftPercentile: cx.capacity.ttftPercentile ?? null, // INF-003
             weightPrecisionBits: cx.capacity.weightPrecisionBits,
             kvPrecisionBits: cx.capacity.kvPrecisionBits,
             weightsGB: cx.capacity.weightsGB,
             kvCacheGB: cx.capacity.kvCacheGB,
           },
+          // INF-004: planning-capacity disclaimer travels with every export.
+          disclaimer:
+            "Planning capacity, not an availability or tail-latency guarantee. Validate with the intended serving stack and a production-shaped load test before committing.",
           demand: {
             avgDecodeTokS: cx.avgDecodeDemand,
             peakDecodeTokS: cx.peakDecodeDemand,
@@ -417,14 +425,27 @@ export function buildReport(
     );
     if (cap.extrapolationReasons.length > 0)
       lines.push(`- **Extrapolation:** ${cap.extrapolationReasons.join("; ")}`);
+    const ttftLbl = cap.ttftPercentile ? `${cap.ttftPercentile.toUpperCase()} TTFT` : "TTFT";
+    const prefillStr = cap.perGpuPrefillTokS != null ? ` · ${Math.round(cap.perGpuPrefillTokS)} prefill tok/s/GPU` : "";
     lines.push(
-      `- **Operating point:** ${cap.chosenConcurrency} concurrent · ${Math.round(cap.perGpuDecodeTokS)} tok/s/GPU · ${Math.round(cap.achievedInteractivity)} tok/s/user (target ${g.interactivityTarget}) · TTFT ${cap.ttftS.toFixed(1)}s (max ${(g.ttftTargetMs / 1000).toFixed(1)}s) · SLA ${cap.slaAchievable ? "met" : "**NOT met — infeasible**"}`
+      `- **Operating point:** ${cap.chosenConcurrency} concurrent · ${Math.round(cap.perGpuDecodeTokS)} decode tok/s/GPU${prefillStr} · ${Math.round(cap.achievedInteractivity)} tok/s/user (target ${g.interactivityTarget}) · ${ttftLbl} ${cap.ttftS.toFixed(1)}s (max ${(g.ttftTargetMs / 1000).toFixed(1)}s) · SLA ${cap.slaAchievable ? "met" : "**NOT met — infeasible**"}`
     );
+    // INF-001: independently auditable measurement provenance.
+    if (cap.benchmarkProvenance) {
+      const p = cap.benchmarkProvenance;
+      lines.push(
+        `- **Benchmark provenance:** ${p.source} · measured ${p.date} · run ${p.runUrl} · recipe ${p.commit.slice(0, 10)} · ${p.image} · ${p.topology} · methodology ${p.methodologyUrl}`
+      );
+    }
     lines.push(
       `- **Topology:** ${cx.replicas} replica(s) × ${cx.instancesPerReplica} box(es) = ${cx.requiredInstances} instances · HA ${g.haEnabled ? `N+1 (on, +${cx.haReplicasAdded} replica)` : "**excluded (off)**"}`
     );
     lines.push(
       `- **Memory:** weights ${Math.round(cap.weightsGB)} GB + KV ${Math.round(cap.kvCacheGB)} GB + reserve → memory floor ${cap.memoryFloorBoxes} box(es)`
+    );
+    // INF-004: planning-capacity disclaimer.
+    lines.push(
+      `- **Disclaimer:** planning capacity, not an availability or tail-latency guarantee. Validate with the intended serving stack and a production-shaped load test before committing.`
     );
   } else {
     lines.push(`- **API model:** ${g.llmModelId} (in ${usd(g.llmInPricePer1K, 5)} / out ${usd(g.llmOutPricePer1K, 5)} per 1K)`);

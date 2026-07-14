@@ -1,4 +1,4 @@
-# QA Handoff — RAG Cost Calculator (RC `rc-qa-8`)
+# QA Handoff — RAG Cost Calculator (RC `rc-qa-9`)
 
 This is the single source of truth for the QA engineer. Everything needed to run the test plan is
 here. Live-pricing suites run against the Vercel runtime (§3/§5); all other suites run against the
@@ -17,8 +17,8 @@ static site.
 
 | | Value |
 |---|---|
-| **Git tag** | `rc-qa-8` |
-| **Commit SHA** | run `git rev-parse rc-qa-8` |
+| **Git tag** | `rc-qa-9` |
+| **Commit SHA** | run `git rev-parse rc-qa-9` |
 | **Static site (live + verified rendering)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
 | **Runtime site (LIVE pricing)** | https://rag-cost-calculator-hazel.vercel.app/ |
 | **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
@@ -28,7 +28,7 @@ Check out the exact tree:
 git clone https://github.com/ossgenai-poli/rag-cost-calculator.git
 cd rag-cost-calculator
 git fetch --tags --force        # the rc tags are re-pointed between rounds
-git checkout rc-qa-8            # detached HEAD at the pinned RC
+git checkout rc-qa-9            # detached HEAD at the pinned RC
 ```
 
 **Pre-verified by the developer on this exact SHA** (so an environment problem is distinguishable
@@ -428,3 +428,30 @@ typecheck · 151 tests · build:static · verify:basepath · test:e2e · verify:
 (queries, output, prompt overhead, documents, query tokens), so the clamp no longer produces a
 misleading zero delta. Coverage: `lib/rc-qa8.test.ts` (+5). Suite total: **156** unit tests.
 Gates green on `rc-qa-8`: typecheck · 156 tests · build:static · verify:basepath · test:e2e · verify:live.
+
+---
+
+## 15. rc-qa-9 — inference hardening (P1/P2): auditable, measured GPU grounding
+
+This round makes the "measured" self-host grounding **procurement-grade**: the throughput data
+was re-baked from the InferenceX benchmark DB with full provenance, and two latent modelling
+errors (a mislabelled decode figure and a fixed prefill ratio) plus an under-specified TTFT
+statistic were corrected. See `research/inference-benchmark-grounding.md`.
+
+| # | Finding | Retest |
+|---|---|---|
+| **INF-001** | Auditable provenance | The grounded card + JSON (`fleet.capacity.provenance`) + Markdown ("Benchmark provenance:") show the exact InferenceX **run URL, recipe commit, measurement date, container image and TP/prefill/decode topology**. The **Pricing sources** modal has an *Inference benchmarks* section listing every baked curve with a link to its run. A point is only labelled **measured** when model/GPU/precision/ISL/OSL/topology **and** a traceable run are all present — else it downgrades to *extrapolated/proxy/heuristic* and the verdict is *qualified*. |
+| **INF-002** | Real prefill throughput (no fixed 8×) | Decode capacity now uses measured **output** tok/s/GPU (was total in+out — an ~2× overcount at short input); prefill capacity uses measured **input** tok/s/GPU, scaled to the workload's ISL. The grounded card + exports show both `decode tok/s/GPU` and `prefill tok/s/GPU`. Input-heavy RAG is correctly **prefill-bound**; longer retrieved context grows the fleet. Only the no-benchmark heuristic path still estimates prefill (from ISL/OSL, with a low/high **range**) and is always *qualified*. |
+| **INF-003** | TTFT percentile | Imported TTFT is now `p99_ttft` (the documented InferenceX tail), labelled **"P99 TTFT"** in the card, JSON (`fleet.capacity.ttftPercentile: "p99"`) and Markdown. The SLA gate compares the customer's target against this P99 tail — a tight tail budget is correctly infeasible. |
+| **INF-004** | Operational disclaimer | The grounded card and both exports carry: *"Planning capacity, not an availability or tail-latency guarantee. Validate with the intended serving stack and a production-shaped load test before committing."* |
+
+**Behavioural change to note (not a regression):** the default `maxConcurrentSeqs` moved `16 → 32`.
+16 was below any real serving deployment and, combined with the now-honest P99 TTFT gate, pinned
+the benchmark selector to a low-concurrency point whose P99 TTFT is warmup-dominated. At 32 the
+selector reaches a well-sampled operating point. The canonical DeepSeek reproduction is now
+**prefill-bound**: at the 200M-query input-heavy workload it sizes to **86** throughput boxes **+1**
+N+1 HA = **87** (was 33 under the old total-throughput/fixed-8× model).
+
+Coverage: `lib/rc-qa9.test.ts` (+11), plus updated `lib/gpu-capacity.test.ts` and default-driven
+fixtures. Suite total: **167** unit tests. Gates green on `rc-qa-9`: typecheck · 167 tests ·
+build:static · verify:basepath · test:e2e · verify:live.

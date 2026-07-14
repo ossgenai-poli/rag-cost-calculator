@@ -28,6 +28,13 @@ function formatPercent(fraction: number): string {
   return `${(fraction * 100).toFixed(0)}%`;
 }
 
+/** INF-003: label the TTFT statistic by its actual percentile so a customer never
+ * compares an unspecified TTFT against a tail-latency SLA. */
+function ttftLabel(percentile: string | undefined): string {
+  if (!percentile) return "TTFT";
+  return `${percentile.toUpperCase()} TTFT`;
+}
+
 /** Compact magnitude: scientific for very large numbers (P2-2) so a 1e308 entry
  * reads "1e+308" instead of a 309-digit integer; readable locale below 1e15. */
 function fmtMagnitude(v: number): string {
@@ -345,13 +352,20 @@ export function ResultsPanel({
               </div>
               <div className="mt-1 text-xs text-slate-400">
                 Operating point: <span className="text-slate-200">{cap.chosenConcurrency} concurrent</span> →{" "}
-                <span className="text-slate-200">{Math.round(cap.perGpuDecodeTokS)} tok/s/GPU</span>,{" "}
+                <span className="text-slate-200">{Math.round(cap.perGpuDecodeTokS)} decode tok/s/GPU</span>
+                {cap.perGpuPrefillTokS != null && (
+                  <>
+                    ,{" "}
+                    <span className="text-slate-200">{Math.round(cap.perGpuPrefillTokS)} prefill tok/s/GPU</span>
+                  </>
+                )}
+                ,{" "}
                 <span className={cap.interactivityMet ? "text-slate-200" : "text-rose-300"}>
                   {Math.round(cap.achievedInteractivity)} tok/s/user
                 </span>{" "}
                 (target {grounding.interactivityTarget}),{" "}
                 <span className={cap.ttftMet ? "text-slate-200" : "text-rose-300"}>
-                  TTFT {cap.ttftS.toFixed(1)}s
+                  {ttftLabel(cap.ttftPercentile)} {cap.ttftS.toFixed(1)}s
                 </span>{" "}
                 (max {(inputs.generation.ttftTargetMs / 1000).toFixed(1)}s). Peak demand{" "}
                 {Math.round(crossover.peakDecodeDemand).toLocaleString()} output tok/s ÷{" "}
@@ -381,6 +395,36 @@ export function ResultsPanel({
                   Benchmark: {cap.benchModelKey} · {cap.framework} · {cap.precisionUsed} · {cap.seqUsed} ·{" "}
                   {cap.gpusInConfig} GPUs measured. Weights {Math.round(cap.weightsGB)} GB (
                   {cap.weightPrecisionBits}-bit) + KV {Math.round(cap.kvCacheGB)} GB ({cap.kvPrecisionBits}-bit).
+                </span>
+                {/* INF-001: independently auditable provenance — traceable to the exact run. */}
+                {cap.benchmarkProvenance && (
+                  <span className="mt-1 block text-slate-500">
+                    Source: {cap.benchmarkProvenance.source} (
+                    <a
+                      href={cap.benchmarkProvenance.methodologyUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline hover:text-slate-300"
+                    >
+                      methodology
+                    </a>
+                    ), measured {cap.benchmarkProvenance.date} ·{" "}
+                    <a
+                      href={cap.benchmarkProvenance.runUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline hover:text-slate-300"
+                    >
+                      run {cap.benchmarkProvenance.runId}
+                    </a>{" "}
+                    · recipe {cap.benchmarkProvenance.commit.slice(0, 10)} · {cap.benchmarkProvenance.image} ·{" "}
+                    {cap.benchmarkProvenance.topology}. {ttftLabel(cap.ttftPercentile)} is the reported tail latency.
+                  </span>
+                )}
+                {/* INF-004: planning-capacity disclaimer, not an availability/SLO guarantee. */}
+                <span className="mt-1 block text-slate-500">
+                  Planning capacity, not an availability or tail-latency guarantee. Validate with your intended
+                  serving stack and a production-shaped load test before committing.
                 </span>
               </div>
             </div>
