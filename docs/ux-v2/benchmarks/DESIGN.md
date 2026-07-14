@@ -229,6 +229,16 @@ Plus determinism: the selector is a pure function of (RequestSpec, pinned catalo
   before coercion) · **P2-1** `opEqual` compares throughput/TTFT/concurrency/interactivity · **P2-2**
   manifest checksums verified at ingest + `LICENSE-MANIFEST.md` + verified-requires-non-TBD-revision.
 
+### Round-3 hardening
+- **Complete exact contract:** measured-exact requires checkpoint + full TP/PP/EP + explicit
+  **prefixCache/specDecode**; unknown record prefix-cache/spec-decode → not exact. The verified
+  InferenceX snapshot lacks prefix-cache metadata → honestly `unbenchmarked` (fail-closed).
+- **Shared strict raw validation** (`raw-validate.ts`) across every adapter + numeric field — no
+  string/boolean coercion anywhere.
+- **Evidence hygiene:** production `HOST_ALLOWLIST` is **empty** (no invented reviewed entry); records
+  carry the **specific** `awsRepresentativeInstances` they represent (not a boolean); tests inject a
+  temporary fixture only.
+
 ---
 
 ## Guardrails (restated)

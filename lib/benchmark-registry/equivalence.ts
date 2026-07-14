@@ -39,15 +39,11 @@ export interface HostEquivalenceEntry {
   reviewedBy: string;
 }
 
-export const HOST_ALLOWLIST: HostEquivalenceEntry[] = [
-  {
-    recordHost: "hgx-h200-reviewed",
-    awsInstance: "p5en.48xlarge",
-    compatible: { power: true, memoryConfig: true, interconnect: true, servingTopology: true },
-    materialDifferences: "HGX H200 reference vs p5en: identical accelerator; host/cooling/power envelope differ — validated equivalent for planning.",
-    reviewedBy: "hardware-registry-review",
-  },
-];
+// PRODUCTION allowlist is EMPTY — no host equivalence has a real, traceable review yet,
+// and the slice must not invent reviewed compatibility. A genuine entry must cite a review
+// artifact and name the specific AWS instance(s) represented. Unit tests inject a temporary
+// fixture (and clear it) rather than shipping a synthetic entry here.
+export const HOST_ALLOWLIST: HostEquivalenceEntry[] = [];
 
 /** Reviewed host proxy for (recordHost → awsInstance), or null (→ deny → unbenchmarked). */
 export function hostEquivalence(recordHost: string, awsInstance: string | undefined): HostEquivalenceEntry | null {

@@ -1,7 +1,7 @@
 // MLPerf Inference adapter — independent-reviewed validation anchor. Pure & deterministic.
 // A single result is a latency/accuracy-qualified point, NOT a full concurrency curve.
 import type { BenchmarkRecord, Reason, SourceAdapter } from "../schema";
-import { SchemaError } from "./inferencex";
+import { SchemaError, strictNum, strictNumOpt } from "../raw-validate";
 import { sha256 } from "../hash";
 
 export const mlperfAdapter: SourceAdapter = {
@@ -26,7 +26,7 @@ export const mlperfAdapter: SourceAdapter = {
     if (snap.kind === "illustrative-pending-ingestion") {
       intrinsic.push({ code: "illustrative-snapshot", dimension: "provenance", message: "Illustrative pinned snapshot; numeric result pending real ingestion — not a verified measurement." });
     }
-    const gpuCount = Number(sys.accelerator_count);
+    const gpuCount = strictNum(sys.accelerator_count, "system.accelerator_count");
     return [
       {
         id: `mlp:${res.benchmark}:${skuKey(sys.accelerator)}:${res.workload.isl}/${res.workload.osl}:${res.scenario}`,
@@ -49,29 +49,29 @@ export const mlperfAdapter: SourceAdapter = {
         frameworkVersion: res.software.version,
         gpuSku: skuKey(sys.accelerator),
         formFactor: sys.form_factor,
-        gpuMemGB: Number(sys.gpu_mem_gb),
+        gpuMemGB: strictNum(sys.gpu_mem_gb, "system.gpu_mem_gb"),
         gpuCount,
         nodeCount: 1,
         topology: `${res.scenario} · ${gpuCount}× ${skuKey(sys.accelerator)}`,
         interconnect: sys.interconnect,
         parallelism: { tp: gpuCount, pp: 1, ep: 1, dp: 1 },
         serving: "aggregated",
-        // A submitter system is NOT an AWS instance unless it actually was one.
+        // A submitter system is NOT an AWS instance → represents no AWS instances directly.
         hostSystem: String(sys.name),
-        hostIsAwsRepresentative: false,
-        isl: Number(res.workload.isl),
-        osl: Number(res.workload.osl),
+        awsRepresentativeInstances: [],
+        isl: strictNum(res.workload.isl, "workload.isl"),
+        osl: strictNum(res.workload.osl, "workload.osl"),
         concurrency: null, // Server scenario is request-rate driven, not fixed concurrency
         requestRate: null,
         prefixCache: null,
         specDecode: null,
-        outputTputPerGpu: perGpuReported ? Number(meas.per_accelerator_tokens_per_second) : null,
-        inputTputPerGpu: meas.input_tokens_per_second_per_accelerator != null ? Number(meas.input_tokens_per_second_per_accelerator) : null,
+        outputTputPerGpu: perGpuReported ? strictNum(meas.per_accelerator_tokens_per_second, "per_accelerator_tokens_per_second") : null,
+        inputTputPerGpu: strictNumOpt(meas.input_tokens_per_second_per_accelerator, "input_tokens_per_second_per_accelerator"),
         intvty: null,
-        ttft: meas.ttft_p99_ms != null ? { value: Number(meas.ttft_p99_ms) / 1000, percentile: "p99" } : null,
-        tpot: meas.tpot_p99_ms != null ? Number(meas.tpot_p99_ms) / 1000 : null,
+        ttft: meas.ttft_p99_ms != null ? { value: strictNum(meas.ttft_p99_ms, "ttft_p99_ms") / 1000, percentile: "p99" } : null,
+        tpot: meas.tpot_p99_ms != null ? strictNum(meas.tpot_p99_ms, "tpot_p99_ms") / 1000 : null,
         itl: null,
-        throughputTotal: meas.tokens_per_second_system != null ? Number(meas.tokens_per_second_system) : null,
+        throughputTotal: strictNumOpt(meas.tokens_per_second_system, "tokens_per_second_system"),
         perGpuReported,
         // MLPerf Server enforces a latency constraint that was met → latency-qualified.
         latencyQualified: res.latency_constraints != null && meas.ttft_p99_ms != null,

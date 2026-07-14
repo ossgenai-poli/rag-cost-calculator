@@ -84,10 +84,12 @@ export interface BenchmarkRecord {
   interconnect: string;
   parallelism: { tp: number; pp: number; ep: number; dp: number };
   serving: Serving;
-  /** The system the measurement ran on, and whether it represents the requested AWS host.
-   *  A non-AWS system (HGX/DGX) used for an AWS request is a host PROXY, never exact. */
+  /** The system the measurement ran on. */
   hostSystem: string;
-  hostIsAwsRepresentative: boolean;
+  /** The SPECIFIC AWS instance(s) this measurement directly represents (from the reviewed
+   *  hardware registry), not a broad boolean. Empty ⇒ not an AWS-representative measurement
+   *  (usable only via a reviewed host equivalence). */
+  awsRepresentativeInstances: string[];
   // workload
   isl: number;
   osl: number;
@@ -139,8 +141,12 @@ export interface RequestSpec {
   gpuCount?: number;
   nodeCount?: number;
   serving?: Serving;
-  /** Required parallelism to match (topology). */
-  parallelism?: { tp?: number; pp?: number; ep?: number };
+  /** Required full parallelism to match (topology) for a measured-exact claim. */
+  parallelism?: { tp: number; pp: number; ep: number };
+  /** Prefix-cache and speculative-decoding states — materially affect performance;
+   *  required for measured-exact and matched explicitly. */
+  prefixCache?: boolean;
+  specDecode?: string;
   isl: number;
   osl: number;
   /** The operating concurrency; an exact label requires this to match the measured point. */

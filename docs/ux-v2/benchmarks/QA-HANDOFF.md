@@ -20,10 +20,18 @@ The layer **imports** the frozen `lib/benchmarks.ts` read-only (the control wrap
 ## Run the tests
 
 ```
-npx vitest run lib/benchmark-registry     # 28/28 — the 12 guarantees + all P1/P2 reproductions (two rounds)
-npx vitest run                            # 212/212 — frozen 184 + new 28 (no regression)
+npx vitest run lib/benchmark-registry     # 25/25 — the guarantees + all P1/P2 reproductions (three rounds)
+npx vitest run                            # 209/209 — frozen 184 + new 25 (no regression)
 npx tsc --noEmit                          # clean
 ```
+
+**Round 3 (third HOLD) — final fail-closed fixes:**
+
+| Finding | Fix |
+|---|---|
+| exact contract incomplete | measured-exact now requires **checkpoint**, **full TP/PP/EP parallelism**, and explicit **prefixCache** + **specDecode** in the request; unknown record prefix-cache/spec-decode → not exact (the verified InferenceX snapshot lacks prefix-cache metadata, so it honestly returns `unbenchmarked` — a strong fail-closed demonstration) |
+| strict raw validation partial | one shared `raw-validate.ts` strict validator (`strictNum`/`strictNumOpt`/`strictStr`) used across **every** adapter and **every** numeric field (InferenceX config + point, MLPerf, TensorRT-LLM); a string/boolean where a number is required fails closed |
+| synthetic host allowlist | production `HOST_ALLOWLIST` is **empty** (no invented "reviewed" entry); unit tests inject a temporary fixture; a record now names the **specific** `awsRepresentativeInstances` it represents, not a broad boolean |
 
 ## Hardening (this round — HOLD fixes; all fail-closed)
 

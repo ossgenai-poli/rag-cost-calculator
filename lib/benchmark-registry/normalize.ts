@@ -3,7 +3,7 @@
 // unverified snapshot with a TBD revision — REJECTS the snapshot rather than admitting
 // a corrupt or over-trusted record.
 import type { BenchmarkRecord, Percentile, Serving, SnapshotKind, SourceAdapter, SourceClass } from "./schema";
-import { SchemaError } from "./sources/inferencex";
+import { SchemaError } from "./raw-validate";
 
 const SOURCE_CLASSES: SourceClass[] = ["independent-reviewed", "open-reproducible", "vendor-measured", "research-measured"];
 const SNAPSHOT_KINDS: SnapshotKind[] = ["verified", "illustrative-pending-ingestion"];
@@ -43,7 +43,7 @@ export function validateRecord(rec: BenchmarkRecord): void {
   for (const f of ["modelId", "checkpoint", "weightPrecision", "framework", "gpuSku", "formFactor", "topology", "interconnect", "hostSystem", "measuredDate"] as const) {
     if (!rec[f] || typeof rec[f] !== "string") fail(id, `missing/invalid string "${f}"`);
   }
-  if (typeof rec.hostIsAwsRepresentative !== "boolean") fail(id, "hostIsAwsRepresentative must be boolean");
+  if (!Array.isArray(rec.awsRepresentativeInstances) || rec.awsRepresentativeInstances.some((x) => typeof x !== "string")) fail(id, "awsRepresentativeInstances must be a string[]");
   if (typeof rec.perGpuReported !== "boolean") fail(id, "perGpuReported must be boolean");
   if (typeof rec.latencyQualified !== "boolean") fail(id, "latencyQualified must be boolean");
   if (!SERVINGS.includes(rec.serving)) fail(id, `invalid serving "${rec.serving}"`);

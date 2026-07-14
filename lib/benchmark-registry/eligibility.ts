@@ -15,8 +15,8 @@ const PCTL_RANK: Record<Percentile, number> = { mean: 0, p50: 0, p90: 1, p95: 2,
 
 // Decision-critical request fields — an under-specified request can never be measured-exact.
 const REQUIRED_REQUEST: (keyof RequestSpec)[] = [
-  "modelId", "weightPrecision", "kvPrecision", "framework", "gpuSku", "awsInstance",
-  "gpuCount", "nodeCount", "serving", "isl", "osl", "concurrency",
+  "modelId", "checkpoint", "weightPrecision", "kvPrecision", "framework", "gpuSku", "awsInstance",
+  "gpuCount", "nodeCount", "serving", "prefixCache", "specDecode", "isl", "osl", "concurrency",
 ];
 
 export function evaluate(record: BenchmarkRecord, req: RequestSpec): EvidenceMatch {
@@ -29,8 +29,9 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec): EvidenceMat
     reasons: [...reasons, { code, dimension, message }],
   });
 
-  // Request completeness — missing identity/topology fields → unbenchmarked.
-  const missing = REQUIRED_REQUEST.filter((k) => req[k] == null);
+  // Request completeness — missing identity/topology/config fields → unbenchmarked.
+  const missing: string[] = REQUIRED_REQUEST.filter((k) => req[k] == null).map((k) => String(k));
+  if (!req.parallelism || req.parallelism.tp == null || req.parallelism.pp == null || req.parallelism.ep == null) missing.push("parallelism{tp,pp,ep}");
   if (missing.length) return deny("incomplete-request", "request", `request missing decision-critical field(s): ${missing.join(", ")}`);
 
   // P1-1: only verified snapshots are ever selectable.
@@ -43,10 +44,9 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec): EvidenceMat
   if (!mappedAccel) return deny("unknown-aws-instance", "hardware", `AWS instance "${req.awsInstance}" is not in the reviewed instance→accelerator map`);
   if (mappedAccel !== req.gpuSku) return deny("instance-accelerator-inconsistent", "hardware", `instance ${req.awsInstance} is ${mappedAccel}, not the requested ${req.gpuSku}`);
 
-  // Model must match — never transfer one model's performance to another.
-  if (record.modelId !== req.modelId || (req.checkpoint && record.checkpoint !== req.checkpoint)) {
-    return deny("model-mismatch", "model", `record model ${record.modelId} ≠ requested ${req.modelId}`);
-  }
+  // Model + exact checkpoint must match — never transfer one model's performance to another.
+  if (record.modelId !== req.modelId) return deny("model-mismatch", "model", `record model ${record.modelId} ≠ requested ${req.modelId}`);
+  if (record.checkpoint !== req.checkpoint) return deny("checkpoint-mismatch", "model", `record checkpoint ${record.checkpoint} ≠ requested ${req.checkpoint}`);
   // Precision (weight independent of KV). Unknown/mismatched → unbenchmarked (no precision transform).
   if (record.weightPrecision !== req.weightPrecision) return deny("weight-precision-mismatch", "precision", `weight ${record.weightPrecision} ≠ requested ${req.weightPrecision}`);
   if (record.kvPrecision == null) return deny("kv-precision-unknown", "kv-precision", `record KV precision unknown; cannot be exact for requested ${req.kvPrecision}`);
@@ -61,9 +61,11 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec): EvidenceMat
     if (!eq) return deny("gpu-not-equivalent", "hardware", `${record.gpuSku} is not a reviewed equivalent of ${req.gpuSku}`);
     hostSwapped = true;
     reasons.push({ code: "gpu-proxy", dimension: "hardware", message: `reviewed equivalence ${eq.from}→${eq.to}: ${eq.materialDifferences}` });
-  } else if (!record.hostIsAwsRepresentative) {
+  } else if (!record.awsRepresentativeInstances.includes(req.awsInstance!)) {
+    // Same accelerator, but this measurement does not directly represent the requested
+    // instance — only a REVIEWED host equivalence permits a proxy (deny by default).
     const he = hostEquivalence(record.hostSystem, req.awsInstance);
-    if (!he) return deny("host-not-equivalent", "hardware", `measured on ${record.hostSystem}, not AWS-representative and no reviewed host equivalence for ${req.awsInstance}`);
+    if (!he) return deny("host-not-equivalent", "hardware", `measured on ${record.hostSystem} (represents ${JSON.stringify(record.awsRepresentativeInstances)}), no reviewed host equivalence for ${req.awsInstance}`);
     hostSwapped = true;
     reasons.push({ code: "host-proxy", dimension: "hardware", message: `reviewed host equivalence ${he.recordHost}→${he.awsInstance}: ${he.materialDifferences}` });
   }
@@ -72,12 +74,16 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec): EvidenceMat
   if (record.gpuCount !== req.gpuCount) return deny("gpu-count-mismatch", "topology", `record ${record.gpuCount}-GPU group ≠ requested ${req.gpuCount}`);
   if (record.nodeCount !== req.nodeCount) return deny("node-count-mismatch", "topology", `record ${record.nodeCount} node(s) ≠ requested ${req.nodeCount}`);
   if (record.serving !== req.serving) return deny("serving-mismatch", "topology", `${record.serving} ≠ requested ${req.serving}`);
-  if (req.parallelism) {
-    for (const k of ["tp", "pp", "ep"] as const) {
-      const want = req.parallelism[k];
-      if (want != null && record.parallelism[k] !== want) return deny(`${k}-mismatch`, "topology", `${k.toUpperCase()} ${record.parallelism[k]} ≠ requested ${want}`);
-    }
+  for (const k of ["tp", "pp", "ep"] as const) {
+    if (record.parallelism[k] !== req.parallelism![k]) return deny(`${k}-mismatch`, "topology", `${k.toUpperCase()} ${record.parallelism[k]} ≠ requested ${req.parallelism![k]}`);
   }
+
+  // Prefix-cache and speculative-decoding materially affect performance — required for
+  // measured-exact; unknown on the record → cannot be exact (P1).
+  if (record.prefixCache == null) return deny("prefix-cache-unknown", "config", "record does not report prefix-cache behavior; cannot be measured-exact");
+  if (record.prefixCache !== req.prefixCache) return deny("prefix-cache-mismatch", "config", `prefix-cache ${record.prefixCache} ≠ requested ${req.prefixCache}`);
+  if (record.specDecode == null) return deny("spec-decode-unknown", "config", "record does not report speculative-decoding state; cannot be measured-exact");
+  if (record.specDecode !== req.specDecode) return deny("spec-decode-mismatch", "config", `spec-decode ${record.specDecode} ≠ requested ${req.specDecode}`);
 
   // OSL mismatch → unbenchmarked (no OSL transform).
   const tol = req.seqTolerance ?? DEFAULT_SEQ_TOL;

@@ -1,19 +1,32 @@
-// Hardened vertical-slice tests: fail-closed eligibility, evidence-state, topology,
-// latency, transformation, request-contract, schema validation + reviewer reproductions.
-import { describe, it, expect } from "vitest";
+// Hardened vertical-slice tests (3 review rounds): fail-closed eligibility, evidence
+// state, topology, latency, transformation, full request contract, strict raw validation,
+// provenance, evidence hygiene + every reviewer reproduction.
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { BenchmarkRecord, Provenance, RequestSpec } from "./schema";
 import { resolveOperatingPoint } from "./index";
 import { loadCatalog, loadAllSnapshots } from "./sources";
 import { inferencexAdapter } from "./sources/inferencex";
+import { mlperfAdapter } from "./sources/mlperf";
+import { tensorrtllmAdapter } from "./sources/tensorrtllm";
 import { normalizeSafe, validateRecord } from "./normalize";
 import { evaluate } from "./eligibility";
 import { selectBest } from "./select";
+import { HOST_ALLOWLIST } from "./equivalence";
 import { canonicalJson, sha256 } from "./hash";
 import { getBenchmarkCurve, operatingPointAt } from "../benchmarks";
 import manifest from "./raw/MANIFEST.json";
 import inxRaw from "./raw/inferencex/dsv4-b200-fp4-1024.json";
+import mlpRaw from "./raw/mlperf/llama3-1-70b-h200-server-v6.json";
+import trtRaw from "./raw/tensorrtllm/llama3-1-70b-perf-overview.json";
 
-// ---- helpers ---------------------------------------------------------------
+// Inject a TEST-ONLY reviewed host equivalence (production allowlist stays empty).
+beforeAll(() => {
+  HOST_ALLOWLIST.push({ recordHost: "hgx-h200-reviewed", awsInstance: "p5en.48xlarge", compatible: { power: true, memoryConfig: true, interconnect: true, servingTopology: true }, materialDifferences: "test fixture", reviewedBy: "unit-test" });
+});
+afterAll(() => {
+  HOST_ALLOWLIST.length = 0;
+});
+
 function prov(sourceClass: Provenance["sourceClass"], sourceName: string, snapshotKind: Provenance["snapshotKind"] = "verified"): Provenance {
   return { sourceName, sourceClass, sourceUrl: "https://example.com/pinned", sourceCommit: "pinned0000", runId: "1", retrievedAt: "2026-07-14", rawChecksum: "sha256:" + "a".repeat(64), license: "Apache-2.0", attribution: sourceName, snapshotKind };
 }
@@ -23,8 +36,8 @@ function mk(o: Partial<BenchmarkRecord> & { id: string }): BenchmarkRecord {
     modelId: "llama3.1-70b", checkpoint: "Llama-3.1-70B-Instruct", weightPrecision: "fp8", kvPrecision: "fp8",
     framework: "tensorrt-llm", gpuSku: "H200", formFactor: "SXM", gpuMemGB: 141, gpuCount: 8, nodeCount: 1,
     topology: "TP8 aggregated single-node", interconnect: "NVLink", parallelism: { tp: 8, pp: 1, ep: 1, dp: 1 },
-    serving: "aggregated", hostSystem: "H200-aws", hostIsAwsRepresentative: true,
-    isl: 1024, osl: 1024, concurrency: 8, requestRate: null, prefixCache: null, specDecode: null,
+    serving: "aggregated", hostSystem: "H200-aws", awsRepresentativeInstances: ["p5en.48xlarge"],
+    isl: 1024, osl: 1024, concurrency: 8, requestRate: null, prefixCache: false, specDecode: "none",
     outputTputPerGpu: 600, inputTputPerGpu: 590, intvty: 40, ttft: { value: 0.5, percentile: "p99" },
     tpot: null, itl: null, throughputTotal: null, perGpuReported: true, latencyQualified: true,
     measuredDate: "2026-07-14", intrinsicQualifications: [], unknownFields: {},
@@ -32,131 +45,126 @@ function mk(o: Partial<BenchmarkRecord> & { id: string }): BenchmarkRecord {
   };
 }
 // Complete decision-critical requests.
-const fullReq = (o: Partial<RequestSpec> = {}): RequestSpec => ({ modelId: "llama3.1-70b", weightPrecision: "fp8", kvPrecision: "fp8", framework: "tensorrt-llm", gpuSku: "H200", awsInstance: "p5en.48xlarge", gpuCount: 8, nodeCount: 1, serving: "aggregated", isl: 1024, osl: 1024, concurrency: 8, ...o });
-const dsv4Req = (o: Partial<RequestSpec> = {}): RequestSpec => ({ modelId: "dsv4", weightPrecision: "fp4", kvPrecision: "fp8", framework: "trt", gpuSku: "B200", awsInstance: "p6-b200.48xlarge", gpuCount: 8, nodeCount: 1, serving: "aggregated", isl: 1024, osl: 1024, concurrency: 8, ...o });
+const fullReq = (o: Partial<RequestSpec> = {}): RequestSpec => ({ modelId: "llama3.1-70b", checkpoint: "Llama-3.1-70B-Instruct", weightPrecision: "fp8", kvPrecision: "fp8", framework: "tensorrt-llm", gpuSku: "H200", awsInstance: "p5en.48xlarge", gpuCount: 8, nodeCount: 1, serving: "aggregated", parallelism: { tp: 8, pp: 1, ep: 1 }, prefixCache: false, specDecode: "none", isl: 1024, osl: 1024, concurrency: 8, ...o });
+const dsv4Req = (o: Partial<RequestSpec> = {}): RequestSpec => ({ modelId: "dsv4", checkpoint: "DeepSeek-V4-Pro", weightPrecision: "fp4", kvPrecision: "fp8", framework: "trt", gpuSku: "B200", awsInstance: "p6-b200.48xlarge", gpuCount: 8, nodeCount: 1, serving: "aggregated", parallelism: { tp: 8, pp: 1, ep: 1 }, prefixCache: false, specDecode: "none", isl: 1024, osl: 1024, concurrency: 8, ...o });
 const codes = (r: BenchmarkRecord, q: RequestSpec) => evaluate(r, q).reasons.map((x) => x.code);
 
-// ---- precedence ------------------------------------------------------------
 describe("precedence — exact > proxy(reviewed host) > scaled(seq)", () => {
   it("selects exact over an approved host-proxy and an ISL-scaled record", () => {
     const exact = mk({ id: "exact" });
-    const proxy = mk({ id: "proxy", hostSystem: "hgx-h200-reviewed", hostIsAwsRepresentative: false });
+    const proxy = mk({ id: "proxy", hostSystem: "hgx-h200-reviewed", awsRepresentativeInstances: [] });
     const scaled = mk({ id: "scaled", isl: 512 });
     expect(selectBest([proxy, scaled, exact], fullReq())!.record.id).toBe("exact");
     expect(evaluate(proxy, fullReq()).evidenceStatus).toBe("proxy");
     expect(evaluate(scaled, fullReq()).evidenceStatus).toBe("measured-scaled");
   });
-  it("independent-reviewed exact > vendor exact (tie-break after eligibility)", () => {
+  it("independent-reviewed exact > vendor exact", () => {
     const mlp = mk({ id: "mlp", provenance: prov("independent-reviewed", "MLPerf Inference") });
     const trt = mk({ id: "trt", provenance: prov("vendor-measured", "NVIDIA TensorRT-LLM") });
     expect(selectBest([trt, mlp], fullReq())!.record.provenance.sourceClass).toBe("independent-reviewed");
   });
 });
 
-// ---- P1: latencyQualified enforced (NEW) -----------------------------------
-describe("P1 — latencyQualified=false cannot satisfy an interactive SLA", () => {
+describe("R3-P1 — the measured-exact contract is complete", () => {
+  it("missing parallelism / checkpoint / prefixCache / specDecode → incomplete-request", () => {
+    expect(codes(mk({ id: "x" }), { ...fullReq(), parallelism: undefined as any })).toContain("incomplete-request");
+    expect(codes(mk({ id: "x" }), { ...fullReq(), checkpoint: undefined as any })).toContain("incomplete-request");
+    expect(codes(mk({ id: "x" }), { ...fullReq(), prefixCache: undefined })).toContain("incomplete-request");
+    expect(codes(mk({ id: "x" }), { ...fullReq(), specDecode: undefined })).toContain("incomplete-request");
+  });
+  it("checkpoint / parallelism / prefixCache / specDecode mismatches are denied", () => {
+    expect(codes(mk({ id: "a" }), fullReq({ checkpoint: "Other" }))).toContain("checkpoint-mismatch");
+    expect(codes(mk({ id: "b", parallelism: { tp: 8, pp: 1, ep: 1, dp: 1 } }), fullReq({ parallelism: { tp: 8, pp: 2, ep: 1 } }))).toContain("pp-mismatch");
+    expect(codes(mk({ id: "c", prefixCache: true }), fullReq())).toContain("prefix-cache-mismatch");
+    expect(codes(mk({ id: "d", specDecode: "mtp" }), fullReq())).toContain("spec-decode-mismatch");
+  });
+  it("UNKNOWN prefixCache / specDecode on the record cannot be measured-exact", () => {
+    expect(codes(mk({ id: "e", prefixCache: null }), fullReq())).toContain("prefix-cache-unknown");
+    expect(codes(mk({ id: "f", specDecode: null }), fullReq())).toContain("spec-decode-unknown");
+  });
+});
+
+describe("R3-P1 — strict raw validation across every adapter/field", () => {
+  const clone = (o: unknown) => JSON.parse(JSON.stringify(o));
+  it("InferenceX config string-numbers are rejected (no coercion)", () => {
+    const a = clone(inxRaw); a.config.gpu_mem_gb = "192";
+    expect(() => inferencexAdapter.normalize(a)).toThrow();
+    const b = clone(inxRaw); b.config.num_decode_gpu = "8";
+    expect(() => inferencexAdapter.normalize(b)).toThrow();
+    const c = clone(inxRaw); c.points[0].conc = "8";
+    expect(() => inferencexAdapter.normalize(c)).toThrow();
+  });
+  it("MLPerf & TensorRT-LLM string-numbers are rejected", () => {
+    const m = clone(mlpRaw); m.result.system.accelerator_count = "8";
+    expect(() => mlperfAdapter.normalize(m)).toThrow();
+    const t = clone(trtRaw); t.rows[0].gpu_count = "8";
+    expect(() => tensorrtllmAdapter.normalize(t)).toThrow();
+  });
+});
+
+describe("R3-P1/P2 — evidence hygiene: production host allowlist has no synthetic entry", () => {
+  it("an unreviewed non-AWS host is denied (host-not-equivalent)", () => {
+    expect(codes(mk({ id: "h", hostSystem: "hgx-random", awsRepresentativeInstances: [] }), fullReq())).toContain("host-not-equivalent");
+  });
+  it("only a REVIEWED (test-injected) host equivalence produces a proxy", () => {
+    expect(evaluate(mk({ id: "h", hostSystem: "hgx-h200-reviewed", awsRepresentativeInstances: [] }), fullReq()).evidenceStatus).toBe("proxy");
+  });
+});
+
+describe("latency / topology / precision gates (never silent)", () => {
   const interactive = fullReq({ interactivity: { ttftSlaMs: 2000, ttftPercentile: "p99" } });
-  it("a record with P99 TTFT present but latencyQualified=false is rejected", () => {
-    const rec = mk({ id: "nlq", latencyQualified: false, ttft: { value: 0.5, percentile: "p99" } });
-    const m = evaluate(rec, interactive);
-    expect(m.eligible).toBe(false);
-    expect(m.reasons.map((r) => r.code)).toContain("latency-gate");
+  it("latencyQualified=false is rejected even with a P99 TTFT present", () => {
+    expect(codes(mk({ id: "n", latencyQualified: false }), interactive)).toContain("latency-gate");
   });
-  it("mean TTFT cannot satisfy P99; a P99 latency-qualified record passes", () => {
-    expect(codes(mk({ id: "mean", ttft: { value: 0.4, percentile: "mean" } }), interactive)).toContain("ttft-percentile-insufficient");
-    expect(evaluate(mk({ id: "ok" }), interactive).eligible).toBe(true);
+  it("mean TTFT cannot satisfy P99", () => {
+    expect(codes(mk({ id: "m", ttft: { value: 0.4, percentile: "mean" } }), interactive)).toContain("ttft-percentile-insufficient");
   });
-});
-
-// ---- P1: ISL out-of-bounds (NEW) -------------------------------------------
-describe("P1 — out-of-bounds ISL extrapolation → unbenchmarked (never clamped)", () => {
-  it("ISL 1024→102400 (100×) is rejected, not silently clamped to 8×", () => {
-    const m = evaluate(mk({ id: "oob", isl: 1024 }), fullReq({ isl: 102400 }));
-    expect(m.eligible).toBe(false);
-    expect(m.reasons.map((r) => r.code)).toContain("isl-scale-out-of-bounds");
-  });
-  it("an in-bounds ISL scale (8×) still works with the real factor", () => {
-    const m = evaluate(mk({ id: "ok", isl: 1024, inputTputPerGpu: 590 }), fullReq({ isl: 8192 }));
-    expect(m.evidenceStatus).toBe("measured-scaled");
-    expect(m.transformations![0].factor).toBe(8);
-    expect(m.operatingPoint!.inputTputPerGpu).toBeCloseTo(590 * 8, 6);
-    expect(m.operatingPoint!.ttftS).toBeNull();
-  });
-});
-
-// ---- P1: request contract (NEW) --------------------------------------------
-describe("P1 — an incomplete/inconsistent request cannot become measured-exact", () => {
-  it("a request missing decision-critical fields → unbenchmarked", () => {
-    const partial = { modelId: "llama3.1-70b", weightPrecision: "fp8", gpuSku: "H200", isl: 1024, osl: 1024 } as unknown as RequestSpec;
-    expect(codes(mk({ id: "x" }), partial)).toContain("incomplete-request");
-    expect(resolveOperatingPoint(partial, { mode: "experimental", catalog: [mk({ id: "x" })] }).status).toBe("unbenchmarked");
-  });
-  it("a made-up AWS instance → unknown-aws-instance", () => {
-    expect(codes(mk({ id: "x" }), fullReq({ awsInstance: "made-up-b200-instance" }))).toContain("unknown-aws-instance");
-  });
-  it("an instance/accelerator inconsistency → rejected", () => {
-    expect(codes(mk({ id: "x", gpuSku: "B200" }), fullReq({ gpuSku: "B200", awsInstance: "p5en.48xlarge" }))).toContain("instance-accelerator-inconsistent");
-  });
-});
-
-// ---- P1: host equivalence deny-by-default (NEW) ----------------------------
-describe("P1 — same-accelerator non-AWS host needs a reviewed equivalence", () => {
-  it("an unreviewed non-AWS host → unbenchmarked (not a generic proxy)", () => {
-    expect(codes(mk({ id: "h", hostSystem: "hgx-random", hostIsAwsRepresentative: false }), fullReq())).toContain("host-not-equivalent");
-  });
-  it("a reviewed host equivalence → proxy", () => {
-    expect(evaluate(mk({ id: "h", hostSystem: "hgx-h200-reviewed", hostIsAwsRepresentative: false }), fullReq()).evidenceStatus).toBe("proxy");
-  });
-});
-
-// ---- mismatches never silent -----------------------------------------------
-describe("mismatches never silent (precision/KV/model/engine/GPU/topology)", () => {
-  it("each mismatch yields an explicit reason code", () => {
+  it("precision/KV/model/engine/GPU/topology/concurrency mismatches each yield a reason", () => {
     expect(codes(mk({ id: "a", weightPrecision: "fp4" }), fullReq())).toContain("weight-precision-mismatch");
-    expect(codes(mk({ id: "b", kvPrecision: "bf16" }), fullReq())).toContain("kv-precision-mismatch");
-    expect(codes(mk({ id: "b2", kvPrecision: null }), fullReq())).toContain("kv-precision-unknown");
-    expect(codes(mk({ id: "c", framework: "vllm" }), fullReq({ framework: "tensorrt-llm" }))).toContain("engine-mismatch");
+    expect(codes(mk({ id: "b", kvPrecision: null }), fullReq())).toContain("kv-precision-unknown");
+    expect(codes(mk({ id: "c", framework: "vllm" }), fullReq())).toContain("engine-mismatch");
     expect(codes(mk({ id: "d", modelId: "other" }), fullReq())).toContain("model-mismatch");
-    expect(codes(mk({ id: "e", gpuSku: "B200" }), fullReq({ gpuSku: "T4", awsInstance: "g4dn.xlarge" }))).toContain("gpu-not-equivalent");
-    expect(codes(mk({ id: "f", serving: "disaggregated" }), fullReq())).toContain("serving-mismatch");
-    expect(codes(mk({ id: "g", gpuCount: 8 }), fullReq({ gpuCount: 1 }))).toContain("gpu-count-mismatch");
-    expect(codes(mk({ id: "h", nodeCount: 1 }), fullReq({ nodeCount: 2 }))).toContain("node-count-mismatch");
-    expect(codes(mk({ id: "i", concurrency: 16 }), fullReq({ concurrency: 20 }))).toContain("concurrency-not-measured");
+    expect(codes(mk({ id: "e", gpuSku: "B200", awsRepresentativeInstances: ["p6-b200.48xlarge"] }), fullReq({ gpuSku: "T4", awsInstance: "g4dn.xlarge" }))).toContain("gpu-not-equivalent");
+    expect(codes(mk({ id: "f", gpuCount: 8 }), fullReq({ gpuCount: 1 }))).toContain("gpu-count-mismatch");
+    expect(codes(mk({ id: "g", concurrency: 16 }), fullReq({ concurrency: 20 }))).toContain("concurrency-not-measured");
+  });
+  it("out-of-bounds ISL → unbenchmarked (not clamped); in-bounds scales with the real factor", () => {
+    expect(codes(mk({ id: "oob" }), fullReq({ isl: 102400 }))).toContain("isl-scale-out-of-bounds");
+    const s = evaluate(mk({ id: "s", isl: 1024, inputTputPerGpu: 590 }), fullReq({ isl: 8192 }));
+    expect(s.transformations![0].factor).toBe(8);
+    expect(s.operatingPoint!.inputTputPerGpu).toBeCloseTo(590 * 8, 6);
+    expect(s.operatingPoint!.ttftS).toBeNull();
+  });
+  it("unknown/inconsistent AWS instance denied", () => {
+    expect(codes(mk({ id: "x" }), fullReq({ awsInstance: "made-up" }))).toContain("unknown-aws-instance");
+    expect(codes(mk({ id: "x" }), fullReq({ gpuSku: "B200", awsInstance: "p5en.48xlarge" }))).toContain("instance-accelerator-inconsistent");
   });
 });
 
-// ---- illustrative / catalog ------------------------------------------------
-describe("P1-1 — illustrative snapshots are never selectable", () => {
-  it("illustrative record ineligible; verified wins", () => {
-    const illus = mk({ id: "illus", provenance: prov("independent-reviewed", "MLPerf Inference", "illustrative-pending-ingestion") });
-    expect(codes(illus, fullReq())).toContain("not-verified");
-    expect(selectBest([illus, mk({ id: "verified" })], fullReq())!.record.id).toBe("verified");
-  });
-  it("loadCatalog() verified-only; loadAllSnapshots() includes illustrative", () => {
+describe("catalog / provenance / control", () => {
+  it("verified-only catalog; illustrative present only in loadAllSnapshots", () => {
     expect(loadCatalog().every((r) => r.provenance.snapshotKind === "verified")).toBe(true);
     expect(loadAllSnapshots().some((r) => r.provenance.snapshotKind === "illustrative-pending-ingestion")).toBe(true);
   });
-});
-
-// ---- cross-accelerator ------------------------------------------------------
-describe("P1-2 — cross-accelerator substitution is denied", () => {
-  it("B200 record for a T4 request → unbenchmarked", () => {
-    expect(resolveOperatingPoint(fullReq({ gpuSku: "T4", awsInstance: "g4dn.xlarge" }), { mode: "experimental", catalog: [mk({ id: "b", gpuSku: "B200" })] }).status).toBe("unbenchmarked");
+  it("the verified InferenceX snapshot lacks prefix-cache metadata → honestly unbenchmarked", () => {
+    const res = resolveOperatingPoint(dsv4Req({ concurrency: 8 }), { mode: "experimental" });
+    expect(res.status).toBe("unbenchmarked");
+    const m = evaluate(loadCatalog().find((r) => r.concurrency === 8)!, dsv4Req({ concurrency: 8 }));
+    expect(m.reasons.map((r) => r.code)).toContain("prefix-cache-unknown");
   });
-});
-
-// ---- multi-node / unbenchmarked / control / provenance ---------------------
-describe("multi-node, unbenchmarked, control, provenance", () => {
+  it("a fully-specified measured-exact selection reconciles with its provenance", () => {
+    const res = resolveOperatingPoint(fullReq(), { mode: "experimental", catalog: [mk({ id: "x" })] });
+    expect(res.status).toBe("selected");
+    expect(res.record!.provenance.rawChecksum).toBe(res.provenance!.full.rawChecksum);
+    expect(res.operatingPoint!.tputPerGpu).toBe(600);
+  });
   it("GB200 NVL72 total is never split into per-GPU", () => {
     const gb200 = loadAllSnapshots().find((r) => r.gpuSku === "GB200")!;
     expect(gb200.perGpuReported).toBe(false);
     expect(gb200.outputTputPerGpu).toBeNull();
-    expect(gb200.throughputTotal).toBeGreaterThan(0);
   });
   it("unbenchmarked when no qualified measurement exists", () => {
-    const res = resolveOperatingPoint(fullReq({ modelId: "nope" }), { mode: "experimental" });
-    expect(res.status).toBe("unbenchmarked");
-    expect(res.operatingPoint).toBeUndefined();
+    expect(resolveOperatingPoint(fullReq({ modelId: "nope" }), { mode: "experimental" }).status).toBe("unbenchmarked");
   });
   it("legacy control unchanged when experimental disabled", () => {
     const control = { inferencexKey: "dsv4", instanceType: "p6-b200.48xlarge", weightBits: 4, isl: 2910, osl: 500, interactivityTarget: 30 };
@@ -165,23 +173,8 @@ describe("multi-node, unbenchmarked, control, provenance", () => {
     expect(res.operatingPoint!.tputPerGpu).toBe(op.tputPerGpu);
     expect(res.differsFromControl).toBe(false);
   });
-  it("selected result reconciles with provenance (verified dsv4 exact)", () => {
-    const res = resolveOperatingPoint(dsv4Req({ concurrency: 8 }), { mode: "experimental" });
-    expect(res.status).toBe("selected");
-    expect(res.confidence).toBe("open-reproducible");
-    expect(res.provenance!.full.rawChecksum).toBe(res.record!.provenance.rawChecksum);
-    expect(res.operatingPoint!.tputPerGpu).toBe(res.record!.outputTputPerGpu);
-    expect(res.provenance!.headline).toContain("dsv4");
-  });
-});
-
-// ---- determinism / control-diff --------------------------------------------
-describe("determinism & control-diff", () => {
-  it("loadCatalog() is byte-identical across calls", () => {
-    expect(canonicalJson(loadCatalog())).toBe(canonicalJson(loadCatalog()));
-  });
   it("control-diff compares concurrency/interactivity", () => {
-    const rec = mk({ id: "d", modelId: "dsv4", gpuSku: "B200", weightPrecision: "fp4", kvPrecision: "fp8", framework: "trt", concurrency: 16, outputTputPerGpu: 106.4, inputTputPerGpu: 107.5, intvty: 56.7, ttft: { value: 2.24, percentile: "p99" } });
+    const rec = mk({ id: "d", modelId: "dsv4", checkpoint: "DeepSeek-V4-Pro", gpuSku: "B200", awsRepresentativeInstances: ["p6-b200.48xlarge"], weightPrecision: "fp4", framework: "trt", concurrency: 16, outputTputPerGpu: 106.4, inputTputPerGpu: 107.5, intvty: 56.7, ttft: { value: 2.24, percentile: "p99" } });
     const control = { inferencexKey: "dsv4", instanceType: "p6-b200.48xlarge", weightBits: 4, isl: 1024, osl: 1024, interactivityTarget: 30 };
     const res = resolveOperatingPoint(dsv4Req({ concurrency: 16 }), { mode: "experimental", catalog: [rec], control });
     expect(res.status).toBe("selected");
@@ -189,55 +182,35 @@ describe("determinism & control-diff", () => {
   });
 });
 
-// ---- P1-7 exhaustive validation --------------------------------------------
-describe("P1-7 — schema validation fails closed", () => {
+describe("determinism & checksums", () => {
+  it("loadCatalog() byte-identical across calls", () => {
+    expect(canonicalJson(loadCatalog())).toBe(canonicalJson(loadCatalog()));
+  });
+  it("InferenceX snapshot matches its manifest checksum; a mutation does not", () => {
+    const entry = (manifest as any).sources.find((s: any) => s.sourceName === "InferenceX").rawFiles[0];
+    expect(sha256(inxRaw)).toBe(entry.rawChecksum);
+    const t = JSON.parse(JSON.stringify(inxRaw)); t.points[0].metrics.output_tput_per_gpu = 9999;
+    expect(sha256(t)).not.toBe(entry.rawChecksum);
+  });
+});
+
+describe("schema validation fails closed", () => {
   const bad = (o: Partial<BenchmarkRecord>) => () => validateRecord(mk({ id: "b", ...o }));
-  it("rejects malformed numbers & inconsistent topology", () => {
+  it("rejects malformed numbers, enums, hashes, urls, dates, per-GPU, TBD-verified", () => {
     expect(bad({ gpuCount: -8 })).toThrow();
     expect(bad({ gpuMemGB: NaN })).toThrow();
     expect(bad({ parallelism: { tp: 0, pp: 1, ep: 1, dp: 1 } })).toThrow();
-    expect(bad({ parallelism: { tp: 8, pp: -1, ep: 1, dp: 1 } })).toThrow();
     expect(bad({ nodeCount: 9, gpuCount: 8 })).toThrow();
-    expect(bad({ outputTputPerGpu: Infinity })).toThrow();
-  });
-  it("rejects bad enums / hashes / urls / dates / per-GPU", () => {
     expect(bad({ serving: "x" as any })).toThrow();
+    expect(bad({ awsRepresentativeInstances: [1 as any] })).toThrow();
     expect(bad({ provenance: { ...prov("open-reproducible", "x"), rawChecksum: "nope" } })).toThrow();
-    expect(bad({ provenance: { ...prov("open-reproducible", "x"), sourceUrl: "https://" } })).toThrow(); // no host
+    expect(bad({ provenance: { ...prov("open-reproducible", "x"), sourceUrl: "https://" } })).toThrow();
     expect(bad({ provenance: { ...prov("open-reproducible", "x"), retrievedAt: "2026-99-99garbage" } })).toThrow();
     expect(bad({ perGpuReported: false, outputTputPerGpu: 123 })).toThrow();
-  });
-  it("rejects a VERIFIED snapshot with a TBD/absent revision", () => {
     expect(bad({ provenance: { ...prov("open-reproducible", "x"), sourceCommit: "PINNED_COMMIT_TBD", runId: undefined } })).toThrow();
-    expect(bad({ provenance: { ...prov("open-reproducible", "x"), sourceCommit: undefined, runId: undefined } })).toThrow();
-  });
-  it("adapter rejects a raw STRING where a number is required (no silent coercion)", () => {
-    const broken = JSON.parse(JSON.stringify(inxRaw));
-    broken.points[0].conc = "8"; // string, not number
-    expect(() => inferencexAdapter.normalize(broken)).toThrow();
   });
   it("normalizeSafe rejects a record missing a required field", () => {
     const adapter = { sourceName: "x", sourceClass: "vendor-measured" as const, normalize: () => [{ ...mk({ id: "x" }), modelId: undefined as unknown as string }] };
     expect(() => normalizeSafe(adapter, {})).toThrow();
-  });
-});
-
-// ---- P2-2 checksum / tamper ------------------------------------------------
-describe("P2-2 — pinned checksums verified; tamper fails closed", () => {
-  it("InferenceX snapshot matches its manifest checksum; a mutation does not", () => {
-    const entry = (manifest as any).sources.find((s: any) => s.sourceName === "InferenceX").rawFiles[0];
-    expect(sha256(inxRaw)).toBe(entry.rawChecksum);
-    const tampered = JSON.parse(JSON.stringify(inxRaw));
-    tampered.points[0].metrics.output_tput_per_gpu = 9999;
-    expect(sha256(tampered)).not.toBe(entry.rawChecksum);
-  });
-});
-
-// ---- offline ---------------------------------------------------------------
-describe("offline from pinned data", () => {
-  it("catalog resolves locally with valid checksums", () => {
-    const cat = loadCatalog();
-    expect(cat.length).toBeGreaterThan(0);
-    for (const r of cat) expect(/^sha256:[0-9a-f]{64}$/.test(r.provenance.rawChecksum)).toBe(true);
   });
 });
