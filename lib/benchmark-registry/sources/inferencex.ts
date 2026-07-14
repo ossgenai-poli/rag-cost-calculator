@@ -75,17 +75,17 @@ export const inferencexAdapter: SourceAdapter = {
 };
 
 export class SchemaError extends Error {}
+// Strict: raw numeric fields must ALREADY be finite numbers — a string like "8" is a
+// source schema change and fails closed, never a silent coercion (P1-7).
 function num(v: unknown): number | null {
   if (v == null) return null;
-  const n = Number(v);
-  if (!Number.isFinite(n)) throw new SchemaError(`non-finite numeric metric: ${JSON.stringify(v)}`);
-  return n;
+  if (typeof v !== "number" || !Number.isFinite(v)) throw new SchemaError(`numeric metric must be a finite number, got ${JSON.stringify(v)}`);
+  return v;
 }
-/** Validate a REQUIRED raw value is a finite number before coercion (P1-7). */
+/** Validate a REQUIRED raw value is already a finite number (no coercion). */
 export function reqNum(v: unknown, field: string): number {
-  const n = Number(v);
-  if (v == null || !Number.isFinite(n)) throw new SchemaError(`field "${field}" is missing or non-finite: ${JSON.stringify(v)}`);
-  return n;
+  if (typeof v !== "number" || !Number.isFinite(v)) throw new SchemaError(`field "${field}" must be a finite number, got ${JSON.stringify(v)}`);
+  return v;
 }
 function retainUnknown(o: Record<string, unknown>, known: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};

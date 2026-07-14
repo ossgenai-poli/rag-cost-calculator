@@ -20,8 +20,8 @@ The layer **imports** the frozen `lib/benchmarks.ts` read-only (the control wrap
 ## Run the tests
 
 ```
-npx vitest run lib/benchmark-registry     # 30/30 — the 12 guarantees + P1/P2 hardening reproductions
-npx vitest run                            # 214/214 — frozen 184 + new 30 (no regression)
+npx vitest run lib/benchmark-registry     # 28/28 — the 12 guarantees + all P1/P2 reproductions (two rounds)
+npx vitest run                            # 212/212 — frozen 184 + new 28 (no regression)
 npx tsc --noEmit                          # clean
 ```
 
@@ -40,6 +40,16 @@ npx tsc --noEmit                          # clean
 | **P2-2** provenance chain | manifest stores per-file checksums, verified at ingest (tamper fails closed); `LICENSE-MANIFEST.md` added; verified snapshot with TBD revision rejected |
 | **P2-3** overstated coverage | the reproductions above are now acceptance tests |
 
+**Round 2 (second HOLD) — additional fail-closed fixes:**
+
+| Finding | Fix |
+|---|---|
+| `latencyQualified=false` still passed | interactive gate now requires `record.latencyQualified === true` before the TTFT checks |
+| ISL 100× silently clamped | bounds are eligibility limits — an out-of-`[0.125,8]` ratio → `unbenchmarked` (`isl-scale-out-of-bounds`), never clamped |
+| under-specified request → exact | a measured-exact claim needs the full request contract (model, precision incl. KV, engine, reviewed **awsInstance**, whole-group topology, concurrency); missing → `incomplete-request`; unknown/inconsistent instance → denied (`instance-map.ts`) |
+| generic host proxy | same-accelerator non-AWS host now needs a **reviewed host-equivalence** entry (`HOST_ALLOWLIST`); unreviewed → `unbenchmarked` |
+| malformed date/url/string-number | strict ISO-date round-trip + `new URL()` https/hostname parse; raw numeric fields must already be finite numbers (no `Number("8")` coercion) |
+
 Parent Phase-0 fixes are incorporated (branch rebased onto `ux/v2 @ c2d41f4`).
 
 The 12 required guarantees (mapped in [DESIGN.md](DESIGN.md) §7): exact>proxy>extrapolated ·
@@ -54,7 +64,9 @@ disabled** · provenance reconciles · byte-identical normalization · fail-clos
   provenance, placeholder numbers; clearly labelled, never shown as verified). License/attribution in
   `raw/MANIFEST.json`.
 - **One exact selection** (dsv4·B200·FP4 → InferenceX, `measured-exact`, full provenance + checksum).
-- **One qualified proxy / extrapolation** (gpu-swap → `proxy`; off-bucket ISL → `extrapolated`, with reasons).
+- **One qualified proxy / scaled result** — cross-accelerator substitution is **denied** (`unbenchmarked`);
+  a same-accelerator, **reviewed** host equivalence → `proxy`; an in-bounds off-bucket ISL → a disclosed,
+  bounded `measured-scaled` transform (out-of-bounds → `unbenchmarked`).
 - **One deliberately `unbenchmarked`** case (GB200 NVL72 system total → no per-GPU → not fabricated).
 - **Comparison vs the unchanged control** (`resolveOperatingPoint(mode:'control')` === raw
   `getBenchmarkCurve`+`operatingPointAt`; `differsFromControl` / `differenceCause` reported).

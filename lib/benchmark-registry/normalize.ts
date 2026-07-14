@@ -10,10 +10,28 @@ const SNAPSHOT_KINDS: SnapshotKind[] = ["verified", "illustrative-pending-ingest
 const SERVINGS: Serving[] = ["aggregated", "disaggregated"];
 const PERCENTILES: Percentile[] = ["p50", "p90", "p95", "p99", "mean", "unknown"];
 const HASH_RE = /^sha256:[0-9a-f]{64}$/;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}/;
 
 function fail(id: string, msg: string): never {
   throw new SchemaError(`record ${id || "<no id>"}: ${msg}`);
+}
+/** Strict ISO calendar date (round-trips) — rejects "2026-99-99garbage". */
+function isIsoDate(s: unknown): boolean {
+  if (typeof s !== "string") return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+/** Parse the URL; require HTTPS + a real hostname — rejects "https://". */
+function isHttpsUrl(s: unknown): boolean {
+  if (typeof s !== "string") return false;
+  try {
+    const u = new URL(s);
+    return u.protocol === "https:" && !!u.hostname;
+  } catch {
+    return false;
+  }
 }
 const posInt = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v > 0;
 const posFinite = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v > 0;
@@ -60,8 +78,8 @@ export function validateRecord(rec: BenchmarkRecord): void {
   if (!SOURCE_CLASSES.includes(p.sourceClass)) fail(id, `invalid sourceClass "${p.sourceClass}"`);
   if (!SNAPSHOT_KINDS.includes(p.snapshotKind)) fail(id, `invalid snapshotKind "${p.snapshotKind}"`);
   if (!HASH_RE.test(p.rawChecksum ?? "")) fail(id, `malformed rawChecksum "${p.rawChecksum}"`);
-  if (!/^https:\/\//.test(p.sourceUrl ?? "")) fail(id, `sourceUrl must be https (got "${p.sourceUrl}")`);
-  if (!DATE_RE.test(p.retrievedAt ?? "")) fail(id, `retrievedAt must be a YYYY-MM-DD date (got "${p.retrievedAt}")`);
+  if (!isHttpsUrl(p.sourceUrl)) fail(id, `sourceUrl must be a valid https URL with a hostname (got "${p.sourceUrl}")`);
+  if (!isIsoDate(p.retrievedAt)) fail(id, `retrievedAt must be a valid ISO calendar date (got "${p.retrievedAt}")`);
   for (const f of ["sourceName", "license", "attribution"] as const) {
     if (!p[f] || typeof p[f] !== "string") fail(id, `missing provenance.${f}`);
   }
