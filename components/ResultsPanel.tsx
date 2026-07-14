@@ -5,6 +5,7 @@ import { deriveDisplayMetrics } from "@/lib/derived";
 import { inputClampNotes } from "@/lib/calc-engine";
 import { buildScenarios } from "@/lib/scenarios";
 import { effectiveRequiredInstances } from "@/lib/grounding";
+import { explainFleetSizing, prefillWording, heuristicPrefillRange } from "@/lib/fleet-explain";
 import { computeSensitivity } from "@/lib/sensitivity";
 import { activeProvider } from "@/lib/provider";
 import { MetricCards } from "./MetricCards";
@@ -90,6 +91,12 @@ export function ResultsPanel({
 
   const crossover = resultA.crossover;
   const cap = crossover.capacity; // authoritative capacity + operating point + provenance
+  // INF-005/006/007: the displayed sizing equation, prefill wording and heuristic
+  // range all come from ONE shared helper that regression tests reconcile with the
+  // engine — the card can never show arithmetic the fleet wasn't sized by.
+  const fleetEq = explainFleetSizing(crossover);
+  const prefillProv = prefillWording(crossover);
+  const heurRange = heuristicPrefillRange(crossover);
   const SOURCE_STYLE: Record<string, string> = {
     measured: "bg-emerald-500/15 text-emerald-300",
     proxy: "bg-teal-500/15 text-teal-300",
@@ -281,11 +288,29 @@ export function ResultsPanel({
                   capacity. Usable: {crossover.usableReplicas} replica(s).
                 </span>
               )}
-              {crossover.prefillBinds && (
+              {/* INF-006: the prefill wording must match the ACTUAL provenance — measured,
+                  measured-but-ISL-scaled, or estimated — never a blanket "estimated". */}
+              {crossover.prefillBinds && prefillProv === "measured" && (
+                <span className="mt-1 block text-slate-400">
+                  Fleet size is set by <span className="font-medium">prefill</span> (input tokens),
+                  not decode — sized from the <span className="font-medium">measured</span> input
+                  throughput at this operating point.
+                </span>
+              )}
+              {crossover.prefillBinds && prefillProv === "measured-scaled" && (
                 <span className="mt-1 block text-amber-300">
                   Fleet size is set by <span className="font-medium">prefill</span> (input tokens),
-                  not decode — and prefill throughput is estimated, so this sizing is not a direct
-                  measurement.
+                  not decode — input throughput was measured at ISL{" "}
+                  {cap.seqUsed?.split("/")[0] ?? "?"} and scaled to the requested ISL{" "}
+                  {cap.seqRequested?.split("/")[0] ?? "?"}, so this sizing is extrapolated, not a
+                  direct measurement.
+                </span>
+              )}
+              {crossover.prefillBinds && prefillProv === "estimated" && (
+                <span className="mt-1 block text-amber-300">
+                  Fleet size is set by <span className="font-medium">prefill</span> (input tokens),
+                  not decode — and prefill throughput is <span className="font-medium">estimated</span>{" "}
+                  (no benchmark input-throughput data), so this sizing is not a direct measurement.
                 </span>
               )}
               {crossover.utilPeakPostLoss > 1 && Number.isFinite(crossover.utilPeakPostLoss) && (
@@ -367,10 +392,27 @@ export function ResultsPanel({
                 <span className={cap.ttftMet ? "text-slate-200" : "text-rose-300"}>
                   {ttftLabel(cap.ttftPercentile)} {cap.ttftS.toFixed(1)}s
                 </span>{" "}
-                (max {(inputs.generation.ttftTargetMs / 1000).toFixed(1)}s). Peak demand{" "}
-                {Math.round(crossover.peakDecodeDemand).toLocaleString()} output tok/s ÷{" "}
-                {Math.round(cap.perReplicaDecodeTokS).toLocaleString()} tok/s/replica →{" "}
-                {crossover.throughputInstances} box(es) for throughput, {cap.memoryFloorBoxes} to fit weights.
+                (max {(inputs.generation.ttftTargetMs / 1000).toFixed(1)}s).
+                {/* INF-005: the displayed equation is the BINDING dimension's real arithmetic —
+                    demand ÷ (per-replica capacity × utilization target) — then the replica →
+                    box build-up, so it reconciles exactly with the billed fleet. */}
+                <span className="mt-1 block">
+                  Fleet sizing ({fleetEq.dimension}-bound):{" "}
+                  <span className="text-slate-200">
+                    {Math.round(fleetEq.peakDemandTokS).toLocaleString()}{" "}
+                    {fleetEq.dimension === "prefill" ? "input" : "output"} tok/s
+                  </span>{" "}
+                  ÷ ({Math.round(fleetEq.perReplicaTokS).toLocaleString()} {fleetEq.dimension} tok/s/replica ×{" "}
+                  {formatPercent(fleetEq.utilTarget)} target ={" "}
+                  {Math.round(fleetEq.effPerReplicaTokS).toLocaleString()}) →{" "}
+                  <span className="text-slate-200">
+                    {fleetEq.throughputReplicas} replica{fleetEq.throughputReplicas === 1 ? "" : "s"} for throughput
+                  </span>
+                  {fleetEq.haReplicas > 0 ? ` + ${fleetEq.haReplicas} N+1 replica${fleetEq.haReplicas === 1 ? "" : "s"}` : ""}
+                  {" "}× {fleetEq.instancesPerReplica} box{fleetEq.instancesPerReplica === 1 ? "" : "es"}/replica ={" "}
+                  <span className="text-slate-200">{fleetEq.requiredBoxes} boxes required</span> (memory floor{" "}
+                  {cap.memoryFloorBoxes}).
+                </span>
                 {cap.slaAchievable === false && (
                   <span className="mt-1 block text-rose-300">
                     ⚠ No benchmark point meets both the interactivity and TTFT targets under the concurrency
@@ -441,6 +483,29 @@ export function ResultsPanel({
                 </span>
               </div>
               <div className="mt-1 text-xs text-slate-400">{grounding.note}</div>
+              {/* INF-007: the heuristic prefill uncertainty RANGE must be visible — the
+                  headline uses the base estimate, and the fleet could land anywhere in
+                  the band if the real input throughput differs. */}
+              {heurRange && (
+                <div className="mt-1 text-xs text-amber-300">
+                  Prefill capacity is estimated from the workload&apos;s input/output ratio (
+                  {heurRange.ratioUsed.toFixed(1)}× decode):{" "}
+                  {Math.round(heurRange.perReplicaLowTokS).toLocaleString()} (conservative) ·{" "}
+                  <span className="font-medium">
+                    {Math.round(heurRange.perReplicaBaseTokS).toLocaleString()} (used for the headline fleet)
+                  </span>{" "}
+                  · {Math.round(heurRange.perReplicaHighTokS).toLocaleString()} (optimistic) input tok/s per
+                  replica — a fleet of{" "}
+                  <span className="font-medium">
+                    {heurRange.fleetMinReplicas === heurRange.fleetMaxReplicas
+                      ? `${heurRange.fleetBaseReplicas}`
+                      : `${heurRange.fleetMinReplicas}–${heurRange.fleetMaxReplicas}`}{" "}
+                    replica{heurRange.fleetMaxReplicas === 1 ? "" : "s"}
+                  </span>{" "}
+                  across that range (headline: {heurRange.fleetBaseReplicas}). Validate input throughput
+                  before trusting a single number.
+                </div>
+              )}
               {/* UX-015: a heuristic/estimated positive is NEVER shown unqualified. */}
               {crossover.verdictQualified && (
                 <div className="mt-1 text-xs text-amber-300">
@@ -449,6 +514,12 @@ export function ResultsPanel({
                   benchmark before committing.
                 </div>
               )}
+              {/* INF-008: the planning-capacity disclaimer belongs on EVERY self-hosted
+                  recommendation — especially the heuristic one. */}
+              <div className="mt-1 text-xs text-slate-500">
+                Planning capacity, not an availability or tail-latency guarantee. Validate with your intended
+                serving stack and a production-shaped load test before committing.
+              </div>
             </div>
           )
         )}

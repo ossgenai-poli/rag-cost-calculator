@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { CalcInputs, CalcResult, PriceBook } from "./types";
 import { deriveDisplayMetrics } from "./derived";
 import { buildScenarios } from "./scenarios";
+import { explainFleetSizing, heuristicPrefillRange } from "./fleet-explain";
 
 const PARAM_KEY = "s";
 const SHARE_VERSION = 1;
@@ -284,6 +285,20 @@ export function assumptionsToJson(
             perGpuDecodeTokS: cx.capacity.perGpuDecodeTokS,
             perGpuPrefillTokS: cx.capacity.perGpuPrefillTokS ?? null, // INF-002 (real input throughput)
             prefillEstimated: cx.capacity.prefillEstimated,
+            prefillIslScale: cx.capacity.prefillIslScale ?? null, // INF-006 (measured-but-scaled disclosure)
+            // INF-007: the heuristic prefill uncertainty band. The headline fleet uses
+            // the BASE estimate; low/high bound the plausible fleet if the real input
+            // throughput differs from the ISL/OSL-ratio estimate.
+            prefillRange:
+              cx.capacity.prefillEstimated && cx.capacity.perReplicaPrefillTokSLow != null
+                ? {
+                    ratioUsed: cx.capacity.prefillRatioUsed ?? null,
+                    perReplicaLowTokS: cx.capacity.perReplicaPrefillTokSLow,
+                    perReplicaBaseTokS: cx.capacity.perReplicaPrefillTokS,
+                    perReplicaHighTokS: cx.capacity.perReplicaPrefillTokSHigh,
+                    note: "headline fleet is sized from the base estimate",
+                  }
+                : null,
             achievedInteractivity: cx.capacity.achievedInteractivity,
             ttftS: cx.capacity.ttftS,
             ttftPercentile: cx.capacity.ttftPercentile ?? null, // INF-003
@@ -435,6 +450,19 @@ export function buildReport(
       const p = cap.benchmarkProvenance;
       lines.push(
         `- **Benchmark provenance:** ${p.source} · measured ${p.date} · run ${p.runUrl} · recipe ${p.commit.slice(0, 10)} · ${p.image} · ${p.topology} · methodology ${p.methodologyUrl}`
+      );
+    }
+    // INF-005: the exported sizing equation is the BINDING dimension's real
+    // arithmetic (demand ÷ target-adjusted capacity), identical to the UI card.
+    const eq = explainFleetSizing(cx);
+    lines.push(
+      `- **Fleet equation (${eq.dimension}-bound):** ${Math.round(eq.peakDemandTokS).toLocaleString()} ${eq.dimension === "prefill" ? "input" : "output"} tok/s ÷ (${Math.round(eq.perReplicaTokS).toLocaleString()} ${eq.dimension} tok/s/replica × ${Math.round(eq.utilTarget * 100)}% target) → ${eq.throughputReplicas} replica(s) for throughput${eq.haReplicas > 0 ? ` + ${eq.haReplicas} N+1` : ""} × ${eq.instancesPerReplica} box(es)/replica = ${eq.requiredBoxes} boxes required`
+    );
+    // INF-007: heuristic prefill uncertainty band (headline uses the base estimate).
+    const hr = heuristicPrefillRange(cx);
+    if (hr) {
+      lines.push(
+        `- **Heuristic prefill range:** estimated at ${hr.ratioUsed.toFixed(1)}× decode (input/output ratio) — ${Math.round(hr.perReplicaLowTokS).toLocaleString()} / **${Math.round(hr.perReplicaBaseTokS).toLocaleString()} (headline)** / ${Math.round(hr.perReplicaHighTokS).toLocaleString()} input tok/s per replica → ${hr.fleetMinReplicas === hr.fleetMaxReplicas ? `${hr.fleetBaseReplicas}` : `${hr.fleetMinReplicas}–${hr.fleetMaxReplicas}`} replica(s) across the band (headline ${hr.fleetBaseReplicas}); validate input throughput before committing`
       );
     }
     lines.push(

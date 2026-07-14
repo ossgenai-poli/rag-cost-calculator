@@ -203,13 +203,16 @@ function Formulas() {
   );
 }
 
-function SourceBadge({ kind }: { kind: "live" | "published" | "reference" | "config" | "estimate" }) {
+function SourceBadge({ kind }: { kind: "live" | "published" | "reference" | "config" | "estimate" | "benchmark" }) {
   const map = {
     live: ["bg-emerald-500/15 text-emerald-300", "live"],
     published: ["bg-teal-500/15 text-teal-300", "AWS published"],
     reference: ["bg-amber-500/15 text-amber-300", "reference"],
     config: ["bg-sky-500/15 text-sky-300", "typed config"],
     estimate: ["bg-slate-600/40 text-slate-300", "estimate"],
+    // INF-009: InferenceX is an INDEPENDENT third-party benchmark source — it must
+    // never carry the "AWS published" price-provenance badge.
+    benchmark: ["bg-violet-500/15 text-violet-300", "independent benchmark"],
   } as const;
   const [cls, label] = map[kind];
   return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{label}</span>;
@@ -229,7 +232,8 @@ function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
         <SourceBadge kind="published" /> AWS published rate card ·{" "}
         <SourceBadge kind="reference" /> committed fallback ·{" "}
         <SourceBadge kind="config" /> typed model config ·{" "}
-        <SourceBadge kind="estimate" /> rough estimate
+        <SourceBadge kind="estimate" /> rough estimate ·{" "}
+        <SourceBadge kind="benchmark" /> third-party measured (SemiAnalysis InferenceX)
       </div>
       {priceBook.source !== "live" && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200/90">
@@ -323,7 +327,7 @@ function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
       {/* INF-001: InferenceX benchmark provenance — the measured throughput curves. */}
       <div>
         <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
-          Inference benchmarks (GPU sizing) <SourceBadge kind="published" />
+          Inference benchmarks (GPU sizing) <SourceBadge kind="benchmark" />
         </div>
         <div className="text-[11px] text-slate-500">
           Self-host GPU sizing is grounded in {BENCHMARK_SOURCE} throughput curves (snapshot {BENCHMARK_AS_OF}
