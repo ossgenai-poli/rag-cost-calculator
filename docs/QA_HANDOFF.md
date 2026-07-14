@@ -1,9 +1,11 @@
-# QA Handoff — RAG Cost Calculator (RC `rc-qa-1`)
+# QA Handoff — RAG Cost Calculator (RC `rc-qa-2`)
 
-This is the single source of truth for the QA engineer. Everything needed to run the 65-case
-test plan is here. Two suites (runtime `/api/prices` + live-pricing) are **deferred** until the
-runtime host in §5 is provisioned — they are explicitly called out so they are not failed for
-missing infrastructure.
+This is the single source of truth for the QA engineer. Everything needed to run the test plan is
+here. Live-pricing suites run against the Vercel runtime (§3/§5); all other suites run against the
+static site.
+
+> **Retest round (rc-qa-2):** fixes for the rc-qa-1 NO-GO findings #24–#28 are in, each with
+> regression coverage, plus the L4 fixture so that case is no longer blocked. See §8.
 
 ---
 
@@ -11,11 +13,11 @@ missing infrastructure.
 
 | | Value |
 |---|---|
-| **Git tag** | `rc-qa-1` |
-| **Commit SHA** | `5773d25a8caf3154e566c888211c86ad2ff325af` |
-| **Static site (live now)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
-| **Runtime site (LIVE pricing — ready)** | https://rag-cost-calculator-hazel.vercel.app/ (runs `main`, includes the pricing-route hardening merged after `rc-qa-1`; static product behavior is identical to the tag) |
-| **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
+| **Git tag** | `rc-qa-2` |
+| **Commit SHA** | `be4f84d` (full: run `git rev-parse rc-qa-2`) |
+| **Static site (live + verified rendering)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
+| **Runtime site (LIVE pricing)** | https://rag-cost-calculator-hazel.vercel.app/ |
+| **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues (#24–#28 commented, open for retest) |
 
 Check out the exact tree:
 ```bash
@@ -199,3 +201,20 @@ screenshot or the offending export file.
 ## 7. Reference documents
 - [TEST_PLAN.md](./TEST_PLAN.md) — the 65 cases (Suites A–M + edge cases).
 - [EXPORT_SPEC.md](./EXPORT_SPEC.md) — export acceptance criteria (Suite L5–L7).
+- [fixtures/README.md](./fixtures/README.md) — L4 legacy-scenario fixture + how to load it.
+
+---
+
+## 8. rc-qa-2 retest checklist (fixes for the rc-qa-1 NO-GO)
+
+| # | Case | Fix | Retest |
+|---|---|---|---|
+| #24 | A1 — Pages stuck "Loading prices" | `pages.yml` builds with `NEXT_PUBLIC_BASE_PATH`; build-time guard `verify:basepath` | Load the static URL — it renders numbers, no hang. (Verified on deploy.) |
+| #25 | I2 — conflicting ≥15 vs ≥6 | grounding is authoritative; flat capacity warning uses it, duplicate banner suppressed | I2 shows a single figure (grounded ≥15); no ≥6 anywhere |
+| #26 | C1 — no vector count | "Vectors stored" shown in the token panel | Change chunk size/overlap → the count updates |
+| #27 | G2 — RI-1yr == Savings 40% | Savings-1yr → 30%, RI-1yr → 40% | Switch purchasing model → GPU cost differs between the two |
+| #28 | L5 — CSV row order | CSV emits canonical EXPORT_SPEC order | CSV breakdown = Ingestion, Vector store, Reranking, Generation, Guardrails, Query overhead, Operations |
+| L4 | stale saved scenario | fixture provided (§7) | Load fixture → renders, defaults backfill, no crash |
+
+Local gates all green on `rc-qa-2`: `typecheck`, **75** unit tests (incl. `qa-regressions.test.ts`),
+`build:static`, `verify:basepath`, `test:e2e` (root **and** the deployed subpath URL), `verify:live`.
