@@ -26,13 +26,22 @@ export function Sensitivity({ rows }: SensitivityProps) {
             <div key={r.label} className="flex items-center gap-3 text-sm">
               <div className="w-40 shrink-0 text-slate-400">{r.label}</div>
               <div className="relative h-4 flex-1 rounded bg-slate-900/60">
-                <div
-                  className="absolute inset-y-0 left-0 rounded bg-accent/70"
-                  style={{ width: `${Math.max(width, negligible ? 0 : 2)}%` }}
-                />
+                {!r.atCap && (
+                  <div
+                    className="absolute inset-y-0 left-0 rounded bg-accent/70"
+                    style={{ width: `${Math.max(width, negligible ? 0 : 2)}%` }}
+                  />
+                )}
               </div>
-              <div className="w-16 shrink-0 text-right tabular-nums text-slate-300">
-                {negligible ? "~0%" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
+              {/* P2-1: a lever at its supported maximum can't be bumped +10%, so we
+                  label it instead of reporting a false 0%. */}
+              <div
+                className={`w-28 shrink-0 text-right text-xs tabular-nums ${
+                  r.atCap ? "text-amber-400" : "text-slate-300"
+                }`}
+                title={r.atCap ? "This input is at its supported maximum — a +10% bump can't be applied." : undefined}
+              >
+                {r.atCap ? "at max (can't +10%)" : negligible ? "~0%" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
               </div>
             </div>
           );

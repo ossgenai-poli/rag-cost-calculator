@@ -28,6 +28,13 @@ function formatPercent(fraction: number): string {
   return `${(fraction * 100).toFixed(0)}%`;
 }
 
+/** Compact magnitude: scientific for very large numbers (P2-2) so a 1e308 entry
+ * reads "1e+308" instead of a 309-digit integer; readable locale below 1e15. */
+function fmtMagnitude(v: number): string {
+  if (!Number.isFinite(v)) return String(v);
+  return Math.abs(v) >= 1e15 ? v.toExponential(0) : v.toLocaleString();
+}
+
 /** "2026-07-11" -> "Jul 11, 2026" without any timezone drift. */
 function formatDate(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
@@ -151,7 +158,7 @@ export function ResultsPanel({
           <div className="text-amber-200/90">
             <span className="font-medium text-amber-300">Input(s) above the supported maximum — calculated at the cap:</span>{" "}
             {clampNotes
-              .map((n) => `${n.field}: entered ${n.entered.toLocaleString()}, calculated as ${n.calculated.toLocaleString()}`)
+              .map((n) => `${n.field}: entered ${fmtMagnitude(n.entered)}, calculated as ${fmtMagnitude(n.calculated)}`)
               .join("; ")}
             .
           </div>

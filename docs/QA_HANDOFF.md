@@ -1,4 +1,4 @@
-# QA Handoff — RAG Cost Calculator (RC `rc-qa-7`)
+# QA Handoff — RAG Cost Calculator (RC `rc-qa-8`)
 
 This is the single source of truth for the QA engineer. Everything needed to run the test plan is
 here. Live-pricing suites run against the Vercel runtime (§3/§5); all other suites run against the
@@ -17,8 +17,8 @@ static site.
 
 | | Value |
 |---|---|
-| **Git tag** | `rc-qa-7` |
-| **Commit SHA** | run `git rev-parse rc-qa-7` |
+| **Git tag** | `rc-qa-8` |
+| **Commit SHA** | run `git rev-parse rc-qa-8` |
 | **Static site (live + verified rendering)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
 | **Runtime site (LIVE pricing)** | https://rag-cost-calculator-hazel.vercel.app/ |
 | **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
@@ -28,13 +28,13 @@ Check out the exact tree:
 git clone https://github.com/ossgenai-poli/rag-cost-calculator.git
 cd rag-cost-calculator
 git fetch --tags --force        # the rc tags are re-pointed between rounds
-git checkout rc-qa-7            # detached HEAD at the pinned RC
+git checkout rc-qa-8            # detached HEAD at the pinned RC
 ```
 
 **Pre-verified by the developer on this exact SHA** (so an environment problem is distinguishable
 from a product defect):
 - `npm run typecheck` → clean
-- `npm test` → **151 passed** (incl. GPU capacity, all remediations, effective-input reconciliation, catalog-drift, QA regressions)
+- `npm test` → **156 passed** (incl. GPU capacity, all remediations, effective-input reconciliation, sensitivity caps, QA regressions)
 - `npm run build:static` → emits `./out`
 - `npm run test:e2e` → **PASS** (no console errors)
 
@@ -414,3 +414,17 @@ clamp/audit warning. So headline, unit-cost, scenario and exported figures all r
 
 Coverage: `lib/rc-qa7.test.ts` (+11). Suite total: **151** unit tests. Gates green on `rc-qa-7`:
 typecheck · 151 tests · build:static · verify:basepath · test:e2e · verify:live.
+
+---
+
+## 14. rc-qa-8 — sensitivity + magnitude polish (P2, non-blocking)
+
+| # | Area | Retest |
+|---|---|---|
+| P2-1 | Sensitivity at capped inputs | A lever at its supported maximum shows **"at max (can't +10%)"** (amber), not a false ~0%; it sorts to the bottom but stays visible. Bars/percentages are only shown for levers a +10% bump can actually move |
+| P2-2 | Extreme-value formatting | The clamp warning renders extreme entered magnitudes compactly — e.g. **"entered 1e+308, calculated as 1,000,000,000,000"** — instead of a 309-digit integer |
+
+`computeSensitivity` now flags `atCap` when a `+10%` bump would exceed the input maximum
+(queries, output, prompt overhead, documents, query tokens), so the clamp no longer produces a
+misleading zero delta. Coverage: `lib/rc-qa8.test.ts` (+5). Suite total: **156** unit tests.
+Gates green on `rc-qa-8`: typecheck · 156 tests · build:static · verify:basepath · test:e2e · verify:live.
