@@ -61,14 +61,15 @@ function extractOnDemandUsd(entry: unknown): number | null {
 // catalog default price instead of discarding the whole set. Returns which
 // instances resolved live so the caller can mark `source` accurately.
 async function fetchGpuPrices(
-  client: PricingClient,
-  diag?: Record<string, unknown>
+  client: PricingClient
 ): Promise<{ gpus: GpuInstancePrice[]; liveCount: number }> {
   const location = ec2Location(REGION);
   const results: GpuInstancePrice[] = [];
-  const perGpu: Array<Record<string, unknown>> = [];
   let liveCount = 0;
 
+  // Fetch each GPU independently. An instance type with no OnDemand SKU in this
+  // region (e.g. p5e.48xlarge, which AWS sells only via Capacity Blocks / other
+  // regions) keeps its catalog default rather than discarding the whole set.
   for (const gpu of GPU_DEFAULTS) {
     try {
       const command = new GetProductsCommand({
@@ -84,7 +85,6 @@ async function fetchGpuPrices(
         MaxResults: 5,
       });
       const res = await client.send(command);
-      const priceListLen = (res.PriceList ?? []).length;
       let usd: number | null = null;
       for (const entry of res.PriceList ?? []) {
         usd = extractOnDemandUsd(entry);
@@ -94,40 +94,34 @@ async function fetchGpuPrices(
         // sustainedTokPerSec isn't in the Pricing API — merged in from defaults.
         results.push({ ...gpu, pricePerHr: usd });
         liveCount++;
-        perGpu.push({ it: gpu.instanceType, priceListLen, usd });
       } else {
-        results.push({ ...gpu });
-        perGpu.push({ it: gpu.instanceType, priceListLen, usd: null });
+        results.push({ ...gpu }); // no OnDemand SKU here — keep default
       }
-    } catch (e) {
-      results.push({ ...gpu });
-      perGpu.push({ it: gpu.instanceType, err: e instanceof Error ? e.message : String(e) });
+    } catch {
+      results.push({ ...gpu }); // transient error for this instance — keep default
     }
   }
 
-  if (diag) diag.perGpu = perGpu;
   return { gpus: results, liveCount };
 }
 
-async function fetchOpenSearchPrices(
-  client: PricingClient,
-  diag?: Record<string, unknown>
-): Promise<OpenSearchPrice> {
+async function fetchOpenSearchPrices(client: PricingClient): Promise<OpenSearchPrice> {
   // OpenSearch Serverless (OCU-based) pricing is published under the AmazonES
-  // service code in the Price List API, not "AmazonOpenSearchServerless".
+  // service code in the Price List API, NOT "AmazonOpenSearchServerless" (which
+  // returns zero products). OCU usagetypes: USE1-SemanticSearchOCU / -IndexingOCU
+  // (both $0.24/hr in us-east-1). We take OCU live and keep the catalog storage
+  // default: the only serverless storage SKU present is priced per byte-hour
+  // (OpenSearch-Vectors-TimedStorage-ByteHrs), not per GB-month, so trusting it
+  // as storagePricePerGBmo would be a wrong-unit regression.
   const command = new GetProductsCommand({
     ServiceCode: "AmazonES",
     Filters: [{ Type: "TERM_MATCH", Field: "regionCode", Value: REGION }],
     MaxResults: 100,
   });
   const res = await client.send(command);
-  const entries = res.PriceList ?? [];
 
   let ocuPricePerHr: number | null = null;
-  let storagePricePerGBmo: number | null = null;
-  const seen: Array<{ u: string; p: number | null }> = [];
-
-  for (const entry of entries) {
+  for (const entry of res.PriceList ?? []) {
     // Entries are LazyJsonString objects — coerce with String(), don't typeof-filter.
     let parsed: any;
     try {
@@ -136,30 +130,21 @@ async function fetchOpenSearchPrices(
       continue;
     }
     const usagetype: string = parsed?.product?.attributes?.usagetype || "";
+    if (!/OCU/i.test(usagetype)) continue;
     const price = extractOnDemandUsd(entry);
-    // Capture only relevant usagetypes so OCU/storage aren't drowned by the
-    // provisioned-domain instance SKUs also under AmazonES.
-    if (/OCU|Serverless|Storage|GB-Mo|ComputeUnit/i.test(usagetype) && seen.length < 40) {
-      seen.push({ u: usagetype, p: price });
+    if (price !== null) {
+      ocuPricePerHr = price;
+      break;
     }
-    if (price === null) continue;
-    // OCU compute appears as usagetypes like "...OCU-IndexingHours" / "SearchOCU".
-    if (/OCU|ComputeUnit/i.test(usagetype) && ocuPricePerHr === null) ocuPricePerHr = price;
-    if (/Storage|GB-Mo|GB-Month/i.test(usagetype) && storagePricePerGBmo === null) storagePricePerGBmo = price;
   }
 
-  if (diag) {
-    diag.osEntryCount = entries.length;
-    diag.osUsagetypes = seen;
-  }
-
-  if (ocuPricePerHr === null || storagePricePerGBmo === null) {
-    throw new Error("could not resolve OpenSearch Serverless OCU/storage price");
+  if (ocuPricePerHr === null) {
+    throw new Error("could not resolve OpenSearch Serverless OCU price");
   }
 
   return {
     ocuPricePerHr,
-    storagePricePerGBmo,
+    storagePricePerGBmo: OPENSEARCH_DEFAULTS.storagePricePerGBmo, // stable; no GB-mo SKU exposed
     gbRamPerOcu: OPENSEARCH_DEFAULTS.gbRamPerOcu,
     minOCU: OPENSEARCH_DEFAULTS.minOCU,
   };
@@ -185,38 +170,25 @@ export async function GET() {
   let opensearch: OpenSearchPrice = OPENSEARCH_DEFAULTS;
   let gotLive = false;
 
-  // TEMP DIAGNOSTIC (secret-safe: only booleans/lengths + AWS error text, never
-  // the credential values). Remove after we confirm live pricing on Vercel.
-  const diag: Record<string, unknown> = {
-    hasKeyId: !!process.env.AWS_ACCESS_KEY_ID,
-    keyIdLen: (process.env.AWS_ACCESS_KEY_ID || "").length,
-    hasSecret: !!process.env.AWS_SECRET_ACCESS_KEY,
-    secretLen: (process.env.AWS_SECRET_ACCESS_KEY || "").length,
-    awsRegionEnv: process.env.AWS_REGION || null,
-  };
-
   try {
     const client = new PricingClient({ region: "us-east-1" });
 
     try {
-      const gpuResult = await fetchGpuPrices(client, diag);
+      const gpuResult = await fetchGpuPrices(client);
       gpus = gpuResult.gpus;
       if (gpuResult.liveCount > 0) gotLive = true; // live if ANY instance resolved
-    } catch (e) {
+    } catch {
       gpus = GPU_DEFAULTS; // keep accurate defaults for GPU
-      diag.gpuErr = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     }
 
     try {
-      opensearch = await fetchOpenSearchPrices(client, diag);
+      opensearch = await fetchOpenSearchPrices(client);
       gotLive = true;
-    } catch (e) {
+    } catch {
       opensearch = OPENSEARCH_DEFAULTS; // OCU/storage price is stable — default is fine
-      diag.osErr = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     }
-  } catch (e) {
+  } catch {
     // client construction / no-creds (e.g. static build) -> full fallback
-    diag.clientErr = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
   }
 
   const priceBook: PriceBook = {
@@ -230,8 +202,8 @@ export async function GET() {
   };
 
   try {
-    return Response.json({ ...priceBookSchema.parse(priceBook), _diag: diag });
+    return Response.json(priceBookSchema.parse(priceBook));
   } catch {
-    return Response.json({ ...priceBookSchema.parse(fallbackPriceBook()), _diag: diag });
+    return Response.json(priceBookSchema.parse(fallbackPriceBook()));
   }
 }
