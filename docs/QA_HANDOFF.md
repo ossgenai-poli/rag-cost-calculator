@@ -1,14 +1,15 @@
-# QA Handoff — RAG Cost Calculator (RC `rc-qa-4`)
+# QA Handoff — RAG Cost Calculator (RC `rc-qa-5`)
 
 This is the single source of truth for the QA engineer. Everything needed to run the test plan is
 here. Live-pricing suites run against the Vercel runtime (§3/§5); all other suites run against the
 static site.
 
-> **Retest round (rc-qa-4):** GPU-engineering capacity-model remediation — one authoritative
-> benchmark-driven capacity (concurrency + TTFT gated), serving-group/replica/HA topology, split
-> weight/KV precision, extrapolation labeling, and the owned-capacity fix. **See §10** for the
-> focused checklist and the exact expected values (DeepSeek + GLM). rc-qa-3 fixes (auto-size, P2
-> guards, ops, Bedrock rates — §8/§9) remain intact.
+> **Retest round (rc-qa-5):** second GPU-engineering remediation — prefill/QPS capacity,
+> utilization-target sizing, complete serving-group granularity, precision+sequence provenance,
+> context feasibility, infeasibility reason codes, the corrected GPU fixture, per-SKU price
+> provenance, input-overflow guards, and executive-honesty UX. **See §11** for the focused
+> checklist + canonical DeepSeek reproduction. rc-qa-4 capacity fixes (§10) and rc-qa-3 (§8/§9)
+> remain intact.
 
 ---
 
@@ -16,8 +17,8 @@ static site.
 
 | | Value |
 |---|---|
-| **Git tag** | `rc-qa-4` |
-| **Commit SHA** | run `git rev-parse rc-qa-4` |
+| **Git tag** | `rc-qa-5` |
+| **Commit SHA** | run `git rev-parse rc-qa-5` |
 | **Static site (live + verified rendering)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
 | **Runtime site (LIVE pricing)** | https://rag-cost-calculator-hazel.vercel.app/ |
 | **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
@@ -27,13 +28,13 @@ Check out the exact tree:
 git clone https://github.com/ossgenai-poli/rag-cost-calculator.git
 cd rag-cost-calculator
 git fetch --tags --force        # the rc tags are re-pointed between rounds
-git checkout rc-qa-4            # detached HEAD at the pinned RC
+git checkout rc-qa-5            # detached HEAD at the pinned RC
 ```
 
 **Pre-verified by the developer on this exact SHA** (so an environment problem is distinguishable
 from a product defect):
 - `npm run typecheck` → clean
-- `npm test` → **106 passed** (incl. GPU capacity, catalog-drift, topN-clamp, QA regressions)
+- `npm test` → **126 passed** (incl. GPU capacity + remediation, catalog-drift, topN-clamp, QA regressions)
 - `npm run build:static` → emits `./out`
 - `npm run test:e2e` → **PASS** (no console errors)
 
@@ -320,3 +321,44 @@ precision / sequence / model / partial-box mismatch.
    gating and honest provenance take priority.
 
 Suite total after these: **106** unit tests.
+
+---
+
+## 11. rc-qa-5 retest checklist — 2nd GPU-engineering remediation (GPU-008…013, QA-014, INPUT-020, UX, PRICING)
+
+All self-hosted capacity now reads from ONE authoritative source and reconciles across UI, scenario
+table, exports and verdict. `crossover.verdictQualified` is set (and the qualification shown in UI /
+Markdown / JSON) whenever a positive verdict rests on anything other than **measured capacity +
+live pricing** — i.e. proxy/extrapolated/heuristic throughput, an estimated **prefill** bound, a
+**fallback/reference** GPU price, or a commitment/Spot discount.
+
+| # | Area | Retest |
+|---|---|---|
+| GPU-008 | Prefill + QPS | Zero/short-output, high-input workloads are real GPU work; fleet = max(prefill, decode, memory, topology, SLA); prefill-bound sizing is flagged estimated |
+| GPU-009 | Utilization target | Fleet sized to `capacity × utilTarget`; util lands ≤ target; util card shows **avg**, **peak**, and **post-one-loss** peak; lowering the target raises the fleet |
+| GPU-010 | Precision + sequence | **BF16 ≠ FP8** (extrapolated, not measured); output (OSL) bucket validated with a tight 1.5× tolerance; requested vs benchmarked ISL/OSL shown; reasons in exports |
+| GPU-011 | Serving groups | Usable replicas = `floor(boxes/ipr)`; stranded boxes = zero capacity; auto-size rounds to a group multiple; a 9-box/8-box-replica manual cap is infeasible |
+| GPU-012 | Context feasibility | input + max output > context (or model max) ⇒ infeasible, no positive verdict; KV uses the servable sequence |
+| GPU-013 | Reason codes | Coded infeasibility with targeted guidance; **only** capacity shortage (manual-cap) suggests adding instances — a TTFT failure never does |
+| QA-014 | Fixture | The DeepSeek fixture uses the **p6 price ($113)**, not p5 ($55); UI-equivalent construction = direct construction (shared `applyGpuSelection`) |
+| INPUT-020 | Overflow | `1e308` queries → finite cost/fleet/util (no Infinity/NaN); extreme inputs are clamped |
+| UX-015 | Qualification | A positive **heuristic** result visibly says it is not validated (no benchmark card required) |
+| UX-016 | "Modeled cost" | No more "fully priced"; an Included/Excluded disclosure lists excluded categories; zero Ops inputs are labeled assumptions |
+| UX-017 | Redundancy | Control renamed **"Serving redundancy (N+1 replicas)"**; HA-off shows a result-level **Non-production estimate** banner; models replica redundancy, not AZ/Spot/quota/DR |
+| UX-019 | QPS semantics | Break-even shows **calendar-average** and **active-window** QPS (÷ uptime); report states the uptime basis |
+| PRICING-018 | Per-SKU provenance | Sources modal badges each GPU **live / reference / override**; JSON export carries `priceSource`; a positive rec on fallback/estimated pricing is qualified |
+
+### Canonical DeepSeek reproduction (assert the mechanics — dollars are non-normative)
+DeepSeek-V4-Pro · p6-b200 · INT4 weights · BF16 KV · 200M q/mo · 2,910 input · 500 output · concurrency
+16 · TTFT 2,000 ms · peak 1 · uptime 730 · HA on · auto-size on · on-demand:
+- The **selected p6 price ($113/hr)** is used — never the default p5 $55 (QA-014).
+- Fleet is whole serving groups (ipr = 1 here) sized to the 70% util target; GPU total reconciles as
+  **billed boxes × $113 × 730 h + modeled infra/ops**.
+- For the **current workload** the verdict is **API wins** (self-host is not cheaper at this scale);
+  the static-fallback figure ~**$2.39M / +139%** is a **non-normative reference**, not a pinned
+  assertion (it depends on the session's full infra/retrieval inputs).
+- Report **current-workload winner** separately from **theoretical crossover feasibility** (a fleet
+  can be feasible yet not the cheaper option at today's volume).
+
+Suite total: **126** unit tests. Gates green on `rc-qa-5`: typecheck · 126 tests · build:static ·
+verify:basepath · test:e2e · verify:live.
