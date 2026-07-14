@@ -20,6 +20,8 @@ export interface ResolveOptions {
   control?: ControlRequest;
   /** Override the pinned catalog (tests). Defaults to loadCatalog(). */
   catalog?: BenchmarkRecord[];
+  /** Injected host-equivalence allowlist (tests). Production uses the frozen empty allowlist. */
+  hostAllowlist?: import("./equivalence").HostEquivalenceEntry[];
 }
 
 export function resolveOperatingPoint(req: RequestSpec, opts: ResolveOptions): SelectionResult {
@@ -40,7 +42,7 @@ export function resolveOperatingPoint(req: RequestSpec, opts: ResolveOptions): S
   }
 
   const catalog = opts.catalog ?? loadCatalog();
-  const best = selectBest(catalog, req);
+  const best = selectBest(catalog, req, { hostAllowlist: opts.hostAllowlist });
 
   if (!best) {
     // No qualified measurement → unbenchmarked. NEVER fabricate from FLOPS/bandwidth.

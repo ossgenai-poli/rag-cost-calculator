@@ -39,16 +39,17 @@ export interface HostEquivalenceEntry {
   reviewedBy: string;
 }
 
-// PRODUCTION allowlist is EMPTY — no host equivalence has a real, traceable review yet,
-// and the slice must not invent reviewed compatibility. A genuine entry must cite a review
-// artifact and name the specific AWS instance(s) represented. Unit tests inject a temporary
-// fixture (and clear it) rather than shipping a synthetic entry here.
-export const HOST_ALLOWLIST: HostEquivalenceEntry[] = [];
+// PRODUCTION allowlist is EMPTY and FROZEN — no host equivalence has a real, traceable
+// review yet, and the slice must not invent reviewed compatibility. Deny-by-default must not
+// depend on callers refraining from mutating a global, so this is read-only; tests inject a
+// fixture via the `allowlist` parameter of hostEquivalence()/evaluate(), never by mutation.
+export const HOST_ALLOWLIST: readonly HostEquivalenceEntry[] = Object.freeze([]);
 
-/** Reviewed host proxy for (recordHost → awsInstance), or null (→ deny → unbenchmarked). */
-export function hostEquivalence(recordHost: string, awsInstance: string | undefined): HostEquivalenceEntry | null {
+/** Reviewed host proxy for (recordHost → awsInstance), or null (→ deny → unbenchmarked).
+ *  `allowlist` defaults to the frozen production allowlist; tests pass their own. */
+export function hostEquivalence(recordHost: string, awsInstance: string | undefined, allowlist: readonly HostEquivalenceEntry[] = HOST_ALLOWLIST): HostEquivalenceEntry | null {
   if (!awsInstance) return null;
-  const e = HOST_ALLOWLIST.find((x) => x.recordHost === recordHost && x.awsInstance === awsInstance);
+  const e = allowlist.find((x) => x.recordHost === recordHost && x.awsInstance === awsInstance);
   if (!e) return null;
   const c = e.compatible;
   if (!c.power || !c.memoryConfig || !c.interconnect || !c.servingTopology) return null;

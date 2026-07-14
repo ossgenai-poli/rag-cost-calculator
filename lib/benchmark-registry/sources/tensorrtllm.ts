@@ -1,7 +1,7 @@
 // NVIDIA TensorRT-LLM adapter — vendor-measured supplement. Pure & deterministic.
 // Max-load rows are a capacity CEILING, not an interactive result unless latency-qualified.
 import type { BenchmarkRecord, Reason, SourceAdapter } from "../schema";
-import { SchemaError, strictNum, strictNumOpt } from "../raw-validate";
+import { SchemaError, strictBool, strictNum, strictNumOpt, strictStr } from "../raw-validate";
 import { sha256 } from "../hash";
 
 export const tensorrtllmAdapter: SourceAdapter = {
@@ -15,11 +15,12 @@ export const tensorrtllmAdapter: SourceAdapter = {
     }
     const checksum = sha256(raw);
     return r.rows.map((row: any, i: number): BenchmarkRecord => {
-      const maxLoad = row.row_kind === "max-throughput";
-      const perGpuReported = row.per_gpu_reported === true;
+      const maxLoad = strictStr(row.row_kind, "row.row_kind") === "max-throughput";
+      const perGpuReported = strictBool(row.per_gpu_reported, "row.per_gpu_reported");
+      const multinode = strictBool(row.multinode, "row.multinode");
       const intrinsic: Reason[] = [];
       if (maxLoad) intrinsic.push({ code: "max-load-ceiling", dimension: "latency", message: "Max-load throughput is a capacity ceiling, not an interactive-RAG operating point." });
-      if (row.multinode && !perGpuReported) intrinsic.push({ code: "no-per-gpu-metric", dimension: "topology", message: `Multi-node ${row.gpu} result reports only a system total; no valid per-GPU metric — must not be split into a fictional per-GPU number.` });
+      if (multinode && !perGpuReported) intrinsic.push({ code: "no-per-gpu-metric", dimension: "topology", message: `Multi-node ${row.gpu} result reports only a system total; no valid per-GPU metric — must not be split into a fictional per-GPU number.` });
       if (snap.kind === "illustrative-pending-ingestion") intrinsic.push({ code: "illustrative-snapshot", dimension: "provenance", message: "Illustrative pinned snapshot; numbers pending real ingestion — not a verified measurement." });
       const gpuCount = strictNum(row.gpu_count, "row.gpu_count");
       return {
@@ -45,8 +46,8 @@ export const tensorrtllmAdapter: SourceAdapter = {
         formFactor: row.form_factor,
         gpuMemGB: strictNum(row.gpu_mem_gb, "row.gpu_mem_gb"),
         gpuCount,
-        nodeCount: row.multinode ? Math.ceil(gpuCount / 8) : 1,
-        topology: `TP${strictNum(row.tp, "row.tp")}${row.multinode ? " multi-node" : " single-node"}`,
+        nodeCount: multinode ? Math.ceil(gpuCount / 8) : 1,
+        topology: `TP${strictNum(row.tp, "row.tp")}${multinode ? " multi-node" : " single-node"}`,
         interconnect: row.interconnect,
         parallelism: { tp: strictNum(row.tp, "row.tp"), pp: strictNum(row.pp, "row.pp"), ep: 1, dp: 1 },
         serving: "aggregated",

@@ -44,6 +44,10 @@ export function validateRecord(rec: BenchmarkRecord): void {
     if (!rec[f] || typeof rec[f] !== "string") fail(id, `missing/invalid string "${f}"`);
   }
   if (!Array.isArray(rec.awsRepresentativeInstances) || rec.awsRepresentativeInstances.some((x) => typeof x !== "string")) fail(id, "awsRepresentativeInstances must be a string[]");
+  // Decision-critical config fields — types validated (null = unknown; never truthiness).
+  if (!(rec.kvPrecision === null || typeof rec.kvPrecision === "string")) fail(id, `kvPrecision must be null or a string (got ${JSON.stringify(rec.kvPrecision)})`);
+  if (!(rec.prefixCache === null || typeof rec.prefixCache === "boolean")) fail(id, `prefixCache must be null or a boolean (got ${JSON.stringify(rec.prefixCache)})`);
+  if (!(rec.specDecode === null || typeof rec.specDecode === "string")) fail(id, `specDecode must be null or a string (got ${JSON.stringify(rec.specDecode)})`);
   if (typeof rec.perGpuReported !== "boolean") fail(id, "perGpuReported must be boolean");
   if (typeof rec.latencyQualified !== "boolean") fail(id, "latencyQualified must be boolean");
   if (!SERVINGS.includes(rec.serving)) fail(id, `invalid serving "${rec.serving}"`);

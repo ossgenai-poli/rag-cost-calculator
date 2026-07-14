@@ -3,11 +3,11 @@
 // research-measured; then (within a source) the operating concurrency nearest the
 // request; then a stable id tie-break. No averaging, no silent interpolation.
 import type { BenchmarkRecord, EvidenceMatch, RequestSpec } from "./schema";
-import { evaluate } from "./eligibility";
+import { evaluate, type EvalOptions } from "./eligibility";
 import { sourceRank, statusRank } from "./confidence";
 
-export function selectBest(records: BenchmarkRecord[], req: RequestSpec): EvidenceMatch | null {
-  const eligible = records.map((r) => evaluate(r, req)).filter((m) => m.eligible);
+export function selectBest(records: BenchmarkRecord[], req: RequestSpec, opts: EvalOptions = {}): EvidenceMatch | null {
+  const eligible = records.map((r) => evaluate(r, req, opts)).filter((m) => m.eligible);
   if (eligible.length === 0) return null;
   eligible.sort((a, b) => cmp(a, b, req));
   return eligible[0];

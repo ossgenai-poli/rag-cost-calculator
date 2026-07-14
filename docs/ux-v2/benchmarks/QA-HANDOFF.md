@@ -25,6 +25,16 @@ npx vitest run                            # 209/209 — frozen 184 + new 25 (no 
 npx tsc --noEmit                          # clean
 ```
 
+**Round 4 (fourth HOLD) — final fail-closed + hygiene fixes:**
+
+| Finding | Fix |
+|---|---|
+| InferenceX SKU-derived AWS representation | `awsRepresentativeInstances` comes ONLY from an explicit reviewed snapshot mapping — never derived from GPU SKU. The pinned snapshot has none → `[]` → the record requires reviewed host equivalence (empty) → `unbenchmarked`. Negative test: same SKU alone ≠ measured-exact |
+| request validation fail-open | runtime `validateRequest` at the evaluate/resolve boundary — finite positive ints for ISL/OSL/concurrency/GPU/node/TP·PP·EP, `seqTolerance` finite in (1,4], interactivity percentile enum + positive finite SLA/streaming; invalid → `invalid-request`. Adversarial tests (0, negative, NaN, Infinity, bad enum) |
+| non-numeric raw fields coerced | `strictBool`/`strictBoolOpt`/`strictStrOpt` added; `disagg`/`is_multinode`/`per_gpu_reported`/`kv_precision`/`spec_method` and all string/bool config fields validated in every adapter; `validateRecord` type-checks `kvPrecision`/`prefixCache`/`specDecode`. No truthiness |
+| production allowlist mutated by tests | `HOST_ALLOWLIST` is `Object.freeze([])`; equivalence takes an injected `allowlist`; `evaluate`/`selectBest`/`resolveOperatingPoint` accept `hostAllowlist` — tests inject, never mutate |
+| stale "one exact selection" claim | replaced with the honest architecture-only status (zero measured-exact from the pinned catalog; end-to-end proven via synthetic record) |
+
 **Round 3 (third HOLD) — final fail-closed fixes:**
 
 | Finding | Fix |
@@ -65,16 +75,25 @@ independent>vendor · latency gate rejects max-load · no silent mismatch · who
 no fictional per-GPU split · `unbenchmarked` when no evidence · **legacy unchanged when experimental
 disabled** · provenance reconciles · byte-identical normalization · fail-closed schema · offline.
 
-## Vertical slice — what it proves (not coverage)
+## Vertical slice — what it proves (ARCHITECTURE-ONLY; not coverage)
+
+> **Honest status (P1/P2-BENCH-004):** the pinned production catalog currently yields **zero**
+> measured-exact selections. The one verified snapshot (InferenceX dsv4·B200·FP4) is
+> **`unbenchmarked`** because it has **no reviewed AWS-host mapping** and **no prefix-cache metadata** —
+> neither is inferred. MLPerf/TensorRT-LLM stay illustrative and non-selectable. This is an
+> **architecture-only slice**: it proves ingestion → validation → eligibility → selection → provenance
+> end-to-end, with the measured-exact path exercised by a **fully-specified synthetic test record**.
+> A real end-to-end exact selection awaits a source-backed record that *establishes* (not infers)
+> prefix-cache state and a reviewed AWS-host identity/equivalence.
 
 - **3 adapters, pinned snapshots:** InferenceX (`raw/inferencex/…`, **verified** real: run 27434759052,
   commit 45126b03), MLPerf + TensorRT-LLM (**`illustrative-pending-ingestion`** — real structure/
-  provenance, placeholder numbers; clearly labelled, never shown as verified). License/attribution in
-  `raw/MANIFEST.json`.
-- **One exact selection** (dsv4·B200·FP4 → InferenceX, `measured-exact`, full provenance + checksum).
-- **One qualified proxy / scaled result** — cross-accelerator substitution is **denied** (`unbenchmarked`);
-  a same-accelerator, **reviewed** host equivalence → `proxy`; an in-bounds off-bucket ISL → a disclosed,
-  bounded `measured-scaled` transform (out-of-bounds → `unbenchmarked`).
+  provenance, placeholder numbers; never selectable). License/attribution in `raw/MANIFEST.json`.
+- **The verified InferenceX record → `unbenchmarked`** (`host-not-equivalent`, and `prefix-cache-unknown`
+  once host is supplied) — the fail-closed refusal to invent AWS-host or prefix-cache facts.
+- **Transform/proxy semantics** — cross-accelerator substitution **denied** (`unbenchmarked`); a
+  same-accelerator **reviewed** host equivalence (injected in tests only) → `proxy`; an in-bounds
+  off-bucket ISL → a disclosed, bounded `measured-scaled` transform (out-of-bounds → `unbenchmarked`).
 - **One deliberately `unbenchmarked`** case (GB200 NVL72 system total → no per-GPU → not fabricated).
 - **Comparison vs the unchanged control** (`resolveOperatingPoint(mode:'control')` === raw
   `getBenchmarkCurve`+`operatingPointAt`; `differsFromControl` / `differenceCause` reported).

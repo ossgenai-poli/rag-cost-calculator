@@ -239,6 +239,19 @@ Plus determinism: the selector is a pure function of (RequestSpec, pinned catalo
   carry the **specific** `awsRepresentativeInstances` they represent (not a boolean); tests inject a
   temporary fixture only.
 
+### Round-4 hardening
+- **No SKU-derived AWS representation:** `awsRepresentativeInstances` comes only from an explicit reviewed
+  snapshot mapping; the pinned InferenceX snapshot has none → `[]` → the record is `unbenchmarked`.
+- **Request validation** (`validateRequest`) at the evaluate/resolve boundary — finite positive
+  ints/enums/ranges; invalid → `invalid-request`.
+- **Strict non-numeric raw validation** — `strictBool`/`strictStrOpt` across every adapter; no truthiness;
+  `validateRecord` type-checks `kvPrecision`/`prefixCache`/`specDecode`.
+- **Immutable production policy** — `HOST_ALLOWLIST` frozen; equivalence + `evaluate`/`selectBest`/
+  `resolveOperatingPoint` accept an injected `hostAllowlist` (tests only).
+- **Architecture-only slice:** the pinned catalog yields **zero** measured-exact selections (InferenceX
+  lacks a reviewed AWS-host mapping and prefix-cache metadata — neither inferred); measured-exact is
+  exercised end-to-end via a fully-specified synthetic record.
+
 ---
 
 ## Guardrails (restated)

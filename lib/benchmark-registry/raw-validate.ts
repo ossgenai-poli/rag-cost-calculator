@@ -24,3 +24,21 @@ export function strictStr(v: unknown, field: string): string {
   }
   return v;
 }
+
+/** Optional raw string field — null passes through; otherwise a non-empty string (never coerced). */
+export function strictStrOpt(v: unknown, field: string): string | null {
+  if (v == null) return null;
+  return strictStr(v, field);
+}
+
+/** Required raw boolean — must ALREADY be a boolean; a string "false" fails closed (never truthiness). */
+export function strictBool(v: unknown, field: string): boolean {
+  if (typeof v !== "boolean") throw new SchemaError(`field "${field}" must be a boolean, got ${JSON.stringify(v)}`);
+  return v;
+}
+
+/** Optional raw boolean — null passes through; otherwise a real boolean. */
+export function strictBoolOpt(v: unknown, field: string): boolean | null {
+  if (v == null) return null;
+  return strictBool(v, field);
+}

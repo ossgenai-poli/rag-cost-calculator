@@ -2,15 +2,18 @@
 // Every numeric raw field goes through the shared strict validator (no coercion).
 import type { BenchmarkRecord, SourceAdapter } from "../schema";
 import { sha256 } from "../hash";
-import { SchemaError, strictNum, strictNumOpt, strictStr } from "../raw-validate";
-import { AWS_INSTANCE_ACCELERATOR } from "../instance-map";
+import { SchemaError, strictBool, strictNum, strictNumOpt, strictStr, strictStrOpt } from "../raw-validate";
 
 // Re-export SchemaError for existing importers.
 export { SchemaError } from "../raw-validate";
 
-/** AWS instances this accelerator directly represents (reviewed hardware registry). */
-function representativeInstances(accelerator: string): string[] {
-  return Object.keys(AWS_INSTANCE_ACCELERATOR).filter((inst) => AWS_INSTANCE_ACCELERATOR[inst] === accelerator);
+/** Only an EXPLICIT, reviewed snapshot field may declare AWS representation — never derived
+ *  from the GPU SKU. The pinned InferenceX snapshot has no such mapping ⇒ []. */
+function reviewedAwsInstances(snap: any): string[] {
+  const v = snap?.awsRepresentativeInstances;
+  if (v == null) return [];
+  if (!Array.isArray(v) || v.some((x: unknown) => typeof x !== "string")) throw new SchemaError("_snapshot.awsRepresentativeInstances must be a string[]");
+  return v;
 }
 
 export const inferencexAdapter: SourceAdapter = {
@@ -25,7 +28,10 @@ export const inferencexAdapter: SourceAdapter = {
     }
     const checksum = sha256(raw);
     const gpuSku = strictStr(c.hardware, "config.hardware").toUpperCase();
-    const gpuCount = c.disagg ? strictNum(c.num_prefill_gpu, "config.num_prefill_gpu") + strictNum(c.num_decode_gpu, "config.num_decode_gpu") : strictNum(c.num_decode_gpu, "config.num_decode_gpu");
+    const disagg = strictBool(c.disagg, "config.disagg");
+    const isMultinode = strictBool(c.is_multinode, "config.is_multinode");
+    const awsInstances = reviewedAwsInstances(snap);
+    const gpuCount = disagg ? strictNum(c.num_prefill_gpu, "config.num_prefill_gpu") + strictNum(c.num_decode_gpu, "config.num_decode_gpu") : strictNum(c.num_decode_gpu, "config.num_decode_gpu");
     return r.points.map((p: any): BenchmarkRecord => {
       const m = p.metrics ?? {};
       return {
@@ -45,7 +51,7 @@ export const inferencexAdapter: SourceAdapter = {
         modelId: strictStr(c.model, "config.model"),
         checkpoint: strictStr(c.checkpoint, "config.checkpoint"),
         weightPrecision: strictStr(c.precision, "config.precision"),
-        kvPrecision: c.kv_precision ?? null,
+        kvPrecision: strictStrOpt(c.kv_precision, "config.kv_precision"),
         framework: strictStr(c.framework, "config.framework"),
         frameworkVersion: c.framework_version,
         image: c.image,
@@ -54,21 +60,21 @@ export const inferencexAdapter: SourceAdapter = {
         formFactor: strictStr(c.form_factor, "config.form_factor"),
         gpuMemGB: strictNum(c.gpu_mem_gb, "config.gpu_mem_gb"),
         gpuCount,
-        nodeCount: c.is_multinode ? Math.ceil(gpuCount / 8) : 1,
-        topology: `TP${strictNum(c.tp, "config.tp")}${c.disagg ? " disaggregated" : " aggregated"}`,
+        nodeCount: isMultinode ? Math.ceil(gpuCount / 8) : 1,
+        topology: `TP${strictNum(c.tp, "config.tp")}${disagg ? " disaggregated" : " aggregated"}`,
         interconnect: strictStr(c.interconnect, "config.interconnect"),
         parallelism: { tp: strictNum(c.tp, "config.tp"), pp: strictNum(c.pp, "config.pp"), ep: strictNum(c.ep, "config.ep"), dp: strictNum(c.dp, "config.dp") },
-        serving: c.disagg ? "disaggregated" : "aggregated",
+        serving: disagg ? "disaggregated" : "aggregated",
         hostSystem: `${gpuSku}-inferencex`,
-        // Specific instances this B200 measurement represents (from the reviewed registry map).
-        awsRepresentativeInstances: representativeInstances(gpuSku),
+        // AWS representation ONLY from an explicit reviewed snapshot mapping — never from the SKU.
+        awsRepresentativeInstances: awsInstances,
         isl: strictNum(p.isl, "point.isl"),
         osl: strictNum(p.osl, "point.osl"),
         concurrency: strictNum(p.conc, "point.conc"),
         requestRate: null,
         // Prefix-cache behavior is NOT reported by the InferenceX config → unknown (null).
         prefixCache: null,
-        specDecode: c.spec_method ?? null,
+        specDecode: strictStrOpt(c.spec_method, "config.spec_method"),
         outputTputPerGpu: strictNumOpt(m.output_tput_per_gpu, "output_tput_per_gpu"),
         inputTputPerGpu: strictNumOpt(m.input_tput_per_gpu, "input_tput_per_gpu"),
         intvty: strictNumOpt(m.median_intvty, "median_intvty"),

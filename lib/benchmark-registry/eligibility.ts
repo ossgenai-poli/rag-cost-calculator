@@ -6,12 +6,14 @@
 // dimension with a disclosed transform; every other mismatch → ineligible → unbenchmarked.
 import type { BenchmarkRecord, EvidenceMatch, EvidenceStatus, OperatingPoint, Percentile, Reason, RequestSpec, Transformation } from "./schema";
 import { confidenceFor } from "./confidence";
-import { acceleratorEquivalence, hostEquivalence } from "./equivalence";
+import { acceleratorEquivalence, hostEquivalence, type HostEquivalenceEntry } from "./equivalence";
 import { acceleratorForInstance } from "./instance-map";
 import { islLinearScale, islScaleInBounds } from "./transform";
 
 const DEFAULT_SEQ_TOL = 1.5;
+const SEQ_TOL_MAX = 4;
 const PCTL_RANK: Record<Percentile, number> = { mean: 0, p50: 0, p90: 1, p95: 2, p99: 3, unknown: -1 };
+const REQUEST_PERCENTILES: Percentile[] = ["p50", "p90", "p95", "p99", "mean"];
 
 // Decision-critical request fields — an under-specified request can never be measured-exact.
 const REQUIRED_REQUEST: (keyof RequestSpec)[] = [
@@ -19,7 +21,39 @@ const REQUIRED_REQUEST: (keyof RequestSpec)[] = [
   "gpuCount", "nodeCount", "serving", "prefixCache", "specDecode", "isl", "osl", "concurrency",
 ];
 
-export function evaluate(record: BenchmarkRecord, req: RequestSpec): EvidenceMatch {
+export interface EvalOptions {
+  /** Injected host-equivalence allowlist (tests). Defaults to the frozen production allowlist. */
+  hostAllowlist?: readonly HostEquivalenceEntry[];
+}
+
+const posInt = (v: unknown) => typeof v === "number" && Number.isInteger(v) && Number.isFinite(v) && v > 0;
+const posFinite = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v > 0;
+const nonEmptyStr = (v: unknown) => typeof v === "string" && v.length > 0;
+
+/** Runtime type/range validation of the request (P1-BENCH-002). Invalid → invalid-request. */
+function validateRequest(req: RequestSpec): string[] {
+  const p: string[] = [];
+  for (const k of ["modelId", "checkpoint", "weightPrecision", "kvPrecision", "framework", "gpuSku", "awsInstance", "specDecode"] as const) {
+    if (!nonEmptyStr(req[k])) p.push(`${k} must be a non-empty string`);
+  }
+  for (const k of ["isl", "osl", "concurrency", "gpuCount", "nodeCount"] as const) {
+    if (!posInt(req[k])) p.push(`${k} must be a positive finite integer`);
+  }
+  if (req.parallelism) for (const k of ["tp", "pp", "ep"] as const) if (!posInt(req.parallelism[k])) p.push(`parallelism.${k} must be a positive finite integer`);
+  if (typeof req.prefixCache !== "boolean") p.push("prefixCache must be a boolean");
+  if (req.serving !== "aggregated" && req.serving !== "disaggregated") p.push("serving must be aggregated|disaggregated");
+  if (req.seqTolerance != null && !(typeof req.seqTolerance === "number" && Number.isFinite(req.seqTolerance) && req.seqTolerance > 1 && req.seqTolerance <= SEQ_TOL_MAX)) {
+    p.push(`seqTolerance must be a finite number in (1, ${SEQ_TOL_MAX}]`);
+  }
+  if (req.interactivity) {
+    if (!REQUEST_PERCENTILES.includes(req.interactivity.ttftPercentile)) p.push(`interactivity.ttftPercentile must be one of ${REQUEST_PERCENTILES.join("|")}`);
+    if (!posFinite(req.interactivity.ttftSlaMs)) p.push("interactivity.ttftSlaMs must be positive & finite");
+    if (req.interactivity.streamingTokPerSecPerUser != null && !posFinite(req.interactivity.streamingTokPerSecPerUser)) p.push("interactivity.streamingTokPerSecPerUser must be positive & finite");
+  }
+  return p;
+}
+
+export function evaluate(record: BenchmarkRecord, req: RequestSpec, opts: EvalOptions = {}): EvidenceMatch {
   const reasons: Reason[] = [...record.intrinsicQualifications];
   const deny = (code: string, dimension: string, message: string): EvidenceMatch => ({
     record,
@@ -33,6 +67,10 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec): EvidenceMat
   const missing: string[] = REQUIRED_REQUEST.filter((k) => req[k] == null).map((k) => String(k));
   if (!req.parallelism || req.parallelism.tp == null || req.parallelism.pp == null || req.parallelism.ep == null) missing.push("parallelism{tp,pp,ep}");
   if (missing.length) return deny("incomplete-request", "request", `request missing decision-critical field(s): ${missing.join(", ")}`);
+
+  // Request type/range validation — malformed values never produce measured-exact.
+  const invalid = validateRequest(req);
+  if (invalid.length) return deny("invalid-request", "request", `invalid request: ${invalid.join("; ")}`);
 
   // P1-1: only verified snapshots are ever selectable.
   if (record.provenance.snapshotKind !== "verified") {
@@ -64,7 +102,7 @@ export function evaluate(record: BenchmarkRecord, req: RequestSpec): EvidenceMat
   } else if (!record.awsRepresentativeInstances.includes(req.awsInstance!)) {
     // Same accelerator, but this measurement does not directly represent the requested
     // instance — only a REVIEWED host equivalence permits a proxy (deny by default).
-    const he = hostEquivalence(record.hostSystem, req.awsInstance);
+    const he = hostEquivalence(record.hostSystem, req.awsInstance, opts.hostAllowlist);
     if (!he) return deny("host-not-equivalent", "hardware", `measured on ${record.hostSystem} (represents ${JSON.stringify(record.awsRepresentativeInstances)}), no reviewed host equivalence for ${req.awsInstance}`);
     hostSwapped = true;
     reasons.push({ code: "host-proxy", dimension: "hardware", message: `reviewed host equivalence ${he.recordHost}→${he.awsInstance}: ${he.materialDifferences}` });
