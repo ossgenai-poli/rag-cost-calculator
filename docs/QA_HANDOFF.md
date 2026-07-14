@@ -154,13 +154,16 @@ the frontend call `/api/prices` and ships the runtime API route. (`vercel.json` 
 1. Trigger the deploy; note the `*.vercel.app` URL — that is the **runtime preview URL**.
 2. **Check the Vercel build log** for the `/api/prices` prerender — if AWS calls failed at build,
    you'll see it there and the baked response will be `fallback`.
-3. Load the URL and confirm live pricing:
-   - the Pricing-sources modal / freshness badge shows a **live** source, **and**
-   - **Export JSON** → `pricing.source == "live"` (static export shows `"fallback"`), **and**
-   - **the actual GPU `pricePerHr` in the exported JSON differs from the committed fallback**
-     (compare against `public/prices.json`). If `source: "live"` but the GPU numbers are unchanged,
-     that's the partial-live case from §5.0 #3 — **file it** (likely `p6-b200` / `p5e` missing from
-     the Price List API), don't pass it as green.
+3. Confirm live pricing with the bundled checker (does all three checks incl. the partial-live
+   GPU guard, exits non-zero on any failure):
+   ```bash
+   npm run verify:live https://<your-app>.vercel.app
+   # PASS only if source=="live" AND at least one GPU $/hr differs from public/prices.json
+   ```
+   Or manually: Pricing-sources badge shows **live**; **Export JSON** → `pricing.source == "live"`
+   (static shows `"fallback"`); and the exported GPU `pricePerHr` **differs from** `public/prices.json`.
+   If `source: "live"` but GPU numbers are unchanged, that's the partial-live case from §5.0 #3 —
+   **file it** (likely `p6-b200` / `p5e` missing from the Price List API), don't pass it as green.
 4. To force a fresh pull (the response is cached hourly), **redeploy** — don't wait on reloads.
 5. Send the developer word that it's live and I'll help diff live-vs-fallback numbers.
 
