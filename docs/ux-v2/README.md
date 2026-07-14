@@ -66,3 +66,7 @@ same engine** — the only difference is who supplies the inputs.
    the visual spine. Toggle Simple ↔ Expert.
 2. Read [12-decision-log.md](12-decision-log.md) for the open decisions that need owner input.
 3. Each persona reviews against their row in the table above and the [11-meeting-scripts.md](11-meeting-scripts.md).
+
+**Test engineer:** follow [REVIEW-INSTRUCTIONS.md](REVIEW-INSTRUCTIONS.md) — this is a **design-artifact
+review**, not a functional test. It has the isolation/safety invariants, the engine-fidelity
+cross-check, the completeness checklist, and the persona-review protocol + scoring.

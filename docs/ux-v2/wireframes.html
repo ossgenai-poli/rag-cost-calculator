@@ -276,14 +276,17 @@
             <div class="verdict">Calling the <span class="em">API is cheaper today</span> — self-hosting
               pays off above ~135M questions/mo.</div>
             <div class="costgrid">
-              <div class="c"><div class="k">API / mo</div><div class="v tnum">$331k</div></div>
-              <div class="c"><div class="k">Self-host / mo</div><div class="v tnum">$7.2M</div></div>
-              <div class="c"><div class="k">Per query</div><div class="v tnum">$0.0011</div></div>
+              <div class="c"><div class="k">API / mo <sup>‡</sup></div><div class="v tnum">$331k</div></div>
+              <div class="c"><div class="k">Self-host / mo <sup>‡</sup></div><div class="v tnum">$7.2M</div></div>
+              <div class="c"><div class="k">Per query <sup>‡</sup></div><div class="v tnum">$0.0011</div></div>
             </div>
             <div style="margin:.5rem 0"><span class="conf scaled">Measured·scaled</span></div>
             <div class="arch">DeepSeek-V4-Pro · p6-b200.48xlarge · INT4 · <b>87 instances</b>
               <div class="eq">Prefill-bound: <b>221,461</b> input tok/s ÷ (3,715 prefill tok/s/replica
-                × 70% = 2,600) → <b>86</b> replicas + 1 N+1 × 1 box = <b>87 boxes</b></div></div>
+                × 70% = 2,600) → <b>86</b> replicas + 1 N+1 × 1 box = <b>87 boxes</b> <span style="color:#5f7f6c">✓ real rc-qa-11 output</span></div></div>
+            <div style="font-size:.68rem;color:var(--panel-faint);margin-top:.5rem">‡ Dollar figures are
+              <b>illustrative placeholders</b> for layout only. The fleet (87), the equation, the confidence
+              chip and the provenance below are real frozen-engine (rc-qa-11) values.</div>
             <div class="callout">⚠ Rests on measured-but-scaled prefill (ISL 1,024 → 2,910). Treat as
               qualified; load-test before committing.</div>
           </div>
