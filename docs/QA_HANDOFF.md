@@ -139,12 +139,13 @@ schedule). The policy grants only read-only price lookups, but short-lived keys 
 
 ## 6. Defect filing
 
-File in https://github.com/ossgenai-poli/rag-cost-calculator/issues. Labels available:
+QA is run by **Codex from the owner's workspace**, filing through the owner's own GitHub account —
+no separate collaborator invite is required. File in
+https://github.com/ossgenai-poli/rag-cost-calculator/issues. Labels available:
 `severity:critical` · `severity:major` · `severity:minor` · `severity:trivial` · `qa` ·
-`area:pricing` · `area:calc-engine`. Please include: case ID (e.g. `C3`, `L6`), the URL/build
-used (static tag `rc-qa-1` or the runtime URL), steps, expected vs. actual, and a screenshot.
-*(If the QA engineer's GitHub account isn't yet a collaborator, send the developer the handle for
-issue-write access.)*
+`area:pricing` · `area:calc-engine`. Each issue should include: case ID (e.g. `C3`, `L6`), the
+URL/build used (static tag `rc-qa-1` or the runtime URL), steps, expected vs. actual, and a
+screenshot or the offending export file.
 
 ---
 
