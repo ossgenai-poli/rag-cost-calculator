@@ -338,6 +338,9 @@ export interface CapacityResult {
   perReplicaPrefillTokS: number;
   prefillEstimated: boolean;
   perGpuPrefillTokS?: number;      // measured input tok/s per GPU at the operating point
+  // INF-006: how far the measured input throughput was scaled from the benchmarked
+  // ISL bucket to the workload's actual ISL (1 = used as measured, no scaling).
+  prefillIslScale?: number;
   // When prefill throughput is NOT measured (heuristic path), we size it from the
   // ISL/OSL ratio and report a RANGE (low/high replicas) instead of one precise count.
   prefillRatioUsed?: number;       // input/decode throughput ratio applied (heuristic only)
@@ -428,6 +431,9 @@ export interface CrossoverResult {
   utilAvgPrefill: number;          // avg PREFILL demand ÷ provided prefill capacity
   utilPeakPrefill: number;         // peak prefill demand ÷ provided prefill capacity
   bindingDim: "prefill" | "decode"; // which dimension runs hotter at the current workload
+  // INF-005: the utilization target the fleet was actually sized against, exposed so
+  // the DISPLAYED sizing equation can reconcile with the engine's arithmetic.
+  utilTargetUsed: number;
   breakEvenBindingDim: "prefill" | "decode"; // which dimension binds at break-even volume
   gpuPriceSource: "live" | "fallback" | "override"; // provenance of the $/hr used (P1)
   /** Coded infeasibility reasons for targeted UI guidance (GPU-013). Empty ⇒ feasible. */

@@ -242,8 +242,12 @@ export function computeCapacity(
         image: prov.image,
         specMethod: prov.specMethod,
         disagg: prov.disagg,
-        topology: `TP${prov.prefillTp} · ${prov.numPrefillGpu} prefill + ${prov.numDecodeGpu} decode GPU · ${
-          prov.disagg ? "disaggregated" : "aggregated"
+        // INF-010: in an AGGREGATED deployment prefill and decode share the SAME
+        // GPUs — never render "X prefill + Y decode" (it reads as double the GPUs).
+        topology: `TP${prov.decodeTp} · ${
+          prov.disagg
+            ? `${prov.numPrefillGpu} prefill GPUs + ${prov.numDecodeGpu} decode GPUs (disaggregated)`
+            : `${prov.numDecodeGpu} GPUs handle prefill and decode (aggregated)`
         }${prov.isMultinode ? " · multi-node" : ""}${
           prov.specMethod && prov.specMethod !== "none" ? ` · spec-decode:${prov.specMethod}` : " · no spec-decode"
         }`,
@@ -267,6 +271,7 @@ export function computeCapacity(
     perInstanceDecodeTokS: perInstanceDecode,
     perReplicaPrefillTokS: perReplicaPrefill,
     perGpuPrefillTokS: perGpuPrefill,
+    prefillIslScale,
     prefillEstimated: false, // real measured input throughput at this operating point
     chosenConcurrency: chosen.conc,
     achievedInteractivity: chosen.intvty,
