@@ -137,14 +137,27 @@ export function computeCapacity(
   const perReplicaDecode = chosen.tputPerGpu * gpusInConfig;
   const perInstanceDecode = perReplicaDecode / instancesPerReplica;
 
-  // GPU-005: provenance / extrapolation labeling.
-  const requestedPrecision = generation.weightBits <= 4 ? "fp4" : "fp8";
+  // GPU-005/010: provenance / extrapolation labeling.
+  // Precision is a real enum — BF16/FP16 (16), FP8/INT8 (8), INT4 (4). The
+  // benchmark data only carries fp4/fp8, so a BF16 request can only be SERVED by
+  // an fp8 curve → that is a substitution, never an exact "measured" match.
+  const requestedPrecision = generation.weightBits >= 16 ? "bf16" : generation.weightBits === 8 ? "fp8" : "fp4";
   if (curve.precisionUsed !== requestedPrecision)
     reasons.push(`benchmark precision ${curve.precisionUsed} substituted for requested ${requestedPrecision}`);
+  // GPU-010: validate BOTH input (ISL) and output (OSL) sequence buckets, with a
+  // tight tolerance — a broad 2× band must NOT keep a "measured" label.
+  const SEQ_TOL = 1.5;
   const islUsed = Number(curve.seqUsed.split("/")[0]);
-  const islRatio = perQuery.llmInputTok > 0 && islUsed > 0 ? perQuery.llmInputTok / islUsed : 1;
-  if (islRatio > 2 || islRatio < 0.5)
-    reasons.push(`input length ${Math.round(perQuery.llmInputTok)} far from benchmarked bucket ${islUsed}`);
+  const oslUsed = Number(curve.seqUsed.split("/")[1]);
+  const islReq = perQuery.llmInputTok;
+  const oslReq = generation.outTokens;
+  const islRatio = islUsed > 0 && islReq > 0 ? islReq / islUsed : 1;
+  const oslRatio = oslUsed > 0 && oslReq > 0 ? oslReq / oslUsed : 1;
+  if (islRatio > SEQ_TOL || islRatio < 1 / SEQ_TOL)
+    reasons.push(`input length ${Math.round(islReq)} not close to benchmarked ISL ${islUsed}`);
+  if (oslReq > 0 && (oslRatio > SEQ_TOL || oslRatio < 1 / SEQ_TOL))
+    reasons.push(`output length ${Math.round(oslReq)} not close to benchmarked OSL ${oslUsed}`);
+  const seqRequested = `${Math.round(islReq)}/${Math.round(oslReq)}`;
   // Topology: a config that maps to WHOLE 8-GPU boxes (gpusInConfig a multiple of
   // perBox, incl. the exact 8-GPU or exact 64-GPU case) is a real measurement of
   // that serving group — it stays "measured" when model/precision/seq also match.
@@ -187,7 +200,9 @@ export function computeCapacity(
     benchModelKey: model?.inferencexKey,
     framework: curve.framework,
     precisionUsed: curve.precisionUsed,
+    precisionRequested: requestedPrecision,
     seqUsed: curve.seqUsed,
+    seqRequested,
     note:
       [
         provenance === "proxy"
@@ -212,10 +227,14 @@ export interface FleetSizing {
 export function sizeFleet(
   cap: CapacityResult,
   peakDecodeDemandTokS: number,
-  haEnabled: boolean
+  haEnabled: boolean,
+  utilTarget: number
 ): FleetSizing {
-  const perReplica = cap.perReplicaDecodeTokS > 0 ? cap.perReplicaDecodeTokS : Infinity;
-  const replicasForThroughput = Math.max(1, Math.ceil(peakDecodeDemandTokS / perReplica));
+  // GPU-009: size against the EFFECTIVE serving capacity (capacity × target
+  // utilization), not 100% — you never plan a fleet to run pinned at 100%.
+  const ut = utilTarget > 0 && utilTarget <= 1 ? utilTarget : 1;
+  const effPerReplica = cap.perReplicaDecodeTokS > 0 ? cap.perReplicaDecodeTokS * ut : Infinity;
+  const replicasForThroughput = Math.max(1, Math.ceil(peakDecodeDemandTokS / effPerReplica));
   // HA (GPU-006): N+1, minimum two replicas, so a replica loss still serves peak.
   const replicas = haEnabled ? Math.max(2, replicasForThroughput + 1) : replicasForThroughput;
   return {

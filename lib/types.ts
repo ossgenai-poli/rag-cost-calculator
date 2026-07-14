@@ -339,10 +339,12 @@ export interface CapacityResult {
   serviceMemGB: number;
   benchModelKey?: string;
   framework?: string;
-  precisionUsed?: string;
+  precisionUsed?: string;      // fp4/fp8 actually in the benchmark
+  precisionRequested?: string; // bf16/fp8/fp4 the config asked for (GPU-010)
   weightPrecisionBits: number;
   kvPrecisionBits: number;
-  seqUsed?: string;
+  seqUsed?: string;            // benchmarked ISL/OSL bucket
+  seqRequested?: string;       // requested ISL/OSL (GPU-010)
   note?: string;
 }
 
@@ -361,8 +363,11 @@ export interface CrossoverResult {
   // above derive from `capacity.perInstanceDecodeTokS`, never a generic estimate.
   capacity: CapacityResult;
   replicas: number;                // serving replicas billed (incl. HA)
+  usableReplicas: number;          // COMPLETE serving groups (floor(boxes/ipr)) — only these serve traffic
+  strandedBoxes: number;           // billed boxes that don't complete a group → zero serving capacity (GPU-011)
   instancesPerReplica: number;     // 8-GPU boxes per replica
   haReplicasAdded: number;         // extra replicas added for N+1 HA (0 if HA off)
+  utilPeakPostLoss: number;        // peak util after losing one serving group (N+1 check)
   // Peak/uptime telemetry (label both — GPU peak reporting):
   avgDecodeDemand: number;         // output tok/s, monthly average
   peakDecodeDemand: number;        // output tok/s at peak (× peakFactor)

@@ -5,10 +5,18 @@ import { describe, it, expect } from "vitest";
 import { calculate, defaultInputs } from "./calc-engine";
 import { buildScenarios } from "./scenarios";
 import { buildReport, assumptionsToJson } from "./share";
+import { applyGpuSelection } from "./ui-logic";
 import type { CalcInputs, PriceBook } from "./types";
 import pricesJson from "../public/prices.json";
 
 const priceBook = pricesJson as unknown as PriceBook;
+
+// QA-014: select a GPU exactly like the UI — instance type, price and throughput
+// move together, so a fixture can never pair p6 performance with p5 price.
+function useGpu(i: CalcInputs, instanceType: string) {
+  const g = priceBook.gpus.find((x) => x.instanceType === instanceType)!;
+  i.generation = applyGpuSelection(i.generation, g);
+}
 
 function sh(over: (i: CalcInputs) => void): CalcInputs {
   const i = defaultInputs(priceBook);
@@ -21,7 +29,7 @@ function sh(over: (i: CalcInputs) => void): CalcInputs {
 function deepseek(over: (i: CalcInputs) => void = () => {}): CalcInputs {
   return sh((i) => {
     i.generation.llmModelId = "deepseek-v4-pro-oss";
-    i.generation.gpuInstanceType = "p6-b200.48xlarge";
+    useGpu(i, "p6-b200.48xlarge");
     i.generation.weightBits = 4;
     i.generation.outTokens = 500;
     i.generation.interactivityTarget = 30;
@@ -38,11 +46,12 @@ describe("GPU-001 — grounded capacity drives utilization + break-even (not gen
     expect(c.capacity.source).not.toBe("heuristic"); // benchmark-driven
     expect(c.capacity.chosenConcurrency).toBe(16); // GPU-002 cap honored
     expect(Math.round(c.capacity.perGpuDecodeTokS)).toBe(214); // measured @ conc 16 (NOT 327 uncapped)
-    // Demand ≈ 38,052 tok/s; provided ≈ 41,069 ⇒ ~93% average utilization. A generic
-    // sustainedTokPerSec (≈5,200/GPU) would have shown a comfortable ~27%.
+    // Demand ≈ 38,052 tok/s. Sized against capacity × 70% target (GPU-009), so
+    // average utilization lands AT/below the target — not the false generic ~27%.
     expect(Math.round(c.avgDecodeDemand)).toBe(38052);
-    expect(c.utilAvg).toBeGreaterThan(0.9);
-    expect(c.utilAvg).toBeLessThan(1);
+    expect(c.utilAvg).toBeGreaterThan(0.5);
+    expect(c.utilAvg).toBeLessThanOrEqual(0.72); // sized to the 70% target
+
   });
 
   it("break-even feasibility uses the same authoritative capacity", () => {
@@ -54,16 +63,19 @@ describe("GPU-001 — grounded capacity drives utilization + break-even (not gen
 });
 
 describe("GPU-001/DeepSeek — exact crossover figures", () => {
-  it("throughput 23 boxes, +1 N+1 HA replica ⇒ 24 required and billed", () => {
-    const c = calculate(deepseek(), priceBook).crossover;
-    expect(c.throughputInstances).toBe(23);
-    expect(c.replicas).toBe(24);
+  it("p6 price + utilTarget sizing ⇒ 32 throughput + 1 N+1 HA = 33 boxes (QA-014/GPU-009)", () => {
+    const i = deepseek();
+    const c = calculate(i, priceBook).crossover;
+    expect(i.generation.gpuPricePerHr).toBe(113); // QA-014: p6 price, NOT the p5 $55
+    expect(c.throughputInstances).toBe(32); // ceil(demand / (perReplica × 0.7))
+    expect(c.replicas).toBe(33); // +1 N+1 HA
     expect(c.instancesPerReplica).toBe(1);
     expect(c.haReplicasAdded).toBe(1);
-    expect(c.requiredInstances).toBe(24);
-    expect(c.boxes).toBe(24);
+    expect(c.requiredInstances).toBe(33);
+    expect(c.boxes).toBe(33);
+    expect(c.usableReplicas).toBe(33);
+    expect(c.strandedBoxes).toBe(0);
     expect(c.feasible).toBe(true);
-    expect(c.verdict).toBe("self-host efficient");
   });
 });
 
@@ -89,7 +101,7 @@ describe("GPU-003 — KV precision independent of weight precision", () => {
     calculate(
       sh((i) => {
         i.generation.llmModelId = "glm-5.2-oss";
-        i.generation.gpuInstanceType = "p5.48xlarge";
+        useGpu(i, "p5.48xlarge");
         i.generation.weightBits = 4;
         i.generation.kvBits = kvBits;
         i.generation.maxContextLen = 131072;
@@ -140,12 +152,13 @@ describe("GPU-005/006 — topology, extrapolation labels, replica granularity", 
     calculate(
       sh((i) => {
         i.generation.llmModelId = "minimax-m3-oss";
-        i.generation.gpuInstanceType = "p6-b200.48xlarge";
+        useGpu(i, "p6-b200.48xlarge");
         i.generation.weightBits = 8;
         i.corpus.avgTokensPerDoc = 2000;
         i.retrieval.topK = 8;
         i.retrieval.topN = 4;
         i.chunking.chunkSize = 2048; // input ≈ 8.5K → 8192 bucket
+        i.generation.outTokens = 1024; // matches the 8192/1024 OSL bucket
         i.traffic.queriesPerMonth = 500_000_000;
         over(i);
       }),
@@ -170,7 +183,7 @@ describe("GPU-005/006 — topology, extrapolation labels, replica granularity", 
     });
     expect(c.capacity.gpusInConfig).toBe(64);
     expect(c.capacity.source).toBe("extrapolated");
-    expect(c.capacity.extrapolationReasons.join(" ")).toMatch(/far from/i);
+    expect(c.capacity.extrapolationReasons.join(" ")).toMatch(/not close/i);
   });
 
   it("fleet size respects replica granularity (whole serving groups)", () => {
@@ -199,7 +212,7 @@ describe("GPU-006 — HA adds physical capacity, not just a percentage", () => {
   it("N+1 adds exactly ONE complete serving group — 8 boxes for an 8-box replica", () => {
     const cfg = (ha: boolean) => (i: CalcInputs) => {
       i.generation.llmModelId = "minimax-m3-oss";
-      i.generation.gpuInstanceType = "p6-b200.48xlarge";
+      useGpu(i, "p6-b200.48xlarge");
       i.generation.weightBits = 8;
       i.generation.haEnabled = ha;
       i.corpus.avgTokensPerDoc = 2000;
@@ -223,7 +236,7 @@ describe("provenance gate — non-measured capacity never gives an UNCONDITIONAL
     const c = calculate(
       sh((i) => {
         i.generation.llmModelId = "glm-5.2-oss"; // benchmarkProvenance: proxy
-        i.generation.gpuInstanceType = "p6-b200.48xlarge";
+        useGpu(i, "p6-b200.48xlarge");
         i.generation.weightBits = 4;
         i.traffic.queriesPerMonth = 50_000_000;
       }),
@@ -239,7 +252,7 @@ describe("provenance gate — non-measured capacity never gives an UNCONDITIONAL
     const c = calculate(
       sh((i) => {
         i.generation.llmModelId = "nemotron-3-ultra-oss";
-        i.generation.gpuInstanceType = "p5.48xlarge";
+        useGpu(i, "p5.48xlarge");
         i.traffic.queriesPerMonth = 5_000_000;
       }),
       priceBook
@@ -252,12 +265,12 @@ describe("provenance gate — non-measured capacity never gives an UNCONDITIONAL
     const c = calculate(
       sh((i) => {
         i.generation.llmModelId = "deepseek-v4-pro-oss";
-        i.generation.gpuInstanceType = "p6-b200.48xlarge";
+        useGpu(i, "p6-b200.48xlarge");
         i.generation.weightBits = 4;
         i.corpus.avgTokensPerDoc = 2000;
         i.retrieval.topN = 4;
-        i.chunking.chunkSize = 2048; // input ≈ 8192 bucket → measured
-        i.generation.outTokens = 500;
+        i.chunking.chunkSize = 2048; // input ≈ 8192 bucket
+        i.generation.outTokens = 1024; // matches OSL bucket → measured
         i.traffic.queriesPerMonth = 10_000_000; // light → efficient + feasible
       }),
       priceBook
@@ -271,7 +284,7 @@ describe("GPU-007 — $0 owned capacity with real traffic stays a complete scena
   it("owned capacity: non-zero traffic is NOT 'no volume'; hardware $0; no like-for-like %", () => {
     const i = sh((x) => {
       x.generation.llmModelId = "deepseek-v4-pro-oss";
-      x.generation.gpuInstanceType = "p6-b200.48xlarge";
+      useGpu(x, "p6-b200.48xlarge");
       x.generation.gpuPricePerHr = 0;
       x.traffic.queriesPerMonth = 1_000_000;
     });

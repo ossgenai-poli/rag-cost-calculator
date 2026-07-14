@@ -2,6 +2,7 @@
 
 import type { GenerationInputs, GenerationMode, GpuInstancePrice, GpuPricingModel, ModelPrice, PriceBook } from "@/lib/types";
 import { effectiveGpuHourly, GPU_COMMITMENT_DISCOUNT, instancesToLoad, modelWeightsGB, kvCacheGB } from "@/lib/self-host";
+import { applyGpuSelection, applyModelSelection } from "@/lib/ui-logic";
 import {
   NumberField,
   SegmentedToggle,
@@ -41,16 +42,10 @@ export function GenerationPanel(props: {
     );
 
   function patchModel(model: ModelPrice | undefined, g: GpuInstancePrice | undefined, extra?: Partial<GenerationInputs>) {
-    const next: GenerationInputs = { ...generation, ...extra };
-    if (model) {
-      next.llmModelId = model.id;
-      next.llmInPricePer1K = model.inPricePer1K;
-      next.llmOutPricePer1K = model.outPricePer1K;
-      // Default the API comparison to the same model (user can override).
-      next.apiComparisonModelId = model.id;
-      next.apiComparisonInPricePer1K = model.inPricePer1K;
-      next.apiComparisonOutPricePer1K = model.outPricePer1K;
-    }
+    // Use the SHARED selectors (lib/ui-logic) so coupled fields always move
+    // together — the same transforms tests build fixtures with (QA-014).
+    let next: GenerationInputs = { ...generation, ...extra };
+    if (model) next = applyModelSelection(next, model);
     // Reset the fleet to the minimum needed to load the (new) model on the GPU.
     if ((extra?.mode ?? generation.mode) === "self-hosted") {
       next.numInstances = floorFor(model ?? selectedModel, g ?? gpu, next.weightBits);
@@ -71,11 +66,13 @@ export function GenerationPanel(props: {
   function selectGpu(instanceType: string) {
     const g = priceBook.gpus.find((x) => x.instanceType === instanceType);
     if (!g) return;
-    // GPU change must NOT reset the comparison model, so pass undefined.
+    // GPU change must NOT reset the comparison model — apply the shared GPU
+    // selector (instance type + price + throughput move together).
+    const patched = applyGpuSelection(generation, g);
     patchModel(undefined, g, {
-      gpuInstanceType: g.instanceType,
-      gpuPricePerHr: g.pricePerHr,
-      sustainedTokPerSec: g.sustainedTokPerSec,
+      gpuInstanceType: patched.gpuInstanceType,
+      gpuPricePerHr: patched.gpuPricePerHr,
+      sustainedTokPerSec: patched.sustainedTokPerSec,
     });
   }
 

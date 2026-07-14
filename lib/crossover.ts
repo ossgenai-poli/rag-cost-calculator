@@ -38,8 +38,11 @@ function zeroResult(
     ownedCapacity,
     capacity: cap,
     replicas: 1,
+    usableReplicas: 1,
+    strandedBoxes: 0,
     instancesPerReplica: cap.instancesPerReplica,
     haReplicasAdded: 0,
+    utilPeakPostLoss: 0,
     avgDecodeDemand,
     peakDecodeDemand,
     providedDecodeCapacity: 0,
@@ -104,33 +107,44 @@ export function computeCrossover(
     );
   }
 
-  // Fleet sizing from authoritative capacity (topology + replicas + N+1 HA).
-  const fleet = sizeFleet(cap, peakDecodeDemand, generation.haEnabled !== false);
+  // Fleet sizing from authoritative capacity (topology + replicas + N+1 HA),
+  // sized against capacity × utilTarget (GPU-009).
+  const utilTarget = generation.utilTarget > 0 && generation.utilTarget <= 1 ? generation.utilTarget : 1;
+  const fleet = sizeFleet(cap, peakDecodeDemand, generation.haEnabled !== false, utilTarget);
   const requiredInstances = fleet.requiredInstances;
+  const ipr = fleet.instancesPerReplica;
   const autoSize = generation.autoSizeFleet !== false;
-  // Manual cap still can't go below one replica (a replica is the minimum that
-  // can load + serve the model across its model-parallel group).
+  // GPU-011: the billed fleet is measured in COMPLETE serving groups. Auto-size
+  // rounds up to a whole-group multiple; manual cap bills what's entered (≥ one
+  // replica) but only COMPLETE groups provide capacity — extra boxes are stranded.
+  const roundUpToGroup = (n: number) => Math.ceil(n / ipr) * ipr;
   const boxes = autoSize
-    ? Math.max(userInstances, requiredInstances)
-    : Math.max(userInstances, fleet.instancesPerReplica);
+    ? roundUpToGroup(Math.max(userInstances, requiredInstances))
+    : Math.max(userInstances, ipr);
   const autoSized = boxes > userInstances;
-  // Feasible ⇔ the billed fleet serves peak throughput AND the benchmark operating
-  // point meets interactivity + TTFT + concurrency (GPU-001/002/004). A heuristic
-  // (no benchmark) can't verify SLAs, so slaAchievable=true there.
-  const feasible = boxes >= requiredInstances && cap.slaAchievable;
-  const selfHostedMonthly$ = boxes * gpuMonthly$;
+  const usableReplicas = Math.floor(boxes / ipr);
+  const strandedBoxes = boxes - usableReplicas * ipr; // partial group → 0 capacity
+  // Feasible ⇔ enough COMPLETE serving groups to serve peak at the utilization
+  // target (incl. N+1 HA) AND the benchmark operating point meets the SLAs. A
+  // partial/stranded box contributes NO usable capacity (GPU-011).
+  const feasible = usableReplicas >= fleet.replicas && cap.slaAchievable;
+  const selfHostedMonthly$ = boxes * gpuMonthly$; // you still pay for stranded boxes
 
-  const providedDecodeCapacity = boxes * cap.perInstanceDecodeTokS; // output tok/s @100%
+  // Provided capacity comes ONLY from complete replicas (not stranded boxes).
+  const providedDecodeCapacity = usableReplicas * cap.perReplicaDecodeTokS; // tok/s @100%
   const utilAvg = providedDecodeCapacity > 0 ? avgDecodeDemand / providedDecodeCapacity : 0;
   const utilPeak = providedDecodeCapacity > 0 ? peakDecodeDemand / providedDecodeCapacity : 0;
+  // Peak utilization AFTER losing one serving group (N+1 resilience check, GPU-009).
+  const postLossCapacity = Math.max(0, usableReplicas - 1) * cap.perReplicaDecodeTokS;
+  const utilPeakPostLoss = postLossCapacity > 0 ? peakDecodeDemand / postLossCapacity : Infinity;
   // Throughput-only fleet (no HA) — kept for the "needs ≥ N" display.
-  const throughputInstances = fleet.replicasForThroughput * fleet.instancesPerReplica;
+  const throughputInstances = fleet.replicasForThroughput * ipr;
 
   const apiMonthly$ = apiBlendedPricePerToken * monthlyGenTokens;
   const breakEvenTokens = selfHostedMonthly$ / apiBlendedPricePerToken;
   const equivalentQPS = breakEvenTokens / tokensPerQuery / SECONDS_PER_MONTH;
-  // Decode utilization at break-even volume, using AUTHORITATIVE monthly capacity.
-  const monthlyOutputCapacity = boxes * capacity100;
+  // Decode utilization at break-even volume, from COMPLETE-replica monthly capacity.
+  const monthlyOutputCapacity = usableReplicas * cap.perReplicaDecodeTokS * uptimeSeconds;
   const utilAtBreakEven =
     monthlyOutputCapacity > 0 ? (breakEvenTokens * outputFraction) / monthlyOutputCapacity : Infinity;
   const breakEvenFeasible = utilAtBreakEven <= 1 && cap.slaAchievable;
@@ -166,8 +180,11 @@ export function computeCrossover(
     ownedCapacity,
     capacity: cap,
     replicas: fleet.replicas,
-    instancesPerReplica: fleet.instancesPerReplica,
+    usableReplicas,
+    strandedBoxes,
+    instancesPerReplica: ipr,
     haReplicasAdded: fleet.haReplicasAdded,
+    utilPeakPostLoss,
     avgDecodeDemand,
     peakDecodeDemand,
     providedDecodeCapacity,
