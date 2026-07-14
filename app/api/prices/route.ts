@@ -113,8 +113,10 @@ async function fetchOpenSearchPrices(
   client: PricingClient,
   diag?: Record<string, unknown>
 ): Promise<OpenSearchPrice> {
+  // OpenSearch Serverless (OCU-based) pricing is published under the AmazonES
+  // service code in the Price List API, not "AmazonOpenSearchServerless".
   const command = new GetProductsCommand({
-    ServiceCode: "AmazonOpenSearchServerless",
+    ServiceCode: "AmazonES",
     Filters: [{ Type: "TERM_MATCH", Field: "regionCode", Value: REGION }],
     MaxResults: 100,
   });
@@ -135,7 +137,11 @@ async function fetchOpenSearchPrices(
     }
     const usagetype: string = parsed?.product?.attributes?.usagetype || "";
     const price = extractOnDemandUsd(entry);
-    if (seen.length < 40) seen.push({ u: usagetype, p: price });
+    // Capture only relevant usagetypes so OCU/storage aren't drowned by the
+    // provisioned-domain instance SKUs also under AmazonES.
+    if (/OCU|Serverless|Storage|GB-Mo|ComputeUnit/i.test(usagetype) && seen.length < 40) {
+      seen.push({ u: usagetype, p: price });
+    }
     if (price === null) continue;
     // OCU compute appears as usagetypes like "...OCU-IndexingHours" / "SearchOCU".
     if (/OCU|ComputeUnit/i.test(usagetype) && ocuPricePerHr === null) ocuPricePerHr = price;
