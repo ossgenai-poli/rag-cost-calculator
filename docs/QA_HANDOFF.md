@@ -14,7 +14,7 @@ missing infrastructure.
 | **Git tag** | `rc-qa-1` |
 | **Commit SHA** | `5773d25a8caf3154e566c888211c86ad2ff325af` |
 | **Static site (live now)** | https://ossgenai-poli.github.io/rag-cost-calculator/ |
-| **Runtime site (live pricing)** | *deferred — stand up per §5* |
+| **Runtime site (LIVE pricing — ready)** | https://rag-cost-calculator-hazel.vercel.app/ (runs `main`, includes the pricing-route hardening merged after `rc-qa-1`; static product behavior is identical to the tag) |
 | **Issue tracker** | https://github.com/ossgenai-poli/rag-cost-calculator/issues |
 
 Check out the exact tree:
@@ -61,10 +61,16 @@ Notes:
 - These do not need a backend; the static bundle must **never** call `/api/prices`
   (the e2e asserts this).
 
-**Deferred until §5 host exists (do not FAIL for missing infra — mark BLOCKED):**
-- Any case asserting **live** AWS pricing (`pricing.source == "live"`, live-vs-fallback deltas).
-- Any case exercising the `/api/prices` route directly.
-On the static build, `pricing.source` is `"fallback"` **by design** — that is a PASS, not a defect.
+**Live-pricing suites — NOW RUNNABLE** against the runtime site
+https://rag-cost-calculator-hazel.vercel.app/ (stood up + verified; `npm run verify:live` PASSes):
+- `pricing.source == "live"` and live-vs-fallback deltas.
+- Direct `/api/prices` checks.
+- **What genuinely-live looks like** (so real values aren't misfiled as bugs):
+  - GPU: `p6-b200.48xlarge` ≈ **$113.93/hr live** (moved off the $113 estimate); `p5.48xlarge` = **$55.04** (live value equals the estimate — correct, not stale); `p5e.48xlarge` = **$63.29 default** because AWS exposes **no OnDemand SKU** for it in us-east-1 (honest fallback — do **not** file).
+  - OpenSearch: OCU **$0.24/hr live**; storage **$0.024/GB-mo** (kept from catalog — the only serverless storage SKU is per-byte-hour, wrong unit to use as GB-mo).
+  - `updatedAt` reflects build/revalidation time, cached ~1h (§5.0 #2) — reload won't change it; redeploy to refresh.
+
+On the **static** build, `pricing.source` is `"fallback"` **by design** — that is a PASS, not a defect.
 
 ---
 
@@ -83,7 +89,12 @@ and the JSON catalog is current (no `qwen2.5-72b` / `p4d`).
 
 ---
 
-## 5. Runtime preview with LIVE AWS pricing — setup steps (owner: infra/you)
+## 5. Runtime preview with LIVE AWS pricing — ✅ DONE (steps kept for reproducibility)
+> Stood up at https://rag-cost-calculator-hazel.vercel.app/ with the `rag-price-reader`
+> IAM user (`PricingReadOnly`) and verified live (`npm run verify:live` → PASS). Root-causing the
+> initial `fallback` surfaced two real route bugs (all-or-nothing GPU fetch; wrong OpenSearch
+> service code) — both fixed on `main`. The steps below remain valid for re-provisioning.
+
 
 The static site cannot report live pricing (no backend). To exercise the `/api/prices` route and
 the live-pricing suites, deploy the **runtime** build (Vercel; the repo already has `vercel.json`)
