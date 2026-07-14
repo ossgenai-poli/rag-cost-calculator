@@ -35,17 +35,36 @@ and items deliberately deferred to later phases.
 
 ---
 
-## Open questions for the owner / reviewers
+## Q1–Q7 — RESOLVED (owner positions, this review) → design updated accordingly
 
-| # | Question | Options |
+| # | Question | Owner position (adopted) | Where reflected |
+|---|---|---|---|
+| Q1 | Recommendation breadth | **Curated, model-specific, evidence-qualified shortlist.** Maintain an internal research registry; do **not** expose unsupported breadth. | [13](13-catalog-architecture.md), [14](14-hardware-registry.md), [15](15-model-catalog.md), [06](06-recommendation-presentation.md) |
+| Q2 | Ranking order | **Feasibility → SLA → evidence threshold → customer preference → cost.** | [06](06-recommendation-presentation.md) ranking contract |
+| Q3 | Replace vs coexist | **Experimental flag** until parity + usability review + three-reviewer sign-off; retire the old experience only after promotion approval. | this log D14; README status |
+| Q4 | Preset overwrite | **Preserve edited fields by default;** explicit **Apply All** + **Undo**. | [07](07-presets.md) |
+| Q5 | Phase-0 format | **Markdown + a self-contained HTML artifact** — sufficient **once the preview is independently accessible** (addressed this round). | README, wireframe hosting |
+| Q6 | Model class vs exact | **Allow optional model-class discovery, but resolve to an exact supported model before calculating** capacity/cost. | [15](15-model-catalog.md), [01](01-journey-map.md) |
+| Q7 | Minimum evidence | **Measured-exact or a defensible measured-scaled/extrapolated path** may support a **qualified primary** recommendation. **Proxy & heuristic never primary** — below the line or omitted from Simple. | [16](16-evidence-pricing-contracts.md), [06](06-recommendation-presentation.md), [17](17-quality-gate.md) |
+
+## New decisions this round (HOLD → revision)
+
+| # | Decision | Rationale |
 |---|---|---|
-| Q1 | **Recommendation sweep breadth** | (a) all modeled GPU families × {BF16,FP8,INT4} ranked; (b) curated shortlist per model first |
-| Q2 | **Ranking priority order** | Confirm: feasibility → SLA → min-evidence → preference → cost. Or should cost lead once feasible? |
-| Q3 | **Replace vs coexist** | Retire the current form after promotion, or keep it selectable long-term? |
-| Q4 | **Preset overwrite default** | Confirm preserve-edited-fields-by-default (design assumes yes) |
-| Q5 | **Phase-0 deliverable format** | This: markdown docs + one HTML wireframe artifact. Want higher-fidelity interactive wireframes or Figma-style mocks instead? |
-| Q6 | **"Model class" vs specific model** | Should Simple mode let the SA pick a *class* (e.g. "large open-weights reasoning") and recommend the specific model, or always pick the exact model? |
-| Q7 | **Minimum evidence threshold** | Is "extrapolated" the floor for a recommended option, with heuristic shown only below the line? |
+| D12 | **Five separate concerns** (research registry · supported catalog · compatibility/feasibility · evidence · recommendation), never a hardcoded GPU list or per-model conditionals | [13](13-catalog-architecture.md) |
+| D13 | **AVAILABLE ≠ COMPATIBLE ≠ BENCHMARKED ≠ PRICED ≠ RECOMMENDED** surfaced as distinct states | [13](13-catalog-architecture.md) |
+| D14 | **Curated coverage is honestly tiny on frozen evidence:** B200 only; 2 primary models (DeepSeek-V4-Pro, MiniMax-M3) + GLM-5.2 proxy (Expert). Nemotron/Kimi/H200/H100/B300/GB200 excluded — no invented coverage | [15](15-model-catalog.md), [18](18-reference-cases.md) |
+| D15 | **Availability + pricing + evidence + source contracts** with explicit states; assumptions never presented as AWS/market fact | [14](14-hardware-registry.md), [16](16-evidence-pricing-contracts.md) |
+| D16 | **Every structural number is a reference case** computed on rc-qa-11; scripts/wireframe/cards cite them | [18](18-reference-cases.md) |
+| D17 | **No silent context truncation** — 3-branch rule (infeasible / reduced-headroom / needed+headroom) | [03](03-gpu-comprehension-matrix.md) |
+| D18 | **Taxonomy formalized to four classes** + orthogonal *Scope* and *External (provenanced)* concepts; per-field chips | [02](02-field-inventory.md) |
+
+## P1 / P2 resolutions (this review)
+
+- **P1-UX-001** — scripts use one documented input set (R1/R5); numbers reconcile → [11](11-meeting-scripts.md), [18](18-reference-cases.md).
+- **P1-UX-002** — invented "measured/proxy" alternatives removed; DeepSeek is evidence-qualified on **B200 FP4 only**; FP8 = substituted (extrapolated), H200/H100 = heuristic (excluded) → [06](06-recommendation-presentation.md), [18](18-reference-cases.md).
+- **P1-UX-003** — 3-branch context rule, no silent truncation → [03](03-gpu-comprehension-matrix.md).
+- **P2-1** P99 language; **P2-2** taxonomy normalized + per-field chips; **P2-3** "Context chunks sent to the model" + citations-vs-chunks helper; **P2-4** GPU price as External/provenanced (not a Fact); **P2-5** "Largest modeled range effect" (serialized, sensitivity not delta-causation); **P2-6** "24×7 regulated" → "24×7 high-availability posture" + review-still-required banner.
 
 ---
 
@@ -64,18 +83,21 @@ and items deliberately deferred to later phases.
 
 ## Deliberately deferred to later phases
 
-- **Recommendation-engine code** (GPU/precision sweep + ranking) → Phase 1, headless + unit-tested.
-- **Narrative-generator code** (deterministic template over engine fields) → Phase 1.
-- **Change-diff tracker** (reason-coded "what changed & why") → Phase 1.
+- **Catalog/registry data layer** (hardware, models, evidence, price/availability states) → Phase 1, headless + tested.
+- **Compatibility & practical-feasibility filter** (with reason codes) → Phase 1.
+- **Recommendation sweep + ranking** → Phase 1, unit-tested per eligibility/rejection/confidence transition.
+- **Deterministic structured narrative** (template over engine fields) + **reason-coded change tracker** → Phase 1.
 - **Simple/Expert product components** → Phase 2.
 - **Presets + unknown/range UI** → Phase 2/4.
 - **Any extension of `fleet-explain.ts`** → not in Phase 0 (referenced as a future contract only).
-- **Promotion / flag flip / deployment** → after three-reviewer sign-off.
+- **Promotion / flag flip / deployment** → after three-reviewer sign-off; no merge to main / Vercel until later.
+
+Phase 1 lives on a **separate `ux/v2-phase1` branch** cut from the approved UX commit (owner directive).
 
 ---
 
 ## Phase 0 exit
 
-Phase 0 is complete when the wireframe artifact + these docs are reviewed by all three personas.
-**Do not begin Phase 1 without explicit approval.** Open questions Q1–Q7 should be resolved (or
-consciously deferred) at that review.
+Phase 0 is complete when these docs + the (independently accessible) wireframe are approved by all three
+personas. Q1–Q7 are **resolved** (owner positions above) and the P1/P2 findings addressed. **Do not begin
+Phase 1 (or create `ux/v2-phase1`) without an explicit verdict change from HOLD.**

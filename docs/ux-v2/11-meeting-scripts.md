@@ -3,11 +3,18 @@
 Three scripts showing the experience gap. The "before" reflects the current `rc-qa-11` form; the
 "after" reflects the UX-v2 design. Customer answers are limited to what a real buyer would know.
 
+> **Every structural number below comes from one documented input set** in
+> [18-reference-cases.md](18-reference-cases.md), computed on the frozen rc-qa-11 engine. Script 1 uses
+> the **large-deployment** case **R1** (200M questions/mo → 87 instances); the small-customer note uses
+> **R5** (5M → 4 instances). Dollar values are planning figures from the committed price book.
+
 ---
 
 ## Script 1 — New SA (~1 yr), **current** experience
 
-> **Customer:** "We've got about 500k support questions a month against 10,000 docs. Should we run
+*Input set: R1 — DeepSeek-V4-Pro · p6-b200 · INT4 · 200M questions/mo · 2,910/500 tokens.*
+
+> **Customer:** "We run about 200 million support questions a month against 10,000 docs. Should we run
 > our own GPUs or just use an API?"
 >
 > **SA:** *(opens the calculator, faces the full form)* "Okay… let me switch to self-hosted GPU."
@@ -19,83 +26,89 @@ Three scripts showing the experience gap. The "before" reflects the current `rc-
 > toggle, so why is it asking? Interactivity target in tok/s/user — I have no idea what the customer
 > needs.*
 >
-> **SA:** "Let me get back to you on the GPU sizing." *(guesses INT4, leaves concurrency at default,
-> gets an infeasible/qualified result, can't explain why.)*
+> **SA:** "Let me get back to you on the GPU sizing." *(guesses, can't explain the result, meeting stalls.)*
 
-**Failure modes:** ~7 guesses; premature technical depth; result the SA can't defend; meeting stalls.
+**Failure modes:** ~7 guesses; premature technical depth; a result the SA can't defend.
 
 ---
 
 ## Script 1 — New SA (~1 yr), **UX v2**
 
 > **SA:** *(Stage A)* "What are we deciding? — Compare API vs self-hosting. Production. What matters
-> most? — let's say balanced cost and latency."
+> most? — balanced cost and latency."
 >
-> **SA:** *(Stage B — reads the customer's own words)* "500,000 questions a month… busiest hour maybe
-> twice average… 10,000 documents, a couple of pages each, refreshed monthly… answers a few
-> paragraphs… you want it to feel like a chat assistant."
+> **SA:** *(Stage B — reads the customer's own words)* "200 million questions a month… busiest hour
+> about the same as average… 10,000 documents, a couple of pages each, refreshed monthly… answers a
+> few paragraphs… you want it to feel like a chat assistant."
 >
-> **App:** *(Stage C→D)* recommends **DeepSeek-V4-Pro · p6-b200 · INT4 · 87 instances**, chip
-> **Extrapolated**, with "Interactive RAG" experience and 24×7 availability. Rail shows API ≈ $X and
-> self-host ≈ $Y.
+> **App:** *(Stage C→D)* recommends **DeepSeek-V4-Pro · p6-b200 · INT4 · 87 instances** (86 for
+> throughput + 1 N+1), chip **Measured·scaled**, "Interactive RAG" experience, 24×7 availability. Rail:
+> API **$6.49M/mo**, self-host **$7.18M/mo**.
 >
-> **SA (reads Stage F aloud):** "For 500k questions a month, calling the API is cheaper today — about
-> $X. Running your own GPUs would be about $Y and only pays off above roughly Z questions a month.
-> This is an *extrapolated* estimate because the benchmark was measured at a shorter prompt than
-> yours; before committing we'd load-test it."
+> **SA (reads Stage F aloud):** "At 200 million questions a month, calling the API is a bit cheaper
+> today — about $6.5M vs $7.2M for your own GPUs. Self-hosting only pays off above roughly **221
+> million** questions a month, so you're just under the line. This is a *measured-but-scaled* estimate —
+> the benchmark was taken at a 1,024-token prompt and scaled to your ~2,900-token prompt — so before
+> committing we'd load-test it."
 
-**Wins:** no GPU internals entered; a defensible sentence; confidence stated; next step clear.
+**Wins:** no GPU internals entered; a defensible sentence; the real break-even; confidence stated.
+
+**Small-customer variant (R5):** at 5M questions/mo the same model/GPU sizes to **4 instances** and
+API wins decisively ($162k vs $330k) — the SA sees the fleet shrink and the verdict hold, no re-guessing.
 
 ---
 
 ## Script 2 — Inference specialist (15–25 yr), challenge & validate, **UX v2**
 
-> **Specialist:** "Why p6-b200 and not p5e?"
-> **SA:** *(alternatives card)* "p5e-FP8 is 6% cheaper but relies on a proxy benchmark; p6-b200-INT4 is
-> the cheapest *measured-derived* option that meets your SLA."
+> **Specialist:** "Why p6-b200 and not p5e or p5?"
+> **SA:** *(rejected-options list)* "p5e/H200 and p5/H100 have **no DeepSeek benchmark** in our evidence
+> set, so they fall to the heuristic path — we exclude them from the recommendation rather than show a
+> number we can't defend. B200 is the only GPU with measured DeepSeek data." *(cites R3/R4.)*
 >
 > **Specialist:** "Is this prefill- or decode-bound?"
-> **SA:** *(fleet equation)* "Prefill-bound — 221,461 input tok/s ÷ (3,715 prefill tok/s/replica × 70%)
-> → 86 replicas, +1 N+1."
+> **SA:** *(fleet equation)* "Prefill-bound — 221,461 input tok/s ÷ (3,715 prefill tok/s/replica × 70%
+> = 2,600) → 86 replicas, +1 N+1 = 87."
 >
 > **Specialist:** "That prefill number — measured or assumed?"
 > **SA:** *(trust panel)* "Measured input throughput at ISL 1,024, scaled to your 2,910-token input —
-> that's why it's flagged extrapolated, not measured."
+> that's why it's **Measured·scaled**, not Measured."
 >
 > **Specialist:** "TTFT — average or tail?"
-> **SA:** "P99. The 2 s SLA is checked against the P99 tail; a tighter budget flips it infeasible."
+> **SA:** "P99. Ninety-nine percent of requests start within 2 s under benchmark conditions; 1% may be
+> slower. A tighter budget flips it infeasible."
 >
-> **Specialist:** "What happens on a replica failure?"
-> **SA:** "N+1 adds one complete serving group; after one loss, peak utilization is shown — and it's
-> serving redundancy only, not AZ/DR."
+> **Specialist:** "What if I force FP8?"
+> **SA:** "It won't change the fleet — we have no DeepSeek **FP8** benchmark on B200, so FP8 reuses the
+> FP4 curve and is flagged *precision substituted → extrapolated*. Same 87 instances, lower confidence."
+> *(cites R2.)*
 >
-> **Specialist:** "What if the real prefill throughput is off?"
-> **SA:** "On the heuristic path we'd show a fleet band; here it's measured-scaled, so the risk is the
-> scaling factor — flagged, and load-test is in the exclusions."
+> **Specialist:** "Replica failure?"
+> **SA:** "N+1 adds one complete serving group; after one loss we show post-loss peak utilization. It's
+> serving redundancy only — not multi-AZ, DR, or a compliance architecture."
 
-**Wins:** every answer traces to a benchmark run or engine field; the specialist can accept or
-demand a load-test, not re-derive arithmetic.
+**Wins:** every answer traces to a benchmark run or engine field, or to an honest "no evidence — excluded."
 
 ---
 
 ## Script 3 — Generalist SA (5–10 yr), speed + override, **UX v2**
 
-> **SA:** *(applies "Cost-optimized production" preset — preview shows 4 field changes, keeps the
+> **SA:** *(applies "Cost-optimized production" preset — preview shows the field changes, keeps the
 > utilization they'd set)* "Apply."
-> **SA:** *(opens Tune → GPU)* "Force FP8 for quality margin." *(field flips to expert override; fleet
-> re-derives; a notice: 'Fleet changed 87 → 92 because precision changed INT4 → FP8.')*
-> **SA:** *(Compare)* puts recommended vs the FP8 override side by side, exports the report.
+> **SA:** *(opens Tune → GPU, forces FP8)* "Huh — fleet stays **87**." *(notice: "Precision FP8 has no
+> DeepSeek benchmark on B200; reusing the FP4 curve — confidence dropped Measured·scaled → Extrapolated,
+> reason: precision substituted.")* "Right, no FP8 data — I'll leave it INT4." *(cites R2.)*
+> **SA:** *(Compare)* puts the INT4 recommendation beside the FP8-forced override, sees identical fleet
+> but lower confidence, exports the report.
 
-**Wins:** fast presets, explicit overrides, visible change reasons, side-by-side, one-click defensible
-export.
+**Wins:** fast presets, explicit overrides, and an override that **honestly refuses to invent** a
+distinct result — the change notice names the real reason.
 
 ---
 
 ## What the scripts prove against the success measures
 
-- New SA reaches a credible comparison **without GPU internals** (Script 1-after).
-- Specialist traces **every** number to evidence (Script 2).
-- Generalist completes fast and overrides cleanly (Script 3).
-- Auto-size needs **no** manual GPU-count guess (all).
-- The SA can explain **why the fleet changed** (Script 3 change notice).
-- The customer can tell calculated facts from estimates (confidence chip, all).
+- New SA reaches a credible comparison **without GPU internals**, with the **real** break-even (Script 1-after).
+- Specialist gets a traceable answer **or an honest "no evidence — excluded"** for every challenge (Script 2).
+- Generalist overrides cleanly and the tool **won't fabricate** an FP8 result it can't support (Script 3).
+- Auto-size needs **no** manual GPU-count guess; the SA can explain **why** the fleet changed; the
+  customer can tell measured from scaled from excluded.

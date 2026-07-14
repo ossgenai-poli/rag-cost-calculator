@@ -36,7 +36,8 @@ Measured       2026-06-12
 Hardware       B200 · TP8 · 8 GPUs handle prefill and decode (aggregated) · no spec-decode
 Precision      fp4   (requested INT4)
 Sequence       measured 1024 / 1024   ·   your workload 2,910 / 500
-Statistic      TTFT is the P99 tail (worst-case), not the average
+Statistic      TTFT is P99: 99% of requests start within this time under benchmark
+               conditions; 1% may be slower. (Not the average.)
 
 Why this is "Extrapolated", not "Measured":
   • input length 2,910 not close to benchmarked ISL 1,024

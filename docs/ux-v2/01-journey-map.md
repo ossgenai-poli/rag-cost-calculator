@@ -49,7 +49,7 @@ don't know" control (Stage B never blocks on a number — see [08-unknown-range-
 - **Response experience** preset → conversational / interactive-RAG / analyst / batch → sets the
   **streaming speed (interactivity)** target.
 - **Acceptable wait before the answer starts** → sets the **P99 TTFT** target.
-- **Availability expectation** (business hours / 24×7 / regulated) → sets **N+1 redundancy** and
+- **Availability expectation** (business hours / 24×7 / 24×7 high-availability posture) → sets **N+1 redundancy** and
   **uptime hours**.
 
 **App behavior:** presets map plain choices to engine SLA inputs; the SA can reveal the exact number.

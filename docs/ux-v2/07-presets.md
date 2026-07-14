@@ -24,7 +24,14 @@ Presets populate assumptions fast but are **never silent black boxes**. Applying
 | **Latency-sensitive production** | conservative 50% | on | 24×7 | on-demand |
 | **Cost-optimized production** | aggressive 85% | on | 24×7 | indicative RI/Savings |
 | **Business-hours deployment** | balanced 70% | on | business hours | on-demand |
-| **24×7 regulated** | conservative 50% | on | 24×7 | on-demand |
+| **24×7 · high-availability posture** † | conservative 50% | on | 24×7 | on-demand |
+
+† **Renamed from "24×7 regulated" (P2-6).** This preset only sets planning inputs (conservative
+utilization, N+1 serving redundancy, 24×7 hours). **N+1 is serving-replica redundancy only** — it does
+**not** establish multi-AZ resilience, disaster recovery, regulatory compliance, or an availability
+architecture. Applying it shows a persistent banner: *"Architecture, security, quota and compliance
+review are still required — this preset does not deliver them."* We avoid the word "regulated" so the
+label can't be mistaken for a compliance guarantee.
 
 *(Workload presets — support-RAG, internal-KB, analyst, summarization, batch, agentic — additionally
 seed corpus/traffic/sources defaults; same apply/preview/undo rules.)*

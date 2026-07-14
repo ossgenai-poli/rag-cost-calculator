@@ -48,15 +48,20 @@ Uncertainty is shown in **two independent channels** so they're never conflated:
    vs firm values.
 
 ```
-Confidence: Extrapolated benchmark  ·  Inputs: 3 of 7 are ranges
-Fleet: 74–112 instances (base 87)   Cost: $2.0M–$3.1M/mo (base $2.4M)
+Confidence: Measured·scaled benchmark  ·  Inputs: 3 of 7 are ranges
+Fleet: 74–112 instances (base 87 = case R1)   Self-host: $6.1M–$9.3M/mo (base $7.18M = R1)
 ```
+*(Base = reference case R1; the band endpoints here are schematic and will come from the Phase-1 range
+recompute described below.)*
 
 - When any material Fact is a range, the fleet and cost are shown as **base + band**, and the headline
   says "roughly" / "about."
-- The **binding driver** of the range is named: *"Most of the spread comes from sources-per-question
-  (3–8)."* This is derived from which input's low/high moves the fleet most — a deterministic
-  recompute at the bounds, **not** an inference from output deltas.
+- **Largest modeled range effect (P2-5):** the app names the input whose low↔high bounds move the fleet
+  the most, e.g. *"Largest modeled range effect: **context chunks sent to the model** (3–8) → fleet
+  74–112."* This **is** a deterministic sensitivity analysis — it *does* compare modeled output effects
+  by re-running the engine at each input's bounds. It is **not** causation inferred from an observed
+  before/after delta; the comparison is a controlled recompute. The result serializes **{selected input,
+  its low/high bounds, the computed fleet effect}** into the JSON/report.
 
 ---
 
@@ -74,5 +79,7 @@ Fleet: 74–112 instances (base 87)   Cost: $2.0M–$3.1M/mo (base $2.4M)
 
 - The range recompute reuses the existing engine (Phase 1 wiring); Phase 0 specifies the interaction
   and the two-channel confidence model.
-- "Which input drives the spread" is computed by bounded recompute, consistent with the determinism
-  constraint (no causation inferred from before/after values).
+- The "largest modeled range effect" is a **bounded sensitivity recompute** (engine re-run at each
+  input's low/high), serialized as {input, bounds, effect}. It is a legitimate deterministic analysis
+  of modeled output effects — distinct from the forbidden pattern of inferring causation from an
+  uncontrolled before/after value delta.

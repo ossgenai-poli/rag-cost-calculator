@@ -41,9 +41,10 @@ Confidence and provenance language is deterministic — it names the engine fiel
   Helper: *"Sets the streaming speed each user feels. We translate it to a tokens-per-second target
   you can inspect."*
 - **Longest acceptable wait to first word** (preset or ms): helper: *"How long a user waits before the
-  answer starts appearing. We check this against the benchmark's **P99** (worst-case tail), not the
+  answer starts appearing. We check this against the benchmark's **P99** — 99% of requests start within
+  it under benchmark conditions, 1% may be slower — not the
   average."*
-- **Availability expectation**: *Business hours · 24×7 · 24×7 regulated.* Helper: *"Sets operating
+- **Availability expectation**: *Business hours · 24×7 · 24×7 high-availability posture.* Helper: *"Sets operating
   hours and whether we add a spare serving replica."*
 
 ---
@@ -78,9 +79,10 @@ Confidence and provenance language is deterministic — it names the engine fiel
 > SLA; it selects how many requests share a GPU. *Recommended:* from your response-experience preset.
 > *Change it:* snappier = fewer requests per GPU = more GPUs.
 
-> **Longest wait to first word (P99 TTFT)** — *What:* the worst-case (99th-percentile) time before the
-> answer starts. *Why:* the tail is what a customer's SLA cares about. *Recommended:* 2 s. *Change it:*
-> a tighter budget can make the measured configuration infeasible.
+> **Longest wait to first word (P99 TTFT)** — *What:* the 99th-percentile time to first token — 99% of
+> requests start within it under benchmark conditions; 1% may be slower. *Why:* the tail is what a
+> customer's SLA cares about. *Recommended:* 2 s. *Change it:* a tighter budget can make the measured
+> configuration infeasible. (Benchmark figure — validate with a production-shaped load test.)
 
 > **Target GPU utilization** — *What:* how hard we load the fleet at peak. *Why:* headroom vs cost.
 > *Recommended:* balanced 70%. *Change it:* 50% conservative (more GPUs, safer) · 85% aggressive

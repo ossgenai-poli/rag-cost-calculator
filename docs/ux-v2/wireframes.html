@@ -250,43 +250,43 @@
                 <span class="seg"><span>Cost</span><span class="on">Balanced</span><span>Latency</span></span></div>
             </div>
             <div class="stage">
-              <div class="stage-h"><span class="s">B</span> Workload facts <span class="tax fact taxdot">Fact</span></div>
-              <div class="field"><span class="lab">Monthly question volume</span><span class="val tnum">200,000,000</span></div>
-              <div class="field"><span class="lab">Typical answer length</span><span class="val tnum">500 tok</span></div>
-              <div class="field"><span class="lab">Sources given to the model</span><span class="val tnum">6</span></div>
-              <div class="field"><span class="lab">Busiest hour vs average</span><span class="val">2.0×</span></div>
+              <div class="stage-h"><span class="s">B</span> Workload facts</div>
+              <div class="field"><span class="lab">Monthly question volume <span class="tax fact taxdot">Fact</span></span><span class="val tnum">200,000,000</span></div>
+              <div class="field"><span class="lab">Typical answer length <span class="tax fact taxdot">Fact</span></span><span class="val tnum">500 tok</span></div>
+              <div class="field"><span class="lab">Context chunks sent to the model <span class="tax rec taxdot">Recommended</span></span><span class="val tnum">6</span></div>
+              <div class="field"><span class="lab">Busiest hour vs average <span class="tax fact taxdot">Fact</span></span><span class="val">1.0×</span></div>
             </div>
             <div class="stage">
-              <div class="stage-h"><span class="s">C</span> Experience → SLA <span class="tax derived taxdot">Derived</span></div>
-              <div class="field"><span class="lab">Response experience</span><span class="val">Interactive RAG</span></div>
-              <div class="field"><span class="lab">Wait to first word (P99)</span><span class="val readonly">≤ 2.0 s · derived</span></div>
-              <div class="field"><span class="lab">Streaming speed / user</span><span class="val readonly">30 tok/s · derived</span></div>
-              <div class="field"><span class="lab">Availability</span><span class="val">24×7 · N+1 on</span></div>
+              <div class="stage-h"><span class="s">C</span> Experience → SLA</div>
+              <div class="field"><span class="lab">Response experience <span class="tax rec taxdot">Recommended</span></span><span class="val">Interactive RAG</span></div>
+              <div class="field"><span class="lab">Wait to first word (P99) <span class="tax derived taxdot">Derived</span></span><span class="val readonly">≤ 2.0 s</span></div>
+              <div class="field"><span class="lab">Streaming speed / user <span class="tax derived taxdot">Derived</span></span><span class="val readonly">30 tok/s</span></div>
+              <div class="field"><span class="lab">Availability <span class="tax rec taxdot">Recommended</span></span><span class="val">24×7 · N+1 on</span></div>
             </div>
             <div class="stage">
-              <div class="stage-h"><span class="s">D</span> Recommended config <span class="tax rec taxdot">Recommended</span></div>
-              <div class="field"><span class="lab">GPU</span><span class="val">p6-b200 · INT4</span></div>
-              <div class="field"><span class="lab">Fleet size</span><span class="val readonly">87 · derived (auto-size)</span></div>
-              <div class="field"><span class="lab">Context window</span><span class="val readonly">4,500 tok · derived</span></div>
+              <div class="stage-h"><span class="s">D</span> Recommended config</div>
+              <div class="field"><span class="lab">GPU <span class="tax rec taxdot">Recommended</span></span><span class="val">p6-b200 · INT4</span></div>
+              <div class="field"><span class="lab">Fleet size <span class="tax derived taxdot">Derived</span></span><span class="val readonly">87 · auto-sized</span></div>
+              <div class="field"><span class="lab">Context window <span class="tax derived taxdot">Derived</span></span><span class="val readonly">4,500 tok</span></div>
             </div>
           </div>
 
           <div class="col rail">
             <div class="rh">Recommendation</div>
-            <div class="verdict">Calling the <span class="em">API is cheaper today</span> — self-hosting
-              pays off above ~135M questions/mo.</div>
+            <div class="verdict">Calling the <span class="em">API is a bit cheaper today</span> —
+              self-hosting only pays off above ~<b>221M</b> questions/mo.</div>
             <div class="costgrid">
-              <div class="c"><div class="k">API / mo <sup>‡</sup></div><div class="v tnum">$331k</div></div>
-              <div class="c"><div class="k">Self-host / mo <sup>‡</sup></div><div class="v tnum">$7.2M</div></div>
-              <div class="c"><div class="k">Per query <sup>‡</sup></div><div class="v tnum">$0.0011</div></div>
+              <div class="c"><div class="k">API / mo</div><div class="v tnum">$6.49M</div></div>
+              <div class="c"><div class="k">Self-host / mo</div><div class="v tnum">$7.18M</div></div>
+              <div class="c"><div class="k">Break-even</div><div class="v tnum">~221M/mo</div></div>
             </div>
             <div style="margin:.5rem 0"><span class="conf scaled">Measured·scaled</span></div>
             <div class="arch">DeepSeek-V4-Pro · p6-b200.48xlarge · INT4 · <b>87 instances</b>
               <div class="eq">Prefill-bound: <b>221,461</b> input tok/s ÷ (3,715 prefill tok/s/replica
-                × 70% = 2,600) → <b>86</b> replicas + 1 N+1 × 1 box = <b>87 boxes</b> <span style="color:#5f7f6c">✓ real rc-qa-11 output</span></div></div>
-            <div style="font-size:.68rem;color:var(--panel-faint);margin-top:.5rem">‡ Dollar figures are
-              <b>illustrative placeholders</b> for layout only. The fleet (87), the equation, the confidence
-              chip and the provenance below are real frozen-engine (rc-qa-11) values.</div>
+                × 70% = 2,600) → <b>86</b> replicas + 1 N+1 × 1 box = <b>87 boxes</b> <span style="color:#5f7f6c">✓ reference case R1 (rc-qa-11)</span></div></div>
+            <div style="font-size:.68rem;color:var(--panel-faint);margin-top:.5rem">All figures are
+              <b>reference case R1</b> computed on the frozen rc-qa-11 engine (see 18-reference-cases.md).
+              Dollars are planning figures from the committed price book, not a quote.</div>
             <div class="callout">⚠ Rests on measured-but-scaled prefill (ISL 1,024 → 2,910). Treat as
               qualified; load-test before committing.</div>
           </div>
@@ -336,50 +336,68 @@
           </div></div>
         <div class="drawer"><div class="dh">Pricing &amp; purchasing <span class="tax expert expert-badge">Expert</span></div>
           <div class="dl">
-            <div class="drow"><span>GPU price</span><span class="rv">$113.93/hr<span class="rec-note">live · editing → qualified</span></span></div>
-            <div class="drow"><span>Purchasing</span><span class="rv">On-demand<span class="rec-note">RI/Savings indicative only</span></span></div>
+            <div class="drow"><span>GPU price</span><span class="rv">$113.93/hr<span class="rec-note">aws-public · capacity-block variable · editing → user-override (qualified)</span></span></div>
+            <div class="drow"><span>Purchasing</span><span class="rv">On-demand<span class="rec-note">RI/Savings indicative — not a customer quote</span></span></div>
           </div></div>
       </div>
     </div>
   </section>
 
+  <!-- CATALOG STATES -->
+  <section>
+    <div class="sec-head"><span class="n">C</span><h2>Curated catalog — five states the UI keeps distinct</h2></div>
+    <p class="sec-note">Production-quality decision support with <b>intentionally curated</b> coverage:
+      curated breadth · production-grade depth · <b>no invented coverage</b>. A row can be Available but
+      not Benchmarked, Compatible but not Priced. One state never implies another. (See
+      13/14/16/17-*.md.)</p>
+    <div class="opts" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="opt" style="text-align:center"><div class="cfg">AVAILABLE</div><div class="to">on AWS, and how (instance vs UltraServer)</div></div>
+      <div class="opt" style="text-align:center"><div class="cfg">COMPATIBLE</div><div class="to">the model can actually run here</div></div>
+      <div class="opt" style="text-align:center"><div class="cfg">BENCHMARKED</div><div class="to">applicable performance evidence exists</div></div>
+      <div class="opt" style="text-align:center"><div class="cfg">PRICED</div><div class="to">a truthful price state</div></div>
+      <div class="opt primary" style="text-align:center"><div class="cfg">RECOMMENDED</div><div class="to">passed every gate + ranked</div></div>
+    </div>
+    <p class="sec-note" style="margin-top:1rem">On the frozen evidence this resolves honestly to
+      <b>B200 only</b> and <b>2 primary models</b> (DeepSeek-V4-Pro, MiniMax-M3) + GLM-5.2 (proxy, Expert).
+      B300 / GB200 / H200 are AWS-available but <b>not benchmarked</b> → not recommended.</p>
+  </section>
+
   <!-- RECOMMENDATION PRESENTATION -->
   <section>
-    <div class="sec-head"><span class="n">C</span><h2>Ranked options — never one opaque "best GPU"</h2></div>
-    <p class="sec-note">Ranked by hard feasibility → SLA → minimum evidence → your optimization
-      preference → cost. Captioned <em>"Recommended among the AWS configurations currently modeled."</em></p>
+    <div class="sec-head"><span class="n">D</span><h2>Ranked options — never one opaque "best GPU"</h2></div>
+    <p class="sec-note">Ranked by hard feasibility → SLA → evidence threshold → your optimization
+      preference → cost. Captioned <em>"Recommended among currently modeled and evidence-qualified AWS
+      configurations."</em> <b>Real example, DeepSeek-V4-Pro @ 200M/mo</b> — every number is a reference
+      case (18-reference-cases.md). On the frozen evidence DeepSeek is qualified on <b>B200 FP4 only</b>,
+      so the honest set is one recommendation + rejections. Cards 2–3 populate once the Phase-1 sweep
+      spans models/GPUs with real evidence.</p>
     <div class="opts">
       <div class="opt primary">
-        <div class="tag" style="color:var(--rec)">✓ Recommended · balanced</div>
+        <div class="tag" style="color:var(--rec)">✓ Recommended · balanced <span class="mono" style="font-weight:400;color:var(--ink-faint)">R1</span></div>
         <div class="cfg">p6-b200 · INT4 · 87</div>
-        <div class="price tnum">$7.2M</div>
-        <div class="delta">baseline</div>
+        <div class="price tnum">$7.18M</div>
+        <div class="delta">the only evidence-qualified config</div>
         <div style="margin-top:.5rem"><span class="conf scaled">Measured·scaled</span></div>
-        <div class="to">Meets 2 s P99 TTFT &amp; 30 tok/s/user at the lowest cost among feasible measured configs.</div>
+        <div class="to">Meets 2 s P99 TTFT &amp; 30 tok/s/user; prefill-bound. Measured at ISL 1,024, scaled to 2,910.</div>
       </div>
       <div class="opt">
-        <div class="tag" style="color:var(--c-proxy)">$ Lowest cost (feasible)</div>
-        <div class="cfg">p5e · FP8 · 96</div>
-        <div class="price tnum">$6.8M</div>
-        <div class="delta">−6% vs recommended</div>
-        <div style="margin-top:.5rem"><span class="conf proxy">Proxy</span></div>
-        <div class="to">Relies on a proxy benchmark — validate throughput before committing.</div>
+        <div class="tag" style="color:var(--ink-faint)">$ Lowest cost (feasible)</div>
+        <div class="cfg" style="color:var(--ink-soft)">— none below</div>
+        <div class="to" style="margin-top:.7rem">The cheaper GPUs (H200/H100) have <b>no DeepSeek
+          benchmark</b> → heuristic → excluded (see rejected). No evidence-qualified option is cheaper.</div>
       </div>
       <div class="opt">
-        <div class="tag" style="color:var(--c-measured)">◎ Highest confidence</div>
-        <div class="cfg">p6-b200 · FP8 · 92</div>
-        <div class="price tnum">$7.5M</div>
-        <div class="delta">+4% vs recommended</div>
-        <div style="margin-top:.5rem"><span class="conf measured">Measured</span></div>
-        <div class="to">Exact measured point — slightly more GPUs than the INT4 option.</div>
+        <div class="tag" style="color:var(--ink-faint)">◎ Highest confidence</div>
+        <div class="cfg" style="color:var(--ink-soft)">— none exact</div>
+        <div class="to" style="margin-top:.7rem">Your 2,910/500 sequence is off the measured 1,024/1,024
+          bucket, so no <b>Measured-exact</b> option exists — Measured·scaled is the best available.</div>
       </div>
       <div class="opt reject">
-        <div class="tag" style="color:var(--ink-faint)">✕ Rejected (4)</div>
+        <div class="tag" style="color:var(--ink-faint)">✕ Rejected (3)</div>
         <div class="reject-list">
-          <span class="x">✕</span> p5 · INT4 — memory floor &gt; SLA-feasible fleet<br>
-          <span class="x">✕</span> p6 · BF16 — 2.1× cost at equal confidence<br>
-          <span class="x">✕</span> p5e · INT4 — below evidence threshold<br>
-          <span class="x">✕</span> p5 · FP8 — no point meets 2 s P99 TTFT
+          <span class="x">✕</span> p5e (H200) · INT4 — no DeepSeek benchmark → heuristic <span class="mono">R3</span><br>
+          <span class="x">✕</span> p5 (H100) · INT4 — no DeepSeek benchmark → heuristic <span class="mono">R4</span><br>
+          <span class="x">✕</span> p6-b200 · FP8 — no FP8 data; reuses FP4 curve (substituted) <span class="mono">R2</span>
         </div>
       </div>
     </div>
@@ -387,7 +405,7 @@
 
   <!-- TRUST -->
   <section>
-    <div class="sec-head"><span class="n">D</span><h2>"Where did this come from?" — the specialist's panel</h2></div>
+    <div class="sec-head"><span class="n">E</span><h2>"Where did this come from?" — the specialist's panel</h2></div>
     <p class="sec-note">Read-only, structured, deterministic — it serializes engine fields (all present
       as of rc-qa-11); it never authors claims or infers from values.</p>
     <details class="trust" open>
@@ -401,7 +419,7 @@
           <dt>Hardware</dt><dd>B200 · TP8 · 8 GPUs handle prefill and decode (aggregated) · no spec-decode</dd>
           <dt>Precision</dt><dd>fp4 (requested INT4)</dd>
           <dt>Sequence</dt><dd>measured 1024 / 1024 · your workload 2,910 / 500</dd>
-          <dt>Statistic</dt><dd>TTFT is the P99 tail (worst-case), not the average</dd>
+          <dt>Statistic</dt><dd>TTFT is P99 — 99% of requests start within it under benchmark conditions; 1% may be slower (not the average)</dd>
         </dl>
         <div class="why"><b>Why "Measured·scaled", not "Measured":</b> input length 2,910 ≠ benchmarked
           ISL 1,024 → prefill throughput measured at 1,024 and scaled to 2,910. Output 500 ≠ OSL 1,024.</div>
@@ -413,7 +431,7 @@
 
   <!-- RESULT HIERARCHY -->
   <section>
-    <div class="sec-head"><span class="n">E</span><h2>Customer-ready result hierarchy</h2></div>
+    <div class="sec-head"><span class="n">F</span><h2>Customer-ready result hierarchy</h2></div>
     <p class="sec-note">The order a customer conversation flows — decision first, evidence last. The
       export reads in this exact order. Every rung maps to an engine field.</p>
     <div class="ladder">
@@ -441,11 +459,17 @@
       <a href="09-trust-provenance.md">11 · Trust &amp; provenance</a>
       <a href="10-result-hierarchy.md">12 · Result hierarchy</a>
       <a href="11-meeting-scripts.md">13 · Before/after scripts</a>
-      <a href="12-decision-log.md">14 · Decision log (open questions)</a>
+      <a href="12-decision-log.md">14 · Decision log (Q1–Q7 resolved)</a>
+      <a href="13-catalog-architecture.md">13-arch · Catalog architecture (5 concerns)</a>
+      <a href="14-hardware-registry.md">14-arch · Hardware registry + availability</a>
+      <a href="15-model-catalog.md">15-arch · Curated model catalog</a>
+      <a href="16-evidence-pricing-contracts.md">16-arch · Evidence + pricing + source contracts</a>
+      <a href="17-quality-gate.md">17-arch · Feasibility filter + quality gate</a>
+      <a href="18-reference-cases.md">18 · Reference cases (all numbers)</a>
     </div>
     <p style="margin-top:1rem">Experimental · branch <span class="mono">ux/v2</span> from
       <span class="mono">rc-qa-11</span>. Design-only: no engine, component, or deployment changes.
-      Promotion requires three-reviewer sign-off.</p>
+      <b>Curated coverage, no invented data.</b> Promotion requires three-reviewer sign-off.</p>
   </footer>
 </div>
 

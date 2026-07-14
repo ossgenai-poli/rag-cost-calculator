@@ -46,7 +46,24 @@ same engine** — the only difference is who supplies the inputs.
 | 11 | [09-trust-provenance.md](09-trust-provenance.md) | Confidence ladder + "Where did this come from?" panel |
 | 12 | [10-result-hierarchy.md](10-result-hierarchy.md) | Customer-ready result order (recommendation → why → cost → arch → confidence → risks → evidence) |
 | 13 | [11-meeting-scripts.md](11-meeting-scripts.md) | Before/after scripts for junior SA + specialist challenge |
-| 14 | [12-decision-log.md](12-decision-log.md) | Decisions, alternatives, open questions, risks, deferred items |
+| 14 | [12-decision-log.md](12-decision-log.md) | Decisions, alternatives, Q1–Q7 (resolved), risks, deferred items |
+
+### Revision round (design review HOLD → these additions)
+
+| File | Deliverable |
+|---|---|
+| [13-catalog-architecture.md](13-catalog-architecture.md) | Five separate concerns (registry · catalog · feasibility · evidence · recommendation); AVAILABLE≠COMPATIBLE≠BENCHMARKED≠PRICED≠RECOMMENDED |
+| [14-hardware-registry.md](14-hardware-registry.md) | Initial hardware research table (H100→B300/GB200/GB300, real AWS sources) + availability contract + inclusion criteria |
+| [15-model-catalog.md](15-model-catalog.md) | Curated model table + selection criteria + record schema |
+| [16-evidence-pricing-contracts.md](16-evidence-pricing-contracts.md) | Evidence states + pricing states + source/provenance policy |
+| [17-quality-gate.md](17-quality-gate.md) | Practical-feasibility filter + rejection reasons + customer-facing quality gate |
+| [18-reference-cases.md](18-reference-cases.md) | Every structural number, computed on the frozen rc-qa-11 engine (anchors P1-UX-001/002) |
+
+**Product intent (this round):** *Production-quality decision support with intentionally curated model
+and hardware coverage.* **Curated breadth · production-grade depth · no invented coverage.** On the
+frozen evidence that resolves honestly to **B200 only** and **2 primary models** — see
+[18-reference-cases.md](18-reference-cases.md). P1-UX-001/002/003 and P2-1…6 resolutions are logged in
+[12-decision-log.md](12-decision-log.md).
 
 ## Hard constraints honored in this design
 
