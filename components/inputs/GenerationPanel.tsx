@@ -278,7 +278,7 @@ export function GenerationPanel(props: {
         />
 
         <Toggle
-          label="High availability (N+1 replicas)"
+          label="Serving redundancy (N+1 replicas)"
           hint="On (default): provision one extra serving replica (minimum two) so a replica loss still serves peak load — real extra fleet and cost. Off: single replica; the UI states HA is excluded."
           checked={generation.haEnabled !== false}
           disabled={!selfHosted}

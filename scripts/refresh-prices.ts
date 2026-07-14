@@ -82,7 +82,7 @@ async function fetchGpuPrices(client: PricingClient): Promise<GpuInstancePrice[]
       if (usd !== null) break;
     }
     if (usd === null) throw new Error(`no OnDemand price for ${gpu.instanceType}`);
-    out.push({ ...gpu, pricePerHr: usd });
+    out.push({ ...gpu, pricePerHr: usd, priceSource: "live" });
   }
   return out;
 }

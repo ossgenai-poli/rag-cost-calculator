@@ -61,6 +61,7 @@ function zeroResult(
     apiMonthly$: 0,
     breakEvenTokens: 0,
     equivalentQPS: 0,
+    activeWindowQPS: 0,
     utilAtBreakEven: 0,
     tokensPerQuery,
     outputFraction,
@@ -165,7 +166,9 @@ export function computeCrossover(
 
   const apiMonthly$ = apiBlendedPricePerToken * monthlyGenTokens;
   const breakEvenTokens = selfHostedMonthly$ / apiBlendedPricePerToken;
-  const equivalentQPS = breakEvenTokens / tokensPerQuery / SECONDS_PER_MONTH;
+  const equivalentQPS = breakEvenTokens / tokensPerQuery / SECONDS_PER_MONTH; // calendar
+  const activeWindowQPS =
+    uptimeSeconds > 0 ? breakEvenTokens / tokensPerQuery / uptimeSeconds : equivalentQPS; // active hours
   // Decode utilization at break-even volume, from COMPLETE-replica monthly capacity.
   const monthlyOutputCapacity = usableReplicas * cap.perReplicaDecodeTokS * uptimeSeconds;
   const utilAtBreakEven =
@@ -177,12 +180,18 @@ export function computeCrossover(
     feasible && breakEvenFeasible && utilAtBreakEven <= SELF_HOST_UTIL_THRESHOLD
       ? "self-host efficient"
       : "API wins in practice below sustained load";
-  // A positive verdict built on non-measured capacity (proxy/extrapolated/heuristic)
-  // OR resting on an estimated prefill bound must be presented QUALIFIED — never an
-  // unconditional "self-host" recommendation (GPU-008).
+  // A positive verdict must be QUALIFIED — never unconditional — when it rests on:
+  // non-measured capacity (proxy/extrapolated/heuristic), an estimated prefill
+  // bound (GPU-008), OR non-live/estimated GPU pricing (fallback SKU, or a
+  // commitment/Spot discount rather than on-demand) — PRICING-018.
+  const gpuRec = priceBook.gpus?.find((x) => x.instanceType === generation.gpuInstanceType);
+  const pricingEstimated =
+    gpuRec?.priceSource === "fallback" || generation.gpuPricingModel !== "on-demand";
   const verdictQualified =
     verdict === "self-host efficient" &&
-    (cap.source !== "measured" || (fleet.prefillBinds && cap.prefillEstimated));
+    (cap.source !== "measured" ||
+      (fleet.prefillBinds && cap.prefillEstimated) ||
+      pricingEstimated);
 
   const maxTokens = Math.max(monthlyGenTokens, breakEvenTokens) * 1.5;
   const curve: CrossoverResult["curve"] = [];
@@ -229,6 +238,7 @@ export function computeCrossover(
     apiMonthly$,
     breakEvenTokens,
     equivalentQPS,
+    activeWindowQPS,
     utilAtBreakEven,
     tokensPerQuery,
     outputFraction,

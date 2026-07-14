@@ -385,7 +385,9 @@ export function buildReport(
     `- **Verdict:** ${cx.verdict}${cx.verdictQualified ? ` — QUALIFIED (based on ${cx.capacity.source} capacity, not a direct measurement; validate before committing)` : ""}`
   );
   if (cx.breakEvenTokens > 0) {
-    lines.push(`- **Break-even:** ${Math.round(cx.breakEvenTokens).toLocaleString()} tokens/mo (~${cx.equivalentQPS.toFixed(2)} QPS)`);
+    lines.push(
+      `- **Break-even:** ${Math.round(cx.breakEvenTokens).toLocaleString()} tokens/mo — ~${cx.equivalentQPS.toFixed(2)} QPS calendar-average, ~${cx.activeWindowQPS.toFixed(2)} QPS sustained over the ${Math.min(730, g.gpuUptimeHoursPerMonth)}-hr active window`
+    );
     lines.push(`- **Utilization to break even:** ${cx.utilAtBreakEven <= 1 ? `${Math.round(cx.utilAtBreakEven * 100)}%` : `${cx.utilAtBreakEven.toFixed(1)}× capacity (infeasible)`}`);
   }
   lines.push("");

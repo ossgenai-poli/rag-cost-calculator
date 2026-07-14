@@ -92,13 +92,13 @@ async function fetchGpuPrices(
       }
       if (usd !== null) {
         // sustainedTokPerSec isn't in the Pricing API — merged in from defaults.
-        results.push({ ...gpu, pricePerHr: usd });
+        results.push({ ...gpu, pricePerHr: usd, priceSource: "live" });
         liveCount++;
       } else {
-        results.push({ ...gpu }); // no OnDemand SKU here — keep default
+        results.push({ ...gpu, priceSource: "fallback" }); // no OnDemand SKU here — keep default
       }
     } catch {
-      results.push({ ...gpu }); // transient error for this instance — keep default
+      results.push({ ...gpu, priceSource: "fallback" }); // transient error — keep default
     }
   }
 

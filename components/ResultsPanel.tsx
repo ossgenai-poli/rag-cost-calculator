@@ -352,11 +352,26 @@ export function ResultsPanel({
               </div>
             </div>
           ) : (
-            <div className="panel border-l-4 border-slate-600 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-400">
+            <div
+              className={`panel border-l-4 p-4 ${
+                crossover.verdictQualified ? "border-amber-500" : "border-slate-600"
+              }`}
+            >
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
                 Benchmark-grounded GPU sizing
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${SOURCE_STYLE[cap.source]}`}>
+                  {cap.source}
+                </span>
               </div>
               <div className="mt-1 text-xs text-slate-400">{grounding.note}</div>
+              {/* UX-015: a heuristic/estimated positive is NEVER shown unqualified. */}
+              {crossover.verdictQualified && (
+                <div className="mt-1 text-xs text-amber-300">
+                  ⚠ Self-host looks favorable, but sizing rests on <span className="font-medium">{cap.source}</span>{" "}
+                  throughput — <span className="font-medium">not validated</span> for this model/GPU. Run your own
+                  benchmark before committing.
+                </div>
+              )}
             </div>
           )
         )}
@@ -372,7 +387,7 @@ export function ResultsPanel({
             <FlashValue className="text-3xl font-bold text-slate-100">
               {usd(resultA.totalMonthly$)}
             </FlashValue>
-            <div className="text-xs text-slate-500">per month · fully priced</div>
+            <div className="text-xs text-slate-500">per month · modeled cost (priced inputs)</div>
           </div>
 
           <div className="panel p-4">
@@ -416,6 +431,40 @@ export function ResultsPanel({
           </div>
         </div>
       </div>
+
+      {/* UX-017: non-production banner when serving redundancy is off */}
+      {metrics.selfHosted && inputs.generation.haEnabled === false && (
+        <div className="flex items-start gap-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-sm">
+          <span aria-hidden className="mt-0.5 text-rose-400">⚠</span>
+          <div className="text-rose-200/90">
+            <span className="font-medium text-rose-300">Non-production estimate — serving redundancy excluded.</span>{" "}
+            Single replica: a replica loss drops serving capacity, and this models replica redundancy only,
+            not AWS multi-AZ placement, Spot-interruption correlation, regional quota, or multi-region DR.
+          </div>
+        </div>
+      )}
+
+      {/* UX-016: what the modeled cost includes / excludes */}
+      <details className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-xs">
+        <summary className="cursor-pointer font-medium text-slate-300">
+          What this modeled cost includes / excludes
+        </summary>
+        <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="text-slate-400">
+            <span className="font-medium text-emerald-300">Included:</span> ingestion &amp; embeddings,
+            OpenSearch Serverless, reranking, generation (API tokens or the GPU fleet incl. N+1 replicas),
+            guardrails, query overhead, and the <span className="text-slate-300">Operations &amp; overhead</span>{" "}
+            inputs you set.
+          </div>
+          <div className="text-slate-400">
+            <span className="font-medium text-amber-300">Excluded unless added under Operations:</span>{" "}
+            engineering/on-call FTEs, dev/staging GPU fleets, control-plane infra, EBS/FSx/model-artifact
+            storage, cross-AZ networking, capacity reservations, support plans, migration/validation, model
+            licensing/eval, multi-region DR. Zero Operations inputs are <span className="text-slate-300">your
+            assumptions</span>, not evidence these costs are $0.
+          </div>
+        </div>
+      </details>
 
       {isProxyComparison && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">

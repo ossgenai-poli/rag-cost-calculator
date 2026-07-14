@@ -21,6 +21,8 @@ const gpuInstancePriceSchema = z.object({
   // Optional-with-default so a stale committed prices.json still parses; the
   // hardcoded defaults always carry a real value.
   totalMemGB: z.number().default(0),
+  // PRICING-018: per-SKU provenance; default fallback (committed reference).
+  priceSource: z.enum(["live", "fallback", "override"]).default("fallback"),
 });
 
 const openSearchPriceSchema = z.object({

@@ -282,19 +282,36 @@ function Sources({ priceBook, asOf }: { priceBook: PriceBook; asOf: string }) {
       </div>
       <div>
         <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
-          GPU instances <SourceBadge kind={infraKind} /> price · <SourceBadge kind="estimate" /> tok/s
+          GPU instances — price provenance is PER-SKU (PRICING-018)
         </div>
         <table className="w-full text-xs">
           <tbody>
-            {priceBook.gpus.map((g) => (
-              <tr key={g.instanceType} className="border-t border-slate-800">
-                <td className="py-1 text-slate-300">{g.instanceType} ({g.gpu})</td>
-                <td className="py-1 tabular-nums text-slate-400">${g.pricePerHr}/hr</td>
-                <td className="py-1 tabular-nums text-slate-400">{g.sustainedTokPerSec} tok/s</td>
-              </tr>
-            ))}
+            {priceBook.gpus.map((g) => {
+              const src = g.priceSource ?? "fallback";
+              const style =
+                src === "live"
+                  ? "bg-emerald-500/15 text-emerald-300"
+                  : src === "override"
+                    ? "bg-sky-500/15 text-sky-300"
+                    : "bg-slate-500/20 text-slate-300";
+              return (
+                <tr key={g.instanceType} className="border-t border-slate-800">
+                  <td className="py-1 text-slate-300">{g.instanceType} ({g.gpu})</td>
+                  <td className="py-1 tabular-nums text-slate-400">
+                    ${g.pricePerHr}/hr{" "}
+                    <span className={`ml-1 rounded px-1 py-0.5 text-[10px] font-medium ${style}`}>
+                      {src === "fallback" ? "reference" : src}
+                    </span>
+                  </td>
+                  <td className="py-1 tabular-nums text-slate-400">{g.sustainedTokPerSec} tok/s</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
+        <div className="mt-1 text-[11px] text-slate-500">
+          A globally &ldquo;live&rdquo; price book does not mean every GPU price is live — check each SKU.
+        </div>
       </div>
     </div>
   );

@@ -16,6 +16,9 @@ export interface GpuInstancePrice {
   sustainedTokPerSec: number;
   /** aggregate GPU HBM across the instance, GB (e.g. 8×80 = 640 for p5) */
   totalMemGB: number;
+  /** per-SKU price provenance (PRICING-018): live = fetched from AWS this build;
+   * fallback = committed reference default; override = user-entered. */
+  priceSource?: "live" | "fallback" | "override";
 }
 
 /** OpenSearch Serverless pricing (from live Price List API). */
@@ -397,7 +400,8 @@ export interface CrossoverResult {
   apiBlendedPricePerToken: number;
   apiMonthly$: number;         // linear API cost at current volume
   breakEvenTokens: number;
-  equivalentQPS: number;       // break-even tokens expressed as QPS
+  equivalentQPS: number;       // break-even QPS over the CALENDAR month (730 h)
+  activeWindowQPS: number;     // break-even QPS over the fleet's ACTIVE hours (uptime) — GPU-019
   utilAtBreakEven: number;     // honesty check (<~0.5 => GPU idle)
   tokensPerQuery: number;      // total (input+output) LLM tokens per query — converts the token axis to queries/QPS
   outputFraction: number;      // output ÷ total tokens — converts the token axis to output/input tokens and derives decode util
