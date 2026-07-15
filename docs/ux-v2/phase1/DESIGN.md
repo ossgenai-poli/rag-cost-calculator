@@ -441,3 +441,21 @@ frozen at `d749309`. UI / merge / deploy remain HELD pending change-diff QA.
 tsc clean; engine + registry byte-identical to `4b2c848`; approved sweep (`7c16584`) and narrative
 (`7c8b97a`) behavior unchanged; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main
 frozen at `d749309`. UI / merge / deploy remain HELD.
+
+### 10.9 Change-diff review — HOLD-2 (normalization + composite integrity)
+
+| # | Finding (repro) | Fix |
+|---|---|---|
+| **P1-DIFF-2 (A)** | Reversing `evaluations[]` yielded `identical:false` with `changes:[]` — canonical equality treated the array as ordered while the event generator keyed by candidate id. Duplicate candidate ids were silently collapsed by Map-keying. | **Documented semantic: `evaluations` order is NON-SEMANTIC.** `identical` compares an identity view with evaluations sorted by canonical candidate id (a pure reorder is `identical:true`, no changes). **Duplicate candidate ids FAIL CLOSED** (throw) in either input before any map is built. |
+| **P1-DIFF-2 (B)** | An absent optional property vs an explicitly-`undefined` one compared unequal in `canonical()` (which rendered undefined props as null) but equal in the field observers (JSON copy drops them) — `identical:false`, `changes:[]`; nested cases could emit events with visually identical payloads. | **ONE shared normalization policy** for equality AND emitted copies: undefined object properties are OMITTED, undefined array entries → null, non-finite numbers → null, keys sorted. Absent ≡ explicitly-undefined everywhere. `add()` refuses to emit any change whose normalized before/after are canonically equal. **Defensive invariant:** semantically unequal results always produce ≥1 change — a `result-changed` catch-all (full before/after) fires if no finer event was emitted; `identical:false` with `changes:[]` is impossible by construction. |
+| **P2-DIFF-2** | Changing a rejection's code AND message together emitted only `rejection-changed` for the code — the fine event suppressed the composite fallback, losing the message change. | Rejections now emit BOTH: `rejection-changed` (primary code transition) and `rejection-details-changed` (complete before/after structures) whenever the arrays differ. Generally, composite fields (`decision`, `apiOption`, `pricing`, `fleet`, `cost`, `registry`) are now diffed by a generic `diffSub` over the UNION of subkeys (known keys → mapped codes; unknown/future keys → the composite's fallback code) — a fine handler can no longer suppress an unrepresented change inside its composite. `bestSelfHost` uses uniform full-card before/after semantics (an id change never hides the rest of the card). |
+
+Structural guard tests added: array reorder → identical; duplicate ids → throw; optional-presence →
+equal; simultaneous composite changes (priceState + comparisonQualified + monthlyCost) all represented;
+rejection code+message → both events; and the leaf-mutation guard now also asserts every emitted
+payload pair is canonically different and no case returns `identical:false` with empty changes.
+
+**After change-diff HOLD-2:** recommendation tests 123 (81 sweep + 21 narrate + 21 diff), full suite 347,
+tsc clean; engine + registry byte-identical to `4b2c848`; approved sweep (`7c16584`) and narrative
+(`7c8b97a`) behavior unchanged; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main
+frozen at `d749309`. UI / merge / deploy remain HELD.

@@ -113,6 +113,16 @@ describe("change-diff — P1-DIFF-1 completeness", () => {
       if (typeof v === "string") return `${v}·MUTATED`;
       return "MUTATED"; // null / empty object / empty array
     };
+    // Test-local canonical mirror (same policy: undefined props omitted, undefined entries/non-finite →
+    // null, sorted keys) — used to assert every emitted payload pair is canonically DIFFERENT.
+    const canon = (v: unknown): string => {
+      if (v === undefined || v === null) return "null";
+      if (typeof v === "number") return Number.isFinite(v) ? JSON.stringify(v) : "null";
+      if (typeof v !== "object") return JSON.stringify(v);
+      if (Array.isArray(v)) return `[${v.map((x) => canon(x === undefined ? null : x)).join(",")}]`;
+      const o = v as Record<string, unknown>;
+      return `{${Object.keys(o).filter((k) => o[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canon(o[k])}`).join(",")}}`;
+    };
     for (const experimental of [false, true]) {
       const base = r1(experimental);
       const paths = leafPaths(clone(base));
@@ -123,8 +133,70 @@ describe("change-diff — P1-DIFF-1 completeness", () => {
         const d = diffRecommendations(base, mutated);
         expect(d.identical, `path ${path.join(".")} must not be identical`).toBe(false);
         expect(d.changes.length, `path ${path.join(".")} must emit ≥1 coded change`).toBeGreaterThan(0);
+        // invariant: never identical:false with empty changes; every payload pair canonically differs
+        for (const ch of d.changes) {
+          expect(canon(ch.before), `path ${path.join(".")} · ${ch.code}/${ch.field} payloads must differ`).not.toBe(canon(ch.after));
+        }
       }
     }
+  });
+
+  it("STRUCTURAL GUARD: reorder / optional-presence / duplicates / simultaneous composite changes", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4, C.b200Fp8]);
+    const a = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    // array reorder → equal under the documented non-semantic-order rule
+    const reordered = clone(a);
+    reordered.evaluations.reverse();
+    expect(diffRecommendations(a, reordered)).toEqual({ identical: true, changes: [] });
+    // duplicate candidate identity → fail closed
+    const dup = clone(a);
+    dup.evaluations.push(clone(dup.evaluations[0]));
+    expect(() => diffRecommendations(a, dup)).toThrow(/duplicate candidate id/);
+    // optional-property presence (absent vs explicit undefined) → equal
+    const undef = { ...clone(a), controlComparison: undefined };
+    expect(diffRecommendations(a, undef)).toEqual({ identical: true, changes: [] });
+    // simultaneous changes inside one composite field are ALL represented
+    const multi = clone(a);
+    multi.apiOption.priceState = "no-price";
+    multi.apiOption.comparisonQualified = false;
+    multi.apiOption.monthlyCost = null;
+    const d = diffRecommendations(a, multi);
+    expect(change(d, "api-option-changed", "apiOption.priceState")).toBeDefined();
+    expect(change(d, "api-option-changed", "apiOption.comparisonQualified")).toBeDefined();
+    expect(change(d, "cost-changed", "apiOption.monthlyCost")).toBeDefined();
+  });
+
+  it("evaluations reordered → identical:true with no changes (order is non-semantic, ID-normalized)", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4, C.b200Fp8]);
+    const a = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    const b = clone(a);
+    b.evaluations.reverse();
+    const d = diffRecommendations(a, b);
+    expect(d.identical).toBe(true);
+    expect(d.changes).toEqual([]);
+  });
+
+  it("nested optional (registry.transformations) absent vs explicit undefined → consistently equal", () => {
+    const a = r1(true); // experimental: registry present; transformations key exists with undefined value
+    const b = clone(a); // JSON clone DROPS undefined-valued keys → absent representation
+    const d = diffRecommendations(a, b);
+    expect(d.identical).toBe(true);
+    expect(d.changes).toEqual([]);
+  });
+
+  it("P2-DIFF-2: rejection code + message changed together → BOTH primary transition AND full details", () => {
+    mockedCatalog.mockReturnValue([C.b200Fp8]); // rejected: evidence-below-threshold
+    const a = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    const b = clone(a);
+    b.evaluations[0].rejections = [{ code: "sla-unmet-ttft-or-streaming", message: "entirely new message" }];
+    const d = diffRecommendations(a, b);
+    expect(change(d, "rejection-changed", "rejections[0].code")).toMatchObject({
+      before: "evidence-below-threshold",
+      after: "sla-unmet-ttft-or-streaming",
+    });
+    const details = change(d, "rejection-details-changed", "rejections")!;
+    expect((details.before as Array<{ code: string; message: string }>)[0].code).toBe("evidence-below-threshold");
+    expect((details.after as Array<{ code: string; message: string }>)[0].message).toBe("entirely new message");
   });
 
   it("serving-facts-only change → serving-facts-changed", () => {
@@ -216,7 +288,9 @@ describe("change-diff — required change classes", () => {
     expect(change(d, "gate-changed", "evidenceQualified")).toMatchObject({ before: true, after: false });
     expect(change(d, "gate-changed", "recommendationEligible")).toMatchObject({ before: true, after: false });
     expect(change(d, "decision-changed")).toMatchObject({ before: { choice: "api", basis: "lower-cost" }, after: { choice: "api", basis: "evidence-gap" } });
-    expect(change(d, "best-self-host-changed")).toMatchObject({ before: C.b200Int4.id, after: null });
+    const bsh = change(d, "best-self-host-changed")!;
+    expect((bsh.before as { config: { id: string } }).config.id).toBe(C.b200Int4.id); // FULL card, not just the id
+    expect(bsh.after).toBeNull();
     expect(change(d, "comparator-changed")).toBeDefined();
     expect(change(d, "rejection-changed")).toMatchObject({ before: null, after: "evidence-below-threshold" });
   });

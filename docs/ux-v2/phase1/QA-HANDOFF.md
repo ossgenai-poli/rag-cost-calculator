@@ -12,17 +12,24 @@ approved sweep + narrative. UI, merge and deploy remain **HELD** until change-di
 1. **`lib/recommendation/change-diff.ts`** — `diffRecommendations(prev, next) → RecommendationDiff`.
    Pure, deterministic, reason-coded diff of two **structured** results (never narrative prose); no input
    mutation; null-safe. **The exported `ChangeCode` union is the ONE binding contract** (DESIGN §6).
-   `identical` = canonical equality of the COMPLETE results; coverage of every schema field is enforced
-   by compile-time `satisfies Record<keyof …, ChangeCode>` maps + a coarse per-field fallback, and by a
-   guard test that mutates EVERY leaf path of real control/experimental results (DESIGN §10.7–§10.8).
-   `candidate-added/removed` carry the full deep-copied evaluation snapshot.
+   Coverage of every schema field is enforced by compile-time `satisfies Record<keyof …, ChangeCode>`
+   maps + generic per-subkey composite diffing, and by guard tests that mutate EVERY leaf path AND the
+   structural cases (reorder / optional-presence / duplicates / simultaneous composite changes)
+   (DESIGN §10.7–§10.9). Semantics: ONE shared normalization (undefined props omitted, undefined array
+   entries + non-finite numbers → null, sorted keys; absent ≡ explicitly-undefined); `evaluations` order
+   is NON-SEMANTIC (id-normalized identity); duplicate candidate ids FAIL CLOSED; `identical` = canonical
+   equality of the complete normalized results; no emitted change has canonically equal payloads;
+   semantically-unequal results always yield ≥1 change (`result-changed` catch-all). Rejections emit
+   both the primary `rejection-changed` transition and full `rejection-details-changed`;
+   `candidate-added/removed` carry the full deep-copied evaluation snapshot; `best-self-host-changed`
+   carries full before/after cards.
 2. Previously approved (context): sweep §3–§4 + §10–§10.3, narrative §5 + §10.4–§10.6.
 
 ## Run
 
 ```
-npx vitest run lib/recommendation      # 119 (81 sweep/contracts + 21 narrate/comparator + 17 change-diff)
-npx vitest run                         # 343 (frozen 184 + registry 40 + recommendation 119)
+npx vitest run lib/recommendation      # 123 (81 sweep/contracts + 21 narrate/comparator + 21 change-diff)
+npx vitest run                         # 347 (frozen 184 + registry 40 + recommendation 123)
 npx tsc --noEmit                       # clean
 ```
 

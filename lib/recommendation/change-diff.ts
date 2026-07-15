@@ -1,19 +1,25 @@
 // ============================================================================
 // change-diff — deterministic, reason-coded diff of two STRUCTURED recommendation
-// results (DESIGN §6/§10.7-10.8). Compares StructuredRecommendationResult objects
+// results (DESIGN §6/§10.7-10.9). Compares StructuredRecommendationResult objects
 // only — NEVER narrative prose. Pure: no Date/random, inputs are never mutated,
 // ordering and serialization are deterministic, every before/after value is
 // null-safe (no NaN/undefined, no invented explanations).
 //
-// COMPLETENESS CONTRACT (P1-DIFF-1): every field of StructuredRecommendationResult
-// and CandidateEvaluation is covered by a reason code, enforced at COMPILE TIME by
-// `satisfies Record<keyof …, ChangeCode>` coverage maps — adding a schema field
-// without mapping it breaks the build. At runtime, each field is compared by
-// canonical (sorted-key) equality; when a field differs and its fine-grained
-// handler emits nothing, a coarse change with the field's mapped code and the FULL
-// deep-copied before/after is emitted — so a JSON-unequal result can never produce
-// an empty diff. `identical` is the canonical equality of the COMPLETE results,
-// not "no observers fired".
+// COMPLETENESS CONTRACT (P1-DIFF-1/P1-DIFF-2):
+// - Every field of StructuredRecommendationResult and CandidateEvaluation is
+//   covered by a reason code, enforced at COMPILE TIME by `satisfies Record<keyof …,
+//   ChangeCode>` maps — adding a schema field without a mapping breaks the build.
+// - ONE recursive normalization policy is shared by equality AND emitted copies:
+//   undefined object properties are OMITTED, undefined array entries become null,
+//   non-finite numbers become null, object keys are sorted. Absent vs explicitly
+//   undefined are therefore EQUAL everywhere.
+// - `evaluations` order is NON-SEMANTIC: identity comparison sorts them by the
+//   canonical candidate id (a pure reorder is identical:true). Duplicate candidate
+//   ids FAIL CLOSED (throw) before any map is built.
+// - No emitted change can carry canonically equal before/after payloads.
+// - Defensive invariant: semantically unequal results ALWAYS produce ≥1 change —
+//   a `result-changed` catch-all fires if no finer event was emitted. The diff can
+//   never return identical:false with an empty change list.
 // ============================================================================
 import type {
   ApiOption, CandidateEvaluation, CostComparison, Decision, FleetReconciliation, PricingProvenance,
@@ -21,6 +27,7 @@ import type {
 } from "./schema";
 
 export type ChangeCode =
+  | "result-changed" // defensive catch-all — semantically unequal but no finer event (should not occur)
   | "mode-changed"
   | "decision-changed"
   | "comparator-changed"
@@ -48,9 +55,9 @@ export type ChangeCode =
   | "cost-changed";
 
 /** One coded change. Result-level changes carry candidateId=null; per-candidate changes carry the
- *  stable candidate id. `before`/`after` are structured values (deep-copied, never aliased), with
- *  `null` for absent — never undefined/NaN. Added/removed candidates carry the FULL evaluation
- *  snapshot on the populated side (P2-DIFF-1). */
+ *  stable candidate id. `before`/`after` are normalized structured values (deep-copied, never aliased,
+ *  never canonically equal to each other). Added/removed candidates carry the FULL evaluation snapshot
+ *  on the populated side (P2-DIFF-1). */
 export interface RecommendationChange {
   code: ChangeCode;
   scope: "result" | "candidate";
@@ -108,7 +115,6 @@ const DECISION_FIELD_CODES = {
   basis: "decision-changed",
   costComparator: "comparator-changed",
 } as const satisfies Record<keyof Decision, ChangeCode>;
-void DECISION_FIELD_CODES;
 
 const API_OPTION_FIELD_CODES = {
   modelId: "api-model-changed",
@@ -148,6 +154,7 @@ const REGISTRY_FIELD_CODES = {
 
 // Deterministic presentation order (result-level first, then per-candidate groups).
 const CODE_ORDER: ChangeCode[] = [
+  "result-changed",
   "mode-changed", "decision-changed", "comparator-changed", "api-model-changed", "api-option-changed",
   "model-label-changed", "best-self-host-changed", "alternatives-changed", "control-comparison-changed",
   "effective-workload-changed", "adjustments-changed", "pricing-changed",
@@ -158,27 +165,45 @@ const CODE_ORDER: ChangeCode[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Null-safe canonical equality + deep copies
+// ONE shared recursive normalization (P1-DIFF-2): undefined object properties are
+// OMITTED, undefined array entries → null, non-finite numbers → null, keys sorted.
+// canonical() (equality) and copy() (emitted payloads) implement the SAME policy.
 // ---------------------------------------------------------------------------
-/** undefined → null; non-finite numbers → null (never emit NaN). */
-function norm(v: unknown): unknown {
-  if (v === undefined) return null;
-  if (typeof v === "number" && !Number.isFinite(v)) return null;
-  return v;
-}
-/** Canonical (sorted-key) serialization — key-order independent, deterministic. */
 function canonical(v: unknown): string {
-  const n = norm(v);
-  if (n === null || typeof n !== "object") return JSON.stringify(n);
-  if (Array.isArray(n)) return `[${n.map(canonical).join(",")}]`;
-  const o = n as Record<string, unknown>;
-  return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`).join(",")}}`;
+  if (v === undefined || v === null) return "null";
+  if (typeof v === "number") return Number.isFinite(v) ? JSON.stringify(v) : "null";
+  if (typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) return `[${v.map((x) => canonical(x === undefined ? null : x)).join(",")}]`;
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o).filter((k) => o[k] !== undefined).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`).join(",")}}`;
 }
 const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
-/** Deep copy so a change record never aliases (or can mutate) an input object. */
+
+/** Deep copy under the SAME normalization policy (JSON round-trip: drops undefined properties, turns
+ *  undefined array entries and non-finite numbers into null). Never aliases an input object. */
 function copy(v: unknown): unknown {
-  const n = norm(v);
-  return n === null || typeof n !== "object" ? n : JSON.parse(JSON.stringify(n));
+  if (v === undefined || v === null) return null;
+  if (typeof v === "number" && !Number.isFinite(v)) return null;
+  if (typeof v !== "object") return v;
+  return JSON.parse(JSON.stringify(v, (_k, val) => (typeof val === "number" && !Number.isFinite(val) ? null : val)));
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+const byId = (a: CandidateEvaluation, b: CandidateEvaluation) => (a.config.id < b.config.id ? -1 : a.config.id > b.config.id ? 1 : 0);
+
+/** Identity view: evaluations order is NON-SEMANTIC → compare with a sorted copy (inputs untouched). */
+function identityView(r: StructuredRecommendationResult): StructuredRecommendationResult {
+  return Array.isArray(r.evaluations) ? { ...r, evaluations: [...r.evaluations].sort(byId) } : r;
+}
+
+/** Duplicate candidate ids FAIL CLOSED — Map-keying would silently collapse them (P1-DIFF-2). */
+function assertUniqueIds(r: StructuredRecommendationResult, which: string): void {
+  if (!Array.isArray(r.evaluations)) return;
+  const ids = r.evaluations.map((e) => e.config.id);
+  if (new Set(ids).size !== ids.length) {
+    throw new Error(`change-diff: duplicate candidate id(s) in ${which}.evaluations: ${ids.filter((id, i) => ids.indexOf(id) !== i).join(", ")}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,9 +213,15 @@ export function diffRecommendations(
   prev: StructuredRecommendationResult,
   next: StructuredRecommendationResult
 ): RecommendationDiff {
+  assertUniqueIds(prev, "prev");
+  assertUniqueIds(next, "next");
+
   const changes: RecommendationChange[] = [];
-  const add = (code: ChangeCode, scope: "result" | "candidate", candidateId: string | null, field: string | null, before: unknown, after: unknown) =>
+  /** Emit one change. Guard: NEVER emit a change whose normalized before/after are equal. */
+  const add = (code: ChangeCode, scope: "result" | "candidate", candidateId: string | null, field: string | null, before: unknown, after: unknown) => {
+    if (same(before, after)) return;
     changes.push({ code, scope, candidateId, field, before: copy(before), after: copy(after) });
+  };
 
   /** Compare one field; run the fine handler; if it emitted nothing, emit the coarse fallback so a
    *  differing field can NEVER pass silently. */
@@ -201,6 +232,22 @@ export function diffRecommendations(
     if (changes.length === start) add(code, scope, candidateId, name, before, after);
   };
 
+  /** Generic composite diff: compare EVERY subkey (union of both sides) so a fine handler can never
+   *  suppress an unrepresented change inside its composite field (P2-DIFF-2). Unknown/future keys fall
+   *  back to `fallbackCode`. Only used when BOTH sides are plain objects; otherwise the caller's coarse
+   *  fallback fires. */
+  const diffSub = (
+    b: unknown, a: unknown, map: Partial<Record<string, ChangeCode>>, fallbackCode: ChangeCode,
+    prefix: string, scope: "result" | "candidate", candidateId: string | null, skip: ReadonlySet<string> = new Set()
+  ) => {
+    if (!isObj(b) || !isObj(a)) return; // caller's coarse fallback handles non-object shapes
+    const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])].sort();
+    for (const k of keys) {
+      if (skip.has(k)) continue;
+      add(map[k] ?? fallbackCode, scope, candidateId, `${prefix}.${k}`, b[k], a[k]);
+    }
+  };
+
   // ---- result-level: EVERY key of RESULT_FIELD_CODES ----
   for (const key of Object.keys(RESULT_FIELD_CODES) as Array<keyof StructuredRecommendationResult>) {
     if (key === "evaluations") continue; // handled per-candidate below
@@ -209,18 +256,19 @@ export function diffRecommendations(
     switch (key) {
       case "decision":
         field("decision-changed", "result", null, "decision", b, a, () => {
+          if (!isObj(b) || !isObj(a)) return;
           if (prev.decision.choice !== next.decision.choice || prev.decision.basis !== next.decision.basis) {
             add("decision-changed", "result", null, "decision",
               { choice: prev.decision.choice, basis: prev.decision.basis },
               { choice: next.decision.choice, basis: next.decision.basis });
           }
-          if (!same(prev.decision.costComparator ?? null, next.decision.costComparator ?? null)) {
-            add("comparator-changed", "result", null, "decision.costComparator", prev.decision.costComparator ?? null, next.decision.costComparator ?? null);
-          }
+          add("comparator-changed", "result", null, "decision.costComparator", prev.decision.costComparator ?? null, next.decision.costComparator ?? null);
+          diffSub(b, a, DECISION_FIELD_CODES, "decision-changed", "decision", "result", null, new Set(["choice", "basis", "costComparator"]));
         });
         break;
       case "apiOption":
         field("api-option-changed", "result", null, "apiOption", b, a, () => {
+          if (!isObj(b) || !isObj(a)) return;
           const p = prev.apiOption;
           const n = next.apiOption;
           if (p.modelId !== n.modelId) {
@@ -229,26 +277,17 @@ export function diffRecommendations(
           } else if (p.modelLabel !== n.modelLabel) {
             add("model-label-changed", "result", null, "apiOption.modelLabel", p.modelLabel, n.modelLabel);
           }
-          if (norm(p.monthlyCost) !== norm(n.monthlyCost)) add(API_OPTION_FIELD_CODES.monthlyCost, "result", null, "apiOption.monthlyCost", p.monthlyCost, n.monthlyCost);
-          if (p.priceState !== n.priceState) add(API_OPTION_FIELD_CODES.priceState, "result", null, "apiOption.priceState", p.priceState, n.priceState);
-          if (p.comparisonQualified !== n.comparisonQualified) add(API_OPTION_FIELD_CODES.comparisonQualified, "result", null, "apiOption.comparisonQualified", p.comparisonQualified, n.comparisonQualified);
+          diffSub(b, a, API_OPTION_FIELD_CODES, "api-option-changed", "apiOption", "result", null, new Set(["modelId", "modelLabel"]));
         });
         break;
       case "bestSelfHost":
-        field("best-self-host-changed", "result", null, "bestSelfHost", b, a, () => {
-          // Fully-guarded id access: a malformed/absent card must fall through to the coarse
-          // full-before/after fallback, never throw.
-          const pid = prev.bestSelfHost?.config?.id ?? null;
-          const nid = next.bestSelfHost?.config?.id ?? null;
-          if (pid !== nid) add("best-self-host-changed", "result", null, "bestSelfHost", pid, nid);
-          // same id but a changed card → coarse fallback fires (full cards) via the wrapper.
-        });
+        // Uniform semantics: ONE event carrying the FULL before/after cards (or null) — an id change
+        // never suppresses the rest of the card's content.
+        add("best-self-host-changed", "result", null, "bestSelfHost", b ?? null, a ?? null);
         break;
       case "pricing":
         field("pricing-changed", "result", null, "pricing", b, a, () => {
-          for (const k of Object.keys(PRICING_FIELD_CODES) as Array<keyof PricingProvenance>) {
-            if (prev.pricing[k] !== next.pricing[k]) add("pricing-changed", "result", null, `pricing.${k}`, prev.pricing[k], next.pricing[k]);
-          }
+          diffSub(b, a, PRICING_FIELD_CODES, "pricing-changed", "pricing", "result", null);
         });
         break;
       case "rejected":
@@ -261,9 +300,9 @@ export function diffRecommendations(
     }
   }
 
-  // ---- per-candidate (matched by stable config.id) ----
-  const prevById = new Map(prev.evaluations.map((e) => [e.config.id, e]));
-  const nextById = new Map(next.evaluations.map((e) => [e.config.id, e]));
+  // ---- per-candidate (matched by stable config.id; order non-semantic) ----
+  const prevById = new Map((Array.isArray(prev.evaluations) ? prev.evaluations : []).map((e) => [e.config.id, e]));
+  const nextById = new Map((Array.isArray(next.evaluations) ? next.evaluations : []).map((e) => [e.config.id, e]));
   const allIds = [...new Set([...prevById.keys(), ...nextById.keys()])].sort();
 
   for (const id of allIds) {
@@ -272,31 +311,39 @@ export function diffRecommendations(
     // P2-DIFF-1: added/removed events carry the FULL evaluation snapshot on the populated side.
     if (p && !n) { add("candidate-removed", "candidate", id, null, p, null); continue; }
     if (!p && n) { add("candidate-added", "candidate", id, null, null, n); continue; }
-    diffCandidate(p!, n!, field);
+    diffCandidate(p!, n!, add, field, diffSub);
   }
 
-  // Deterministic total order: result-level (candidateId "" ) → candidate id → code order → field.
-  changes.sort((a, b) => {
-    const ca = a.candidateId ?? "";
-    const cb = b.candidateId ?? "";
-    if (ca !== cb) return ca < cb ? -1 : 1;
-    const oa = CODE_ORDER.indexOf(a.code);
-    const ob = CODE_ORDER.indexOf(b.code);
-    if (oa !== ob) return oa - ob;
-    const fa = a.field ?? "";
-    const fb = b.field ?? "";
-    return fa < fb ? -1 : fa > fb ? 1 : 0;
+  // Deterministic total order: result-level (candidateId "") → candidate id → code order → field.
+  changes.sort((x, y) => {
+    const cx = x.candidateId ?? "";
+    const cy = y.candidateId ?? "";
+    if (cx !== cy) return cx < cy ? -1 : 1;
+    const ox = CODE_ORDER.indexOf(x.code);
+    const oy = CODE_ORDER.indexOf(y.code);
+    if (ox !== oy) return ox - oy;
+    const fx = x.field ?? "";
+    const fy = y.field ?? "";
+    return fx < fy ? -1 : fx > fy ? 1 : 0;
   });
 
-  // identical = canonical equality of the COMPLETE results (P1-DIFF-1) — never merely "no observers".
-  return { identical: same(prev, next), changes };
+  // identical = canonical equality of the COMPLETE results under the shared normalization, with the
+  // non-semantic evaluations order normalized (P1-DIFF-2).
+  const identical = same(identityView(prev), identityView(next));
+
+  // Defensive invariant: semantically unequal results must NEVER yield an empty change list.
+  if (!identical && changes.length === 0) {
+    changes.push({ code: "result-changed", scope: "result", candidateId: null, field: null, before: copy(prev), after: copy(next) });
+  }
+
+  return { identical, changes };
 }
 
-function diffCandidate(
-  p: CandidateEvaluation,
-  n: CandidateEvaluation,
-  field: (code: ChangeCode, scope: "candidate", candidateId: string, name: string, before: unknown, after: unknown, fine?: () => void) => void
-): void {
+type AddFn = (code: ChangeCode, scope: "result" | "candidate", candidateId: string | null, field: string | null, before: unknown, after: unknown) => void;
+type FieldFn = (code: ChangeCode, scope: "result" | "candidate", candidateId: string | null, name: string, before: unknown, after: unknown, fine?: () => void) => void;
+type DiffSubFn = (b: unknown, a: unknown, map: Partial<Record<string, ChangeCode>>, fallbackCode: ChangeCode, prefix: string, scope: "result" | "candidate", candidateId: string | null, skip?: ReadonlySet<string>) => void;
+
+function diffCandidate(p: CandidateEvaluation, n: CandidateEvaluation, add: AddFn, field: FieldFn, diffSub: DiffSubFn): void {
   const id = p.config.id;
 
   for (const key of Object.keys(CANDIDATE_FIELD_CODES) as Array<keyof CandidateEvaluation>) {
@@ -305,32 +352,33 @@ function diffCandidate(
     switch (key) {
       case "fleet":
         field("fleet-changed", "candidate", id, "fleet", b, a, () => {
-          for (const k of Object.keys(FLEET_FIELD_CODES) as Array<keyof FleetReconciliation>) {
-            if (p.fleet[k] !== n.fleet[k]) field(FLEET_FIELD_CODES[k], "candidate", id, `fleet.${k}`, p.fleet[k], n.fleet[k]);
-          }
+          diffSub(b, a, FLEET_FIELD_CODES, "fleet-changed", "fleet", "candidate", id);
         });
         break;
       case "cost":
         field("cost-changed", "candidate", id, "cost", b, a, () => {
-          for (const k of Object.keys(COST_FIELD_CODES) as Array<keyof CostComparison>) {
-            if (norm(p.cost[k]) !== norm(n.cost[k])) field("cost-changed", "candidate", id, `cost.${k}`, p.cost[k], n.cost[k]);
-          }
+          diffSub(b, a, COST_FIELD_CODES, "cost-changed", "cost", "candidate", id);
         });
         break;
       case "registry":
         field("provenance-changed", "candidate", id, "registry", b, a, () => {
-          for (const k of Object.keys(REGISTRY_FIELD_CODES) as Array<keyof RegistryEvidence>) {
-            field(REGISTRY_FIELD_CODES[k], "candidate", id, `registry.${k}`, p.registry?.[k] ?? null, n.registry?.[k] ?? null);
-          }
+          // absent side treated as {} so per-subfield events still fire on introduce/remove.
+          const bo = isObj(b) ? b : b == null ? {} : null;
+          const ao = isObj(a) ? a : a == null ? {} : null;
+          if (bo === null || ao === null) return; // garbage shape → coarse fallback
+          diffSub(bo, ao, REGISTRY_FIELD_CODES, "provenance-changed", "registry", "candidate", id);
         });
         break;
       case "rejections":
-        field("rejection-details-changed", "candidate", id, "rejections", b, a, () => {
-          const pc = p.rejections[0]?.code ?? null;
-          const nc = n.rejections[0]?.code ?? null;
-          if (pc !== nc) field("rejection-changed", "candidate", id, "rejections[0].code", pc, nc);
-          // message-only / secondary changes → coarse rejection-details-changed via the wrapper.
-        });
+        // P2-DIFF-2: the primary code transition AND the complete details are BOTH preserved — a fine
+        // event never suppresses the rest of the composite. rejection-details-changed accompanies ANY
+        // rejections difference (including code-only, where the code is part of the details).
+        if (!same(b, a)) {
+          const pc = Array.isArray(b) ? (b[0] as { code?: string } | undefined)?.code ?? null : null;
+          const nc = Array.isArray(a) ? (a[0] as { code?: string } | undefined)?.code ?? null : null;
+          if (pc !== nc) add("rejection-changed", "candidate", id, "rejections[0].code", pc, nc);
+          add("rejection-details-changed", "candidate", id, "rejections", b, a);
+        }
         break;
       default:
         // config / gates / engineConfidence / effectiveConfidence / servingFacts / ttftS /
