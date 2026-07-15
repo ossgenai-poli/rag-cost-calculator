@@ -222,6 +222,42 @@ describe("narrate — P1-NARR-2: cost prose uses the persisted comparator, never
     const n2 = narrate(base({ choice: "api", basis: "lower-cost", costComparator: { selfHostCandidateId: "only", selfHostMonthly: 1_000_000, apiMonthly: 6_492_000 } }, evals, "only"));
     expect(n2.decision.rationale).toContain("comparison details unavailable"); // 6.49M ≤ 1M is false → fail closed
   });
+
+  it("P1-NARR-3: tampered comparator API amount ($1 vs apiOption $6.492M) → neutral", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const s = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    (s.decision.costComparator as any).apiMonthly = 1; // tamper: apiOption.monthlyCost stays 6,492,000
+    const n = narrate(s);
+    expect(n.decision.rationale).toContain("comparison details unavailable");
+    expect(n.decision.rationale).not.toContain("$1/month");
+    expect(n.decision.rationale).not.toMatch(/lower-cost than/);
+  });
+
+  it("P1-NARR-3: a rejected/evidence-unqualified candidate as comparator → neutral (never recommended)", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4, C.h200Int4]);
+    const s = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    const h200 = s.evaluations.find((e) => e.config.id === C.h200Int4.id)!; // heuristic, recommendationEligible=false
+    expect(h200.recommendationEligible).toBe(false);
+    s.decision = {
+      choice: "self-host",
+      basis: "lower-cost",
+      costComparator: { selfHostCandidateId: h200.config.id, selfHostMonthly: h200.cost.selfHostMonthly!, apiMonthly: s.apiOption.monthlyCost! },
+    };
+    const n = narrate(s); // amounts reconcile and the inequality holds — eligibility alone must fail it closed
+    expect(n.decision.rationale).toContain("comparison details unavailable");
+    expect(n.decision.rationale).not.toContain("$554,420");
+    expect(n.decision.rationale).not.toMatch(/lower-cost than/);
+  });
+
+  it("P1-NARR-3: a valid but NON-CHEAPEST qualified candidate as comparator → neutral", () => {
+    // Both candidates fully eligible/qualified; comparator points at the dearer one with amounts that
+    // reconcile and an inequality that holds — but it is not the deterministic cheapest → neutral.
+    const evals = [ev("cheap", "p5e.48xlarge", 5_000_000), ev("dear", "p6-b200.48xlarge", 7_176_630)];
+    const n = narrate(base({ choice: "api", basis: "lower-cost", costComparator: { selfHostCandidateId: "dear", selfHostMonthly: 7_176_630, apiMonthly: 6_492_000 } }, evals, "dear"));
+    expect(n.decision.rationale).toContain("comparison details unavailable");
+    expect(n.decision.rationale).not.toContain("$7,176,630");
+    expect(n.decision.rationale).not.toMatch(/lower-cost than/);
+  });
 });
 
 describe("narrate — determinism + prose hygiene", () => {

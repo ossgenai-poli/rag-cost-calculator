@@ -11,6 +11,7 @@ import type {
   StructuredRecommendationResult,
 } from "./schema";
 import { CONFIDENCE_RANK, RECOMMENDATION_CAPTION } from "./schema";
+import { costComparatorValid } from "./decision";
 
 /** Deterministic thousands formatting (no locale/ICU dependence). */
 function commas(n: number): string {
@@ -123,22 +124,19 @@ function decisionRationale(r: StructuredRecommendationResult): string {
       lead = `Recommendation: undetermined. An evidence-qualified self-host configuration for ${selfLabel} exists, but a trustworthy ${apiLabel} API-vs-self-host cost comparison is unavailable, so no cost winner is asserted.`;
       break;
     case "lower-cost": {
-      // P1-NARR-2: explain the cost decision from the EXACT persisted comparator — never from the
-      // optimization-selected bestSelfHost. Fail closed to neutral wording when the comparator is
-      // absent/inconsistent rather than asserting a winner with wrong numbers.
-      const cmp = r.decision.costComparator;
-      const cmpEval = cmp ? r.evaluations.find((e) => e.config.id === cmp.selfHostCandidateId) : undefined;
-      const amountsConsistent =
-        cmp != null && cmpEval != null &&
-        Number.isFinite(cmp.selfHostMonthly) && Number.isFinite(cmp.apiMonthly) &&
-        cmpEval.cost.selfHostMonthly === cmp.selfHostMonthly &&
-        (r.decision.choice === "api" ? cmp.apiMonthly <= cmp.selfHostMonthly : cmp.selfHostMonthly < cmp.apiMonthly);
-      if (!amountsConsistent) {
+      // P1-NARR-2/P1-NARR-3: explain the cost decision from the EXACT persisted comparator — never from
+      // the optimization-selected bestSelfHost — and ONLY after the shared integrity validator confirms
+      // EVERY invariant (candidate exists + eligible/qualified, amounts exactly reconcile with the
+      // evaluation AND apiOption, it is the deterministic cheapest comparable candidate, the claimed
+      // inequality holds). Any failed invariant → neutral wording, no dollar winner, no silent repair.
+      if (!costComparatorValid(r.decision, r.apiOption, r.evaluations)) {
         lead = r.decision.choice === "api"
           ? `Recommendation: use ${apiPhrase} (decided on cost; comparison details unavailable — no specific dollar comparison is asserted).`
           : `Recommendation: self-host ${selfLabel} (decided on cost; comparison details unavailable — no specific dollar comparison is asserted).`;
         break;
       }
+      const cmp = r.decision.costComparator!;
+      const cmpEval = r.evaluations.find((e) => e.config.id === cmp.selfHostCandidateId)!;
       const sf = cmpEval.servingFacts;
       const selfDesc = `self-hosting ${selfLabel} on ${sf.instanceType} (${sf.weightPrecision} weights) at ${usd(cmp.selfHostMonthly)}/month`;
       lead = r.decision.choice === "api"

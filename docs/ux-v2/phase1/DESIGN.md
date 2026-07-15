@@ -381,3 +381,13 @@ main frozen at `d749309`. change-diff / UI / merge / deploy remain HELD pending 
 **After narrative HOLD-1:** recommendation tests 99 (81 sweep + 18 narrate), full suite 323, tsc clean;
 engine + registry byte-identical to `4b2c848`; approved sweep behavior unchanged; diff confined to
 `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.
+
+### 10.6 Narrative review — HOLD-2 (comparator integrity)
+
+| # | Finding (repro) | Fix |
+|---|---|---|
+| **P1-NARR-3** | The inline `amountsConsistent` check missed four invariants: comparator `apiMonthly` vs `apiOption.monthlyCost`, comparator API amount vs the candidate evaluation's API amount, the comparator candidate's eligibility, and cheapest-qualified ordering. Repro 1: tampering `costComparator.apiMonthly` to $1 narrated "API at $1/month". Repro 2: substituting the rejected heuristic H200 evaluation as the comparator narrated a heuristic $554k self-host win. | ONE shared integrity helper, `costComparatorValid(decision, apiOption, evaluations)` in `decision.ts`, used by narration (and reusing the SAME `byCostThenId` ordering `deriveDecision` picks with). Valid requires ALL of: basis `lower-cost` · candidate exists · candidate `recommendationEligible` + `evidenceQualified` + `priceQualified` + `comparisonQualified` · candidate selfHost AND api amounts EXACTLY match the comparator · `apiOption.monthlyCost` EXACTLY matches · the candidate is the deterministic CHEAPEST comparable candidate (cost→config-id) · amounts finite · claimed choice/inequality consistent. Any failed invariant → neutral wording with no asserted dollar winner; narrate never repairs or substitutes a comparator. Tests: tampered API amount → neutral; rejected-heuristic comparator → neutral; valid-but-non-cheapest comparator → neutral; valid api-wins and self-host-wins comparators → exact amounts. |
+
+**After narrative HOLD-2:** recommendation tests 102 (81 sweep + 21 narrate), full suite 326, tsc clean;
+engine + registry byte-identical to `4b2c848`; approved sweep behavior unchanged; diff confined to
+`lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.

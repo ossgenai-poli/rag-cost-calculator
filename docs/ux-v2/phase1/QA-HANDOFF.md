@@ -16,10 +16,17 @@ change-diff, UI, merge and deploy remain **HELD** until narrative QA.
 ## Run
 
 ```
-npx vitest run lib/recommendation      # 99 (81 sweep/contracts + 18 narrate/comparator)
-npx vitest run                         # 323 (frozen 184 + registry 40 + recommendation 99)
+npx vitest run lib/recommendation      # 102 (81 sweep/contracts + 21 narrate/comparator)
+npx vitest run                         # 326 (frozen 184 + registry 40 + recommendation 102)
 npx tsc --noEmit                       # clean
 ```
+
+**Narrative HOLD-2 fix (see DESIGN §10.6):** a single shared comparator-integrity helper
+(`costComparatorValid`) now guards every narrated dollar claim — candidate existence + full
+eligibility/qualification, exact amount reconciliation against BOTH the candidate evaluation and
+`apiOption.monthlyCost`, deterministic cheapest-qualified ordering (same `byCostThenId` as
+`deriveDecision`), finite amounts, and choice/inequality consistency. Any failed invariant → neutral
+wording, no dollar winner, no silent repair.
 
 **Narrative HOLD-1 fixes (see DESIGN §10.5):** evidence-gap prose derives the ACTUAL evidence state
 tokens at the gate (never hardcoded categories); the lower-cost decision persists its exact
