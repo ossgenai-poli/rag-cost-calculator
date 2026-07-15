@@ -292,9 +292,12 @@ export function recommend(req: RecommendationRequest): StructuredRecommendationR
     ?? (candidates.length === 0 ? apiMonthlyForWorkload(workload, priceBook) : null);
   // HOLD-3 P1-1: apiOption identifies the COMPARED API model (not the self-host model). Both identities
   // are structurally preserved — self-host model via `evaluations[].config` / `effectiveWorkload`, the
-  // compared API model here.
+  // compared API model here. Labels come from the TRUSTED price book (P2-NARR-1) — narrate() never
+  // maintains its own id→label mapping.
+  const compModel = priceBook.models.find((m) => m.id === workload.generation.apiComparisonModelId)!;
   const apiOption: ApiOption = {
     modelId: workload.generation.apiComparisonModelId,
+    modelLabel: compModel.label,
     monthlyCost: apiMonthly,
     priceState: apiMonthly != null ? "priced" : "no-price",
     comparisonQualified: apiMonthly != null,
@@ -341,6 +344,7 @@ export function recommend(req: RecommendationRequest): StructuredRecommendationR
     rejected,
     evaluations: [...evaluations].sort(byId), // deterministic regardless of catalog order
     mode,
+    selfHostModelLabel: model!.label, // trusted label (validated: model exists and is an llm)
     effectiveWorkload,
     inputAdjustments,
     pricing,

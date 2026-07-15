@@ -47,7 +47,7 @@ describe("sweep — R1-R5 reference cases (decision + bestSelfHost)", () => {
   it("R1: api/lower-cost; bestSelfHost=p6-b200; 87 boxes; $7,176,630; prefill; measured-scaled", () => {
     mockedCatalog.mockReturnValue([C.b200Int4]);
     const r = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
-    expect(r.decision).toEqual({ choice: "api", basis: "lower-cost" });
+    expect(r.decision).toMatchObject({ choice: "api", basis: "lower-cost" });
     expect(r.bestSelfHost!.config.id).toBe(C.b200Int4.id);
     expect(r.bestSelfHost!.confidence).toBe("measured-scaled");
     const ev = r.evaluations[0];
@@ -68,7 +68,7 @@ describe("sweep — R1-R5 reference cases (decision + bestSelfHost)", () => {
     expect(fp8ev.engineConfidence).toBe("extrapolated"); // fp4 substituted for fp8
     expect(fp8ev.technicallyFeasible).toBe(true);
     expect(fp8ev.evidenceQualified).toBe(false);
-    expect(r.decision).toEqual({ choice: "api", basis: "lower-cost" });
+    expect(r.decision).toMatchObject({ choice: "api", basis: "lower-cost" });
   });
 
   it("R3: H200 technicallyFeasible=true, evidenceQualified=false; api/evidence-gap; bestSelfHost=null", () => {
@@ -95,7 +95,7 @@ describe("sweep — R1-R5 reference cases (decision + bestSelfHost)", () => {
   it("R5: api/lower-cost; bestSelfHost=p6-b200; 4 boxes; $329,960", () => {
     mockedCatalog.mockReturnValue([C.b200Int4]);
     const r = recommend({ workload: dsv4Workload(5_000_000), optimizeFor: "cost" });
-    expect(r.decision).toEqual({ choice: "api", basis: "lower-cost" });
+    expect(r.decision).toMatchObject({ choice: "api", basis: "lower-cost" });
     expect(r.bestSelfHost!.config.id).toBe(C.b200Int4.id);
     expect(r.evaluations[0].fleet.boxes).toBe(4);
     expect(Math.round(r.evaluations[0].cost.selfHostMonthly!)).toBe(329_960);
@@ -131,7 +131,7 @@ describe("sweep — gate separation, comparison, determinism, injection, single-
     const ev = evaluateCandidate(C.b200Int4, dsv4Workload(), zeroPriced, "control");
     expect(ev.evidenceQualified).toBe(true); // still evidence-qualified…
     expect(ev.comparisonQualified).toBe(false); // …but not comparable
-    const d = deriveDecision([ev], { modelId: "deepseek-v4-pro-oss", monthlyCost: 6_492_000, priceState: "priced", comparisonQualified: true }, { modelSelfHostable: true });
+    const d = deriveDecision([ev], { modelId: "deepseek-v4-pro-oss", modelLabel: "DeepSeek-V4-Pro (open weights)", monthlyCost: 6_492_000, priceState: "priced", comparisonQualified: true }, { modelSelfHostable: true });
     expect(d).toEqual({ choice: "undetermined", basis: "comparison-unavailable" });
   });
 
@@ -140,7 +140,7 @@ describe("sweep — gate separation, comparison, determinism, injection, single-
     const base = dsv4Workload();
     for (const axis of ["cost", "latency", "confidence", "predictability"] as const) {
       const r = recommend({ workload: base, optimizeFor: axis });
-      expect(r.decision).toEqual({ choice: "api", basis: "lower-cost" });
+      expect(r.decision).toMatchObject({ choice: "api", basis: "lower-cost" });
       expect(r.bestSelfHost!.config.id).toBe(C.b200Int4.id); // only evidence-qualified config
     }
   });
@@ -241,7 +241,7 @@ describe("HOLD-2 — trusted pricing, effective workload, complete validation", 
     w.generation.llmInPricePer1K = 999;
     w.generation.llmOutPricePer1K = 999;
     const tampered = recommend({ workload: w, optimizeFor: "cost" });
-    expect(tampered.decision).toEqual({ choice: "api", basis: "lower-cost" }); // NOT flipped to self-host
+    expect(tampered.decision).toMatchObject({ choice: "api", basis: "lower-cost" }); // NOT flipped to self-host
     expect(Math.round(tampered.apiOption.monthlyCost!)).toBe(6_492_000); // trusted price, not 999-inflated
     expect(tampered.pricing.source).toBe("fallback");
     expect(JSON.stringify(tampered.evaluations[0].cost)).toBe(JSON.stringify(normal.evaluations[0].cost));

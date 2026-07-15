@@ -35,9 +35,21 @@ export function deriveDecision(evals: CandidateEvaluation[], api: ApiOption, opt
     return { choice: "undetermined", basis: "comparison-unavailable" };
   }
 
-  // Compare API against the CHEAPEST comparison-qualified self-host (self-host's best economic case).
-  const cheapestSelfHost = Math.min(...comparable.map((e) => e.cost.selfHostMonthly as number));
-  return api.monthlyCost <= cheapestSelfHost
-    ? { choice: "api", basis: "lower-cost" }
-    : { choice: "self-host", basis: "lower-cost" };
+  // Compare API against the CHEAPEST comparison-qualified self-host (self-host's best economic case),
+  // with a deterministic cost → config-id tie-break. The EXACT comparator is persisted structurally
+  // (P1-NARR-2) so narration/change-diff explain the decision from what it was actually derived from —
+  // never from the optimization-selected bestSelfHost, which may be a different (dearer) candidate.
+  const cheapest = [...comparable].sort((a, b) => {
+    const c = (a.cost.selfHostMonthly as number) - (b.cost.selfHostMonthly as number);
+    if (c) return c;
+    return a.config.id < b.config.id ? -1 : a.config.id > b.config.id ? 1 : 0;
+  })[0];
+  const costComparator = {
+    selfHostCandidateId: cheapest.config.id,
+    selfHostMonthly: cheapest.cost.selfHostMonthly as number,
+    apiMonthly: api.monthlyCost,
+  };
+  return api.monthlyCost <= costComparator.selfHostMonthly
+    ? { choice: "api", basis: "lower-cost", costComparator }
+    : { choice: "self-host", basis: "lower-cost", costComparator };
 }

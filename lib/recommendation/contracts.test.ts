@@ -30,7 +30,7 @@ const evalFix = (o: Partial<CandidateEvaluation> = {}): CandidateEvaluation => (
   rejections: [],
   ...o,
 });
-const apiFix = (o: Partial<ApiOption> = {}): ApiOption => ({ modelId: "dsv4", monthlyCost: 6_492_000, priceState: "priced", comparisonQualified: true, ...o });
+const apiFix = (o: Partial<ApiOption> = {}): ApiOption => ({ modelId: "dsv4", modelLabel: "DeepSeek-V4-Pro (open weights)", monthlyCost: 6_492_000, priceState: "priced", comparisonQualified: true, ...o });
 
 describe("decision precedence (deterministic, first-match-wins)", () => {
   it("technically infeasible takes precedence over SLA / evidence gap", () => {
@@ -54,12 +54,29 @@ describe("decision precedence (deterministic, first-match-wins)", () => {
     const d = deriveDecision([evalFix()], apiFix({ monthlyCost: null, priceState: "no-price", comparisonQualified: false }), { modelSelfHostable: true });
     expect(d).toEqual({ choice: "undetermined", basis: "comparison-unavailable" });
   });
-  it("R1/R5-shape: evidence-qualified self-host dearer than API → api / lower-cost", () => {
-    expect(deriveDecision([evalFix()], apiFix(), { modelSelfHostable: true })).toEqual({ choice: "api", basis: "lower-cost" });
+  it("R1/R5-shape: evidence-qualified self-host dearer than API → api / lower-cost (+ persisted comparator)", () => {
+    const d = deriveDecision([evalFix()], apiFix(), { modelSelfHostable: true });
+    expect(d).toMatchObject({ choice: "api", basis: "lower-cost" });
+    expect(d.costComparator).toEqual({ selfHostCandidateId: "c", selfHostMonthly: 7_176_630, apiMonthly: 6_492_000 });
   });
-  it("an evidence-qualified self-host cheaper than API → self-host / lower-cost", () => {
+  it("an evidence-qualified self-host cheaper than API → self-host / lower-cost (+ persisted comparator)", () => {
     const d = deriveDecision([evalFix({ cost: { selfHostMonthly: 100, apiMonthly: 6_492_000, verdict: "self-host-efficient" } })], apiFix(), { modelSelfHostable: true });
-    expect(d).toEqual({ choice: "self-host", basis: "lower-cost" });
+    expect(d).toMatchObject({ choice: "self-host", basis: "lower-cost" });
+    expect(d.costComparator).toEqual({ selfHostCandidateId: "c", selfHostMonthly: 100, apiMonthly: 6_492_000 });
+  });
+  it("P1-NARR-2: the comparator is the CHEAPEST qualified self-host with a cost→id tie-break", () => {
+    const cheap = evalFix({ config: { ...evalFix().config, id: "b-cheap" }, cost: { selfHostMonthly: 5_000_000, apiMonthly: 6_492_000, verdict: "self-host-efficient" } });
+    const dear = evalFix({ config: { ...evalFix().config, id: "a-dear" }, cost: { selfHostMonthly: 7_176_630, apiMonthly: 6_492_000, verdict: "api-wins" } });
+    const d = deriveDecision([dear, cheap], apiFix(), { modelSelfHostable: true });
+    expect(d).toMatchObject({ choice: "self-host", basis: "lower-cost" });
+    expect(d.costComparator!.selfHostCandidateId).toBe("b-cheap"); // cheapest, not first/alphabetical
+    // exact cost tie → lexicographic id tie-break
+    const tie1 = evalFix({ config: { ...evalFix().config, id: "z" }, cost: { selfHostMonthly: 100, apiMonthly: 6_492_000, verdict: "self-host-efficient" } });
+    const tie2 = evalFix({ config: { ...evalFix().config, id: "a" }, cost: { selfHostMonthly: 100, apiMonthly: 6_492_000, verdict: "self-host-efficient" } });
+    expect(deriveDecision([tie1, tie2], apiFix(), { modelSelfHostable: true }).costComparator!.selfHostCandidateId).toBe("a");
+  });
+  it("non-lower-cost bases carry NO comparator", () => {
+    expect(deriveDecision([evalFix({ evidenceQualified: false })], apiFix(), { modelSelfHostable: true }).costComparator).toBeUndefined();
   });
 });
 
@@ -74,7 +91,8 @@ describe("optimizeFor ranks self-host candidates but never flips the top-level d
   it("the API/self-host decision is identical across axes (uses the cheapest self-host vs API)", () => {
     const d1 = deriveDecision([cheapSlow, dearFast], api, { modelSelfHostable: true });
     const d2 = deriveDecision([cheapSlow, dearFast], api, { modelSelfHostable: true });
-    expect(d1).toEqual({ choice: "api", basis: "lower-cost" }); // 500 <= 1000
+    expect(d1).toMatchObject({ choice: "api", basis: "lower-cost" }); // 500 <= 1000
+    expect(d1.costComparator!.selfHostCandidateId).toBe("a"); // the CHEAPEST, regardless of axis
     expect(d2).toEqual(d1);
   });
   it("null TTFT ranks last for latency", () => {
@@ -187,6 +205,7 @@ describe("structured recommender carries NO prose (reviewer point 5)", () => {
       rejected: [],
       evaluations: [evalFix()],
       mode: "control",
+      selfHostModelLabel: "DeepSeek-V4-Pro (open weights)",
       effectiveWorkload: {} as any,
       inputAdjustments: [],
       pricing: { source: "fallback", asOf: "2026-07-14", region: "us-east-1", gpuPriceSource: "fallback" },

@@ -86,15 +86,29 @@ export type DecisionBasis =
   | "comparison-unavailable" // evidence-qualified exists but a trustworthy cost comparison is unavailable
   | "lower-cost"; // a trustworthy cost comparison decided it
 
+/** The EXACT cost comparator a lower-cost decision was derived from (P1-NARR-2): the cheapest
+ *  comparison-qualified self-host candidate (deterministic cost→config-id tie-break) vs the API price.
+ *  narrate() explains the cost decision from THIS — never from the optimization-selected bestSelfHost,
+ *  which may be a different (dearer) candidate. Also consumed by change-diff. */
+export interface CostComparator {
+  selfHostCandidateId: string;
+  selfHostMonthly: number;
+  apiMonthly: number;
+}
+
 /** Structured facts only — NO prose (narrate() adds the rationale). */
 export interface Decision {
   choice: DecisionChoice;
   basis: DecisionBasis;
+  /** Present ONLY when basis === "lower-cost" — the comparator the decision was actually derived from. */
+  costComparator?: CostComparator;
 }
 
 /** The API delivery option, represented structurally (rev-2 #3) — not just a rationale string. */
 export interface ApiOption {
   modelId: string;
+  /** Trusted customer-facing label from the PriceBook (P2-NARR-1) — prose uses this, audit keeps the id. */
+  modelLabel: string;
   monthlyCost: number | null; // null ⇒ no usable API price (never a $0 sentinel)
   priceState: "priced" | "no-price";
   comparisonQualified: boolean; // an API price exists to compare a self-host option against
@@ -245,6 +259,8 @@ export interface StructuredRecommendationResult {
   evaluations: CandidateEvaluation[];
   mode: "control" | "experimental";
   controlComparison?: ControlComparison;
+  /** Trusted customer-facing label of the self-host workload model from the PriceBook (P2-NARR-1). */
+  selfHostModelLabel: string;
   // P1-6 — honest-narration inputs, reconciled ONCE at result level (consistent across candidates).
   effectiveWorkload: EffectiveWorkload; // WORKLOAD-ONLY normalized inputs (no candidate-varying GPU/precision — HOLD-4 P1-1)
   inputAdjustments: InputAdjustment[]; // entered-vs-calculated (incl. the 730h uptime cap / 0→730 default)
@@ -283,6 +299,7 @@ export interface NarratedRecommendationResult {
   evaluations: CandidateEvaluation[];
   mode: "control" | "experimental";
   controlComparison?: ControlComparison;
+  selfHostModelLabel: string;
   effectiveWorkload: EffectiveWorkload;
   inputAdjustments: InputAdjustment[];
   pricing: PricingProvenance;

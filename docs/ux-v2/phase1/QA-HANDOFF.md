@@ -16,10 +16,19 @@ change-diff, UI, merge and deploy remain **HELD** until narrative QA.
 ## Run
 
 ```
-npx vitest run lib/recommendation      # 92 (81 sweep/contracts + 11 narrate)
-npx vitest run                         # 316 (frozen 184 + registry 40 + recommendation 92)
+npx vitest run lib/recommendation      # 99 (81 sweep/contracts + 18 narrate/comparator)
+npx vitest run                         # 323 (frozen 184 + registry 40 + recommendation 99)
 npx tsc --noEmit                       # clean
 ```
+
+**Narrative HOLD-1 fixes (see DESIGN §10.5):** evidence-gap prose derives the ACTUAL evidence state
+tokens at the gate (never hardcoded categories); the lower-cost decision persists its exact
+`costComparator` (cheapest qualified self-host, cost→id tie-break) and narrate explains cost from IT —
+never from the optimization-selected `bestSelfHost` — failing closed to neutral wording on
+absent/inconsistent comparator facts; trusted PriceBook labels (`apiOption.modelLabel`,
+`selfHostModelLabel`) drive customer-facing prose (ids stay in audit data) with a cross-model
+comparability caveat whenever the compared models differ; adjustment disclosures use customer-readable
+labels while raw field paths remain in `inputAdjustments`.
 
 ## Isolation invariants (all hold)
 

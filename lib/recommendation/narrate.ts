@@ -7,9 +7,10 @@
 // docs/ux-v2/phase1/DESIGN.md §5.
 // ============================================================================
 import type {
-  Card, CandidateEvaluation, NarratedCard, NarratedRecommendationResult, StructuredRecommendationResult,
+  Card, CandidateEvaluation, EffectiveConfidence, NarratedCard, NarratedRecommendationResult,
+  StructuredRecommendationResult,
 } from "./schema";
-import { RECOMMENDATION_CAPTION } from "./schema";
+import { CONFIDENCE_RANK, RECOMMENDATION_CAPTION } from "./schema";
 
 /** Deterministic thousands formatting (no locale/ICU dependence). */
 function commas(n: number): string {
@@ -53,10 +54,36 @@ function pricingDisclosure(r: StructuredRecommendationResult): string {
   return `Pricing: ${src} price book as of ${p.asOf} for ${p.region}; GPU price source: ${p.gpuPriceSource}.`;
 }
 
+// Customer-readable labels for adjustment fields (P2-NARR-1). This is static template copy (a copy
+// deck), not a data mapping — the raw field paths remain in the structured `inputAdjustments` audit data.
+const ADJUSTMENT_FIELD_LABELS: Record<string, string> = {
+  "retrieval.topN": "Context chunks sent to the model",
+  gpuUptimeHoursPerMonth: "GPU fleet uptime hours/month",
+  "queries/month": "Queries/month",
+  documents: "Documents",
+  "tokens/doc": "Tokens per document",
+  "output tokens": "Output tokens",
+  "prompt overhead": "Prompt overhead",
+  "max context": "Max context",
+  "max concurrency": "Max concurrency",
+  "overhead %": "Overhead %",
+  "query tokens": "Query tokens",
+};
+
 function adjustmentsDisclosure(r: StructuredRecommendationResult): string {
   if (r.inputAdjustments.length === 0) return "";
-  const parts = r.inputAdjustments.map((a) => `${a.field} ${a.entered}→${a.calculated}`);
+  const parts = r.inputAdjustments.map((a) => `${ADJUSTMENT_FIELD_LABELS[a.field] ?? a.field} ${a.entered}→${a.calculated}`);
   return ` Input adjustments applied: ${parts.join("; ")}.`;
+}
+
+/** The unique effective-confidence tokens of the candidates that REACHED the evidence gate
+ *  (technically feasible + SLA-qualified), strongest-first then alphabetical — never invented
+ *  (P1-NARR-1). Falls back to all evaluated candidates if none reached the gate. */
+function evidenceStatesAtGate(r: StructuredRecommendationResult): EffectiveConfidence[] {
+  const reached = r.evaluations.filter((e) => e.technicallyFeasible && e.slaQualified);
+  const pool = reached.length > 0 ? reached : r.evaluations;
+  const unique = [...new Set(pool.map((e) => e.effectiveConfidence))];
+  return unique.sort((a, b) => CONFIDENCE_RANK[b] - CONFIDENCE_RANK[a] || (a < b ? -1 : a > b ? 1 : 0));
 }
 
 function registryLimitationNote(r: StructuredRecommendationResult): string {
@@ -69,41 +96,63 @@ function registryLimitationNote(r: StructuredRecommendationResult): string {
 }
 
 function decisionRationale(r: StructuredRecommendationResult): string {
-  const apiModel = r.apiOption.modelId;
-  const selfModel = r.effectiveWorkload.generation.llmModelId;
-  const apiPhrase = `the ${apiModel} API`;
-  const best = r.bestSelfHost ? r.evaluations.find((e) => e.config.id === r.bestSelfHost!.config.id) : undefined;
+  const apiLabel = r.apiOption.modelLabel; // trusted PriceBook label (P2-NARR-1); ids stay in the audit structure
+  const selfLabel = r.selfHostModelLabel;
+  const apiPhrase = `the ${apiLabel} API`;
 
   let lead: string;
   switch (r.decision.basis) {
     case "self-host-infeasible":
-      lead = `Recommendation: use ${apiPhrase}. No modeled self-host configuration for ${selfModel} is technically feasible for this workload.`;
+      lead = `Recommendation: use ${apiPhrase}. No modeled self-host configuration for ${selfLabel} is technically feasible for this workload.`;
       break;
     case "no-modeled-candidate":
-      lead = `Recommendation: use ${apiPhrase}. ${selfModel} is self-hostable, but no self-host configuration is currently modeled for it — a catalog-coverage gap, not a technical limitation.`;
+      lead = `Recommendation: use ${apiPhrase}. ${selfLabel} is self-hostable, but no self-host configuration is currently modeled for it — a catalog-coverage gap, not a technical limitation.`;
       break;
     case "sla":
-      lead = `Recommendation: use ${apiPhrase}. The modeled self-host configurations for ${selfModel} are technically feasible but cannot meet the interactivity / TTFT SLA.`;
+      lead = `Recommendation: use ${apiPhrase}. The modeled self-host configurations for ${selfLabel} are technically feasible but cannot meet the interactivity / TTFT SLA.`;
       break;
-    case "evidence-gap":
-      lead = `Recommendation: use ${apiPhrase}. No self-host configuration for ${selfModel} has qualifying benchmark evidence (only heuristic/extrapolated estimates), so none can be recommended.`;
+    case "evidence-gap": {
+      // P1-NARR-1: report the ACTUAL evidence state(s) of the candidates that reached the evidence gate —
+      // exact tokens, never a hardcoded category list.
+      const states = evidenceStatesAtGate(r);
+      const stateClause = states.length ? ` Available evidence state${states.length > 1 ? "s" : ""}: ${states.join(", ")}.` : "";
+      lead = `Recommendation: use ${apiPhrase}. No self-host configuration for ${selfLabel} has qualifying benchmark evidence, so none can be recommended.${stateClause}`;
       break;
+    }
     case "comparison-unavailable":
-      lead = `Recommendation: undetermined. An evidence-qualified self-host configuration for ${selfModel} exists, but a trustworthy ${apiModel} API-vs-self-host cost comparison is unavailable, so no cost winner is asserted.`;
+      lead = `Recommendation: undetermined. An evidence-qualified self-host configuration for ${selfLabel} exists, but a trustworthy ${apiLabel} API-vs-self-host cost comparison is unavailable, so no cost winner is asserted.`;
       break;
     case "lower-cost": {
-      const sf = best?.servingFacts;
-      const selfDesc = sf && best
-        ? `self-hosting ${selfModel} on ${sf.instanceType} (${sf.weightPrecision} weights) at ${usd(best.cost.selfHostMonthly)}/month`
-        : `the self-host option`;
+      // P1-NARR-2: explain the cost decision from the EXACT persisted comparator — never from the
+      // optimization-selected bestSelfHost. Fail closed to neutral wording when the comparator is
+      // absent/inconsistent rather than asserting a winner with wrong numbers.
+      const cmp = r.decision.costComparator;
+      const cmpEval = cmp ? r.evaluations.find((e) => e.config.id === cmp.selfHostCandidateId) : undefined;
+      const amountsConsistent =
+        cmp != null && cmpEval != null &&
+        Number.isFinite(cmp.selfHostMonthly) && Number.isFinite(cmp.apiMonthly) &&
+        cmpEval.cost.selfHostMonthly === cmp.selfHostMonthly &&
+        (r.decision.choice === "api" ? cmp.apiMonthly <= cmp.selfHostMonthly : cmp.selfHostMonthly < cmp.apiMonthly);
+      if (!amountsConsistent) {
+        lead = r.decision.choice === "api"
+          ? `Recommendation: use ${apiPhrase} (decided on cost; comparison details unavailable — no specific dollar comparison is asserted).`
+          : `Recommendation: self-host ${selfLabel} (decided on cost; comparison details unavailable — no specific dollar comparison is asserted).`;
+        break;
+      }
+      const sf = cmpEval.servingFacts;
+      const selfDesc = `self-hosting ${selfLabel} on ${sf.instanceType} (${sf.weightPrecision} weights) at ${usd(cmp.selfHostMonthly)}/month`;
       lead = r.decision.choice === "api"
-        ? `Recommendation: use ${apiPhrase} at ${usd(r.apiOption.monthlyCost)}/month — lower-cost than ${selfDesc}.`
-        : `Recommendation: ${selfDesc} — lower-cost than ${apiPhrase} at ${usd(r.apiOption.monthlyCost)}/month.`;
+        ? `Recommendation: use ${apiPhrase} at ${usd(cmp.apiMonthly)}/month — lower-cost than the cheapest qualified self-host option, ${selfDesc}.`
+        : `Recommendation: ${selfDesc} — lower-cost than ${apiPhrase} at ${usd(cmp.apiMonthly)}/month.`;
       break;
     }
   }
 
-  const bothModels = apiModel !== selfModel ? ` (compared models: ${apiModel} via API vs self-hosting ${selfModel}).` : "";
+  // Cross-model caveat (P2-NARR-1): comparing costs across two DIFFERENT models never establishes
+  // capability/quality equivalence.
+  const bothModels = r.apiOption.modelId !== r.effectiveWorkload.generation.llmModelId
+    ? ` (compared models: ${apiLabel} via API vs self-hosting ${selfLabel}). This compares the selected models' costs; capability and quality equivalence are not established by this calculator.`
+    : "";
   return `${lead}${bothModels}${registryLimitationNote(r)}${adjustmentsDisclosure(r)} ${pricingDisclosure(r)}`;
 }
 
@@ -119,6 +168,7 @@ export function narrate(r: StructuredRecommendationResult): NarratedRecommendati
     evaluations: r.evaluations,
     mode: r.mode,
     controlComparison: r.controlComparison,
+    selfHostModelLabel: r.selfHostModelLabel,
     effectiveWorkload: r.effectiveWorkload,
     inputAdjustments: r.inputAdjustments,
     pricing: r.pricing,
