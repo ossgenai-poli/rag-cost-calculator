@@ -121,21 +121,46 @@ describe("presets — accurate preview wording (P2-UI2-1)", () => {
   });
 });
 
-describe("ChangesPanel — compact structured summary + collapsed audit (P2-UI2-2)", () => {
-  it("canonical strict-conversational case: summary exposes SLA failure, evidence-gap, removal, decision", () => {
+describe("ChangesPanel — compact structured summary + collapsed audit (P2-UI2-2/3/4)", () => {
+  it("canonical strict-conversational case: slot-reserved summary carries ALL required facts", () => {
     const a = recommend({ workload: workload(), optimizeFor: "cost" });
     const b = recommend({ workload: workload(200_000_000, (w) => { w.generation.ttftTargetMs = 1000; w.generation.interactivityTarget = 50; }), optimizeFor: "cost" });
     const diff = diffRecommendations(a, b);
     const summary = summarizeChanges(diff);
     const text = summary.map((s) => s.text).join(" | ");
+    // P2-UI2-3 required canonical assertions:
     expect(text).toContain("Decision: api (lower-cost) → api (evidence-gap) — no SLA-compatible configuration has qualifying evidence.");
-    expect(text).toContain("now fails the selected SLA (rejection: sla-unmet-ttft-or-streaming)");
+    expect(text).toContain("Both modeled p6-b200.48xlarge configurations now fail the selected SLA (rejection: sla-unmet-ttft-or-streaming)."); // aggregated — ONE slot
     expect(text).toContain("Best self-host option removed");
+    expect(text).toContain("87 → 131 box(es)"); // the previously-best candidate's fleet movement
+    expect(text).toContain("$7,176,630 → $10,806,190/mo"); // the material COST movement is never truncated
     expect(summary.length).toBeLessThanOrEqual(6);
+    // no slot is wasted on a duplicate per-candidate fleet row (aggregation + reservation)
+    expect(summary.filter((s) => s.key === "fleet").length).toBe(1);
     const html = renderToStaticMarkup(<ChangesPanel diff={diff} />);
     expect(html).toContain("changes-summary");
-    expect(html).toMatch(/View all \d+ technical changes/); // complete audit preserved, collapsed
+    expect(html).toContain(`View all ${diff.changes.length} technical changes`); // complete audit preserved, collapsed
     expect(html).toContain("decision-changed"); // raw reason-coded rows still present inside the audit
+  });
+
+  it("P2-UI2-4: a workload-assumptions-only diff renders a NON-EMPTY, non-invented summary", () => {
+    // Analyst SLA (5000/15) → manual TTFT 4500: every candidate's outcome is unchanged; the diff carries
+    // only the workload-input change.
+    const a = recommend({ workload: workload(200_000_000, (w) => { w.generation.ttftTargetMs = 5000; w.generation.interactivityTarget = 15; }), optimizeFor: "cost" });
+    const b = recommend({ workload: workload(200_000_000, (w) => { w.generation.ttftTargetMs = 4500; w.generation.interactivityTarget = 15; }), optimizeFor: "cost" });
+    const diff = diffRecommendations(a, b);
+    expect(diff.identical).toBe(false);
+    expect(diff.changes.every((c) => c.code === "effective-workload-changed")).toBe(true);
+    const summary = summarizeChanges(diff);
+    expect(summary).toEqual([
+      { key: "no-outcome", text: "Workload assumptions changed; the modeled decision, qualification, fleet, and cost did not change." },
+    ]);
+    const text = summary.map((s) => s.text).join(" ");
+    expect(text).not.toMatch(/Decision:|Fleet|cost \(|\$\d/); // nothing invented
+    const html = renderToStaticMarkup(<ChangesPanel diff={diff} />);
+    expect(html).toContain("Workload assumptions changed");
+    expect(html).toContain("View all 1 technical changes"); // the raw change stays under the audit
+    expect(html).toContain("effective-workload-changed");
   });
   it("R1→R5 volume change: summary carries fleet/cost facts; audit keeps verbatim values", () => {
     const a = recommend({ workload: workload(), optimizeFor: "cost" });
