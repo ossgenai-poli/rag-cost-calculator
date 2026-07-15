@@ -238,3 +238,69 @@ from "regulated" per Phase-0 P2-6). Operational profiles are disabled for API-on
 - **UI3-D3** The savings-driven decision flip is honest engine output; consider whether the hero should
   carry an "indicative pricing" qualifier when `purchasingModel ≠ on-demand` (crossover already marks
   `pricingEstimated`).
+
+## Iteration-3 HOLD remediation (structured pricing qualification + suspension semantics)
+
+### P1-UI3-1 — an indicative discount can never render an unqualified recommendation
+Fixed at the STRUCTURED boundary via the narrowly authorized headless revision (`ux/v2-phase1`,
+DESIGN §10.11): every `CandidateEvaluation` carries a `PricingAssumption`
+(`qualification: reference | indicative-commitment | indicative-spot | override`, `purchasingModel`,
+`onDemandBaseHourly`, `assumedDiscountPct`, `modeledEffectiveHourly`, `pricingEstimated`,
+`assumptionSource`) PRESERVED from the engine's own factors (`GPU_COMMITMENT_DISCOUNT` /
+`effectiveGpuHourly` imported from `lib/self-host.ts` — never duplicated in a component);
+`CostComparator.pricingQualification` persists the comparator candidate's qualification on the decision,
+with a new fail-closed `costComparatorValid` invariant. Presentation, when the qualification is
+non-reference:
+- **Hero**: "Indicative modeled cost: Self-host" (UI3-D3 — mandatory whenever purchasing ≠ on-demand
+  influenced the comparison).
+- **Prominent adjacent disclosure**: "This result assumes a 30% one-year Savings Plan discount and 85%
+  fleet utilization. It is a planning scenario, not an AWS quote." — discount/utilization rendered from
+  the structured `PricingAssumption` + `servingFacts` of the comparator candidate.
+- **Rate as an assumption**: "$113.00/GPU-hour on-demand base rate × (1 − 30%) = $79.10/GPU-hour modeled
+  planning rate — an assumption, not a quoted effective rate."
+- **Narrative** (headless): "Recommendation: self-host (directional planning result). Under these
+  assumptions, modeled self-host cost is lower: … Self-host pricing assumes a 30% one-year Savings Plan
+  discount off the on-demand rate … — an indicative planning factor, not an AWS quote."
+- **Change summary**: "a modeled cost comparison decided it" — "trustworthy" is reserved for the
+  `reference` qualification and unreadable qualifications fail closed to "modeled".
+The decision itself remains `self-host / lower-cost` (qualified directional result, not suppressed).
+On-demand behavior is byte-identical (hero, narration, summary, comparator `reference`).
+
+### P1-UI3-2 — profile suspension for API-only models
+Applicability is now explicit: for a self-hostable model the profile is ACTIVE (chip, banner, Undo);
+for an API-only model it is SUSPENDED — the chip reads "… — inactive for API-only model", the HA
+banner is suppressed, the family-B Undo is hidden (family-A Undo unaffected; `UndoSnapshot.family`),
+and the operations row is hidden so nothing implies those settings shape the API recommendation. The
+customer's settings and provenance are PRESERVED; switching back to a self-hostable model restores the
+active state (live-verified: active → suspended → restored, banner and Undo returning intact).
+
+### P2-UI3-1 — operational assumptions visible at the result (Simple mode included)
+`DecisionSummary` renders an operations row from the workload-only effective inputs (structured
+output): utilization target %, spare serving replica (N+1) on/off, operating h/mo, purchasing model
+("(indicative planning assumption)" when ≠ on-demand). The N+1 scope caveat ("N+1 covers one
+serving-replica loss only; it does not establish multi-AZ resilience, disaster recovery, security,
+quota readiness, or compliance.") renders for EVERY N+1-enabled state in both modes — never restricted
+to the HA-posture profile or Expert mode.
+
+### P2-UI3-2 — reduced operating hours clarified (UI3-D1 approved: 220 h/mo retained)
+Whenever operating hours < 730 a persistent disclosure renders: "Monthly traffic is assumed to be
+served within the selected active hours, so the required active fleet may increase." plus the
+not-established list (startup/drain/checkpoint time, accelerator availability, capacity reservations,
+quotas, operational automation). Engine behavior preserved: 220 h concentrates demand (87 → 284 boxes
+for the canonical case; asserted `> 87` in tests).
+
+### P2-UI3-3 — preset descriptions rendered; stage language removed
+The selected preset's description renders inside the preview panel (`preview-description`), not only in
+a title attribute. Family headings are customer-facing: "Response experience" / "Operational profile"
+(no Stage identifiers). Cost-optimized is renamed "Cost-optimized — illustrative 1-year commitment"
+with an explicit planning-scenario description (UI3-D2 owner position).
+
+### Verification (this revision)
+- Headless (`ux/v2-phase1 @ 98c1fe0`): 359/359, tsc clean — pricing-assumption structure, comparator
+  qualification + tamper fail-closed, qualified narration, reference byte-invariance, diff coverage.
+- UI worktree: **423/423** (16 new in `advisor3-hold.test.tsx`), `tsc --noEmit` clean, `build:static`
+  clean, **375px mobile acceptance PASS**.
+- Live (fresh Chrome profile, ZERO console errors): cost-optimized apply → "Indicative modeled cost:
+  Self-host" + both disclosure lines + "$4,157,496/mo"; change summary "a modeled cost comparison
+  decided it"; ha-posture → Claude Fable 5 → chip "— inactive for API-only model", banner/Undo/ops row
+  suppressed → switch back → all restored; preview description rendered.

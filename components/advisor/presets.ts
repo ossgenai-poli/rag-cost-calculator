@@ -56,7 +56,7 @@ export const OPERATIONAL_PRESETS: PresetBundle[] = [
   { id: "prototype", family: "B", label: "Prototype", description: "Aggressive 85% utilization, no spare replica, business hours, on-demand.", fields: { utilTargetPct: 85, haEnabled: false, uptimeHours: BUSINESS_HOURS_PER_MONTH, purchasingModel: "on-demand" } },
   { id: "production-balanced", family: "B", label: "Production — balanced", description: "Balanced 70% utilization, N+1 on, 24×7, on-demand.", fields: { utilTargetPct: 70, haEnabled: true, uptimeHours: 730, purchasingModel: "on-demand" } },
   { id: "latency-sensitive", family: "B", label: "Latency-sensitive production", description: "Conservative 50% utilization for headroom, N+1 on, 24×7, on-demand.", fields: { utilTargetPct: 50, haEnabled: true, uptimeHours: 730, purchasingModel: "on-demand" } },
-  { id: "cost-optimized", family: "B", label: "Cost-optimized production", description: "Aggressive 85% utilization, N+1 on, 24×7, indicative Savings-Plan pricing.", fields: { utilTargetPct: 85, haEnabled: true, uptimeHours: 730, purchasingModel: "savings-1yr" } },
+  { id: "cost-optimized", family: "B", label: "Cost-optimized — illustrative 1-year commitment", description: "Aggressive 85% utilization, N+1 on, 24×7, illustrative 1-year Savings Plan pricing — a planning scenario, not an AWS quote (UI3-D2).", fields: { utilTargetPct: 85, haEnabled: true, uptimeHours: 730, purchasingModel: "savings-1yr" } },
   { id: "business-hours", family: "B", label: "Business-hours deployment", description: "Balanced 70% utilization, N+1 on, business hours, on-demand.", fields: { utilTargetPct: 70, haEnabled: true, uptimeHours: BUSINESS_HOURS_PER_MONTH, purchasingModel: "on-demand" } },
   {
     id: "ha-posture", family: "B", label: "24×7 · high-availability posture",
@@ -84,6 +84,9 @@ export interface UndoSnapshot {
   origins: Record<PresetField, FieldOrigin>;
   active: Record<PresetFamily, ActivePresetInfo | null>;
   label: string;
+  /** Which family the undoable apply belonged to — a family-B Undo is SUSPENDED with the profile while
+   *  the model is API-only (P1-UI3-2). */
+  family: PresetFamily;
 }
 
 export interface PresetProvenance {
@@ -177,7 +180,7 @@ export function applyPresetWithProvenance(
     provenance: {
       origins,
       active: { ...prov.active, [bundle.family]: { id: bundle.id, label: bundle.label, fieldsKept, modified: false, banner: bundle.banner } },
-      undo: { state: current, origins: prov.origins, active: prov.active, label: bundle.label },
+      undo: { state: current, origins: prov.origins, active: prov.active, label: bundle.label, family: bundle.family },
     },
   };
 }

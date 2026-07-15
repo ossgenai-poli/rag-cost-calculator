@@ -8,6 +8,7 @@
 // to a structured field (docs/ux-v2/ui/REVIEW.md); the Δ and input-token sum are labeled presentation
 // arithmetic over displayed structured values.
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
+import { PURCHASING_MODEL_LABELS } from "@/lib/recommendation";
 import { ConfidenceChip } from "./ConfidenceChip";
 
 function usd(v: number | null): string {
@@ -21,7 +22,13 @@ const num = (v: number) => new Intl.NumberFormat("en-US").format(v);
  *  (genuine technical failure) — the UI simply maps the structured basis. */
 function hero(result: NarratedRecommendationResult): string {
   const { choice, basis } = result.decision;
-  if (basis === "lower-cost") return choice === "api" ? "Lowest modeled cost: API" : "Lowest modeled cost: Self-host";
+  if (basis === "lower-cost") {
+    // P1-UI3-1 / UI3-D3: a non-reference pricing qualification (indicative commitment/Spot planning
+    // factor, or an override) is a DIRECTIONAL planning result — the hero itself carries the qualifier.
+    const q = result.decision.costComparator?.pricingQualification;
+    const lead = q && q !== "reference" ? "Indicative modeled cost" : "Lowest modeled cost";
+    return choice === "api" ? `${lead}: API` : `${lead}: Self-host`;
+  }
   if (basis === "comparison-unavailable") return "Directional cost result: undetermined";
   if (basis === "evidence-gap") return "API — no evidence-qualified self-host option";
   if (basis === "no-modeled-candidate") return "API — no modeled self-host configuration yet";
@@ -45,6 +52,14 @@ export function DecisionSummary({ result }: { result: NarratedRecommendationResu
   const deltaPct = delta != null && apiCost != null && apiCost > 0 ? (delta / apiCost) * 100 : null;
   const crossModel = apiOption.modelId !== w.generation.llmModelId;
   const inputTok = w.queryTokens + w.generation.promptOverhead + w.retrieval.topN * w.chunking.chunkSize;
+  // P1-UI3-1 — the pricing qualification and assumption come ONLY from the structured output (the
+  // persisted comparator + the comparator candidate's PricingAssumption); nothing is reconstructed here.
+  const cmp = decision.basis === "lower-cost" ? decision.costComparator : undefined;
+  const cmpEval = cmp ? result.evaluations.find((e) => e.config.id === cmp.selfHostCandidateId) : undefined;
+  const indicative = !!cmp && cmp.pricingQualification !== "reference";
+  const pa = cmpEval?.pricingAssumption;
+  const gen = w.generation; // workload-only effective inputs (utilization, N+1, hours, purchasing)
+  const opsVisible = result.evaluations.length > 0; // operations don't shape an API-only/no-candidate result
 
   return (
     <section aria-labelledby="decision-heading" data-testid="decision-summary" className={`rounded-lg border-2 p-4 ${CHOICE_STYLE[decision.choice]}`}>
@@ -61,6 +76,24 @@ export function DecisionSummary({ result }: { result: NarratedRecommendationResu
         <p className="mt-2 rounded border border-amber-400 bg-amber-100 px-2 py-1 text-sm font-medium text-amber-900" data-testid="cross-model-disclosure">
           Different models are being compared; capability and quality are not normalized.
         </p>
+      )}
+
+      {/* P1-UI3-1 — prominent indicative-pricing disclosure, adjacent to the hero, whenever a
+          non-reference pricing assumption influenced the comparison. Exact discount/utilization come
+          from the structured PricingAssumption + servingFacts of the comparator candidate. */}
+      {indicative && (
+        <div className="mt-2 rounded border border-amber-400 bg-amber-100 px-2 py-1 text-amber-900" data-testid="indicative-pricing-disclosure">
+          <p className="text-sm font-medium">
+            {pa && pa.qualification !== "override" && cmpEval
+              ? `This result assumes a ${pa.assumedDiscountPct}% ${PURCHASING_MODEL_LABELS[pa.purchasingModel]} discount and ${Math.round(cmpEval.servingFacts.utilTarget * 100)}% fleet utilization. It is a planning scenario, not an AWS quote.`
+              : "This result rests on a non-reference pricing assumption. It is a planning scenario, not an AWS quote."}
+          </p>
+          {pa && pa.qualification !== "override" && (
+            <p className="mt-1 text-xs" data-testid="pricing-assumption-equation">
+              Pricing assumption: ${pa.onDemandBaseHourly.toFixed(2)}/GPU-hour on-demand base rate × (1 − {pa.assumedDiscountPct}%) = ${pa.modeledEffectiveHourly.toFixed(2)}/GPU-hour modeled planning rate — an assumption, not a quoted effective rate.
+            </p>
+          )}
+        </div>
       )}
 
       {/* Level 2 — the deterministic why (narrate() rationale, verbatim; the headless layer now
@@ -99,6 +132,35 @@ export function DecisionSummary({ result }: { result: NarratedRecommendationResu
           {bestSelfHost ? <ConfidenceChip confidence={bestSelfHost.confidence} /> : <span data-testid="evidence-none">no qualified self-host evidence</span>}
         </span>
       </div>
+
+      {/* P2-UI3-1 — the OPERATIONAL assumptions driving the self-host side, visible in BOTH modes,
+          sourced from the workload-only effective inputs (structured output; never a duplicated
+          constant). Hidden when no self-host candidate was modeled — operations don't shape an
+          API-only result (P1-UI3-2). */}
+      {opsVisible && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-700" data-testid="operations-row">
+          <span><span className="text-slate-500">Utilization target:</span> {Math.round(gen.utilTarget * 100)}%</span>
+          <span><span className="text-slate-500">Spare serving replica (N+1):</span> {gen.haEnabled ? "on" : "off"}</span>
+          <span><span className="text-slate-500">Operating hours:</span> {num(gen.gpuUptimeHoursPerMonth)} h/mo</span>
+          <span>
+            <span className="text-slate-500">Purchasing:</span> {PURCHASING_MODEL_LABELS[gen.gpuPricingModel]}
+            {gen.gpuPricingModel !== "on-demand" ? " (indicative planning assumption)" : ""}
+          </span>
+        </div>
+      )}
+      {/* P2-UI3-1 — the N+1 scope caveat for EVERY N+1-enabled state, in Simple mode too (never
+          restricted to the HA-posture profile or Expert mode). */}
+      {opsVisible && gen.haEnabled && (
+        <p className="mt-1 text-xs text-slate-600" data-testid="n1-caveat">
+          N+1 covers one serving-replica loss only; it does not establish multi-AZ resilience, disaster recovery, security, quota readiness, or compliance.
+        </p>
+      )}
+      {/* P2-UI3-2 / UI3-D1 — persistent active-window disclosure whenever operating hours < 730. */}
+      {opsVisible && gen.gpuUptimeHoursPerMonth < 730 && (
+        <p className="mt-1 text-xs text-slate-600" data-testid="active-window-disclosure">
+          Monthly traffic is assumed to be served within the selected active hours, so the required active fleet may increase. Startup/drain/checkpoint time, accelerator availability, capacity reservations, quotas, and operational automation are not established by these settings.
+        </p>
+      )}
 
       <p className="mt-3 text-xs italic text-slate-500" data-testid="caption">{result.caption}</p>
     </section>

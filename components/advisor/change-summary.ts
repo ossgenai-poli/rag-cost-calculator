@@ -27,9 +27,10 @@ const shortId = (id: string | null): string => (id ? id.split("·").slice(1).joi
 /** The instance segment of a canonical candidate id (model·instance·wXkvY). */
 const instanceOf = (id: string | null): string | null => (id ? id.split("·")[1] ?? null : null);
 
-/** Structured template per basis — used when the decision basis changes (never invented prose). */
+/** Structured template per basis — used when the decision basis changes (never invented prose).
+ *  `lower-cost` is handled in code (P1-UI3-1): its meaning depends on the comparator's structured
+ *  pricing qualification — "trustworthy" ONLY for the reference on-demand book rate. */
 const BASIS_MEANING: Record<string, string> = {
-  "lower-cost": "a trustworthy cost comparison decided it",
   "evidence-gap": "no SLA-compatible configuration has qualifying evidence",
   "no-modeled-candidate": "no self-host configuration is modeled for this model",
   "self-host-unavailable": "self-host weights are unavailable for this model",
@@ -56,7 +57,14 @@ export function summarizeChanges(diff: RecommendationDiff): SummaryItem[] {
   if (dec) {
     const b = dec.before as { choice: string; basis: string };
     const a = dec.after as { choice: string; basis: string };
-    const meaning = BASIS_MEANING[a.basis] ? ` — ${BASIS_MEANING[a.basis]}` : "";
+    let meaning = BASIS_MEANING[a.basis] ? ` — ${BASIS_MEANING[a.basis]}` : "";
+    if (a.basis === "lower-cost") {
+      // P1-UI3-1: read the comparator's STRUCTURED pricing qualification from the diff payload.
+      // "trustworthy" is reserved for the reference on-demand book rate; anything else — indicative
+      // planning factors, overrides, or an unreadable qualification — fails closed to "modeled".
+      const q = (find("comparator-changed")[0]?.after as { pricingQualification?: string } | null | undefined)?.pricingQualification;
+      meaning = q === "reference" ? " — a trustworthy cost comparison decided it" : " — a modeled cost comparison decided it";
+    }
     items.push({ key: "decision", text: `Decision: ${b.choice} (${b.basis}) → ${a.choice} (${a.basis})${meaning}.` });
   }
 
