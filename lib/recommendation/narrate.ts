@@ -10,7 +10,7 @@ import type {
   Card, CandidateEvaluation, EffectiveConfidence, NarratedCard, NarratedRecommendationResult,
   StructuredRecommendationResult,
 } from "./schema";
-import { CONFIDENCE_RANK, RECOMMENDATION_CAPTION } from "./schema";
+import { CONFIDENCE_RANK, PURCHASING_MODEL_LABELS, RECOMMENDATION_CAPTION } from "./schema";
 import { costComparatorValid } from "./decision";
 
 /** Deterministic thousands formatting (no locale/ICU dependence). */
@@ -22,6 +22,10 @@ function commas(n: number): string {
 /** USD, never emitting NaN/undefined. */
 function usd(n: number | null | undefined): string {
   return typeof n === "number" && Number.isFinite(n) ? `$${commas(n)}` : "unavailable";
+}
+/** USD hourly rate with cents (planning rates like $79.10/GPU-hour need sub-dollar precision). */
+function usdRate(n: number | null | undefined): string {
+  return typeof n === "number" && Number.isFinite(n) ? `$${n.toFixed(2)}` : "unavailable";
 }
 const REAL_PERCENTILES = new Set(["p50", "p90", "p95", "p99"]);
 
@@ -143,6 +147,22 @@ function decisionRationale(r: StructuredRecommendationResult): string {
       const cmpEval = r.evaluations.find((e) => e.config.id === cmp.selfHostCandidateId)!;
       const sf = cmpEval.servingFacts;
       const selfDesc = `self-hosting ${selfLabel} on ${sf.instanceType} (${sf.weightPrecision} weights) at ${usd(cmp.selfHostMonthly)}/month`;
+      // P1-UI3-1: a NON-REFERENCE pricing qualification (indicative commitment/Spot planning factor, or
+      // a manual override) means the comparison is a qualified DIRECTIONAL planning result — never an
+      // unqualified price comparison. The assumption is rendered from the candidate's STRUCTURED
+      // pricingAssumption (engine-preserved factors), never reconstructed. Reference (on-demand book
+      // rate) narration is byte-identical to the approved wording.
+      if (cmp.pricingQualification !== "reference") {
+        const pa = cmpEval.pricingAssumption;
+        const assumptionClause =
+          pa.qualification === "override"
+            ? `a manually entered GPU rate of ${usdRate(pa.modeledEffectiveHourly)}/GPU-hour — not the trusted price-book rate`
+            : `a ${pa.assumedDiscountPct}% ${PURCHASING_MODEL_LABELS[pa.purchasingModel]} discount off the on-demand rate (${usdRate(pa.onDemandBaseHourly)}/GPU-hour → ${usdRate(pa.modeledEffectiveHourly)}/GPU-hour modeled planning rate) — an indicative planning factor, not an AWS quote`;
+        lead = r.decision.choice === "api"
+          ? `Recommendation: use ${apiPhrase} at ${usd(cmp.apiMonthly)}/month. Under these assumptions, modeled API cost is lower than the cheapest qualified self-host option, ${selfDesc}. Self-host pricing assumes ${assumptionClause}.`
+          : `Recommendation: self-host (directional planning result). Under these assumptions, modeled self-host cost is lower: ${selfDesc} vs ${apiPhrase} at ${usd(cmp.apiMonthly)}/month. Self-host pricing assumes ${assumptionClause}.`;
+        break;
+      }
       lead = r.decision.choice === "api"
         ? `Recommendation: use ${apiPhrase} at ${usd(cmp.apiMonthly)}/month — lower-cost than the cheapest qualified self-host option, ${selfDesc}.`
         : `Recommendation: ${selfDesc} — lower-cost than ${apiPhrase} at ${usd(cmp.apiMonthly)}/month.`;

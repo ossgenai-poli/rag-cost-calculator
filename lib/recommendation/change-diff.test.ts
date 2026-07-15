@@ -359,7 +359,7 @@ describe("change-diff — required change classes", () => {
       decision: {
         choice: "self-host" as const,
         basis: "lower-cost" as const,
-        costComparator: { selfHostCandidateId: C.b200Int4.id, selfHostMonthly: 5_000_000, apiMonthly: 6_492_000 },
+        costComparator: { selfHostCandidateId: C.b200Int4.id, selfHostMonthly: 5_000_000, apiMonthly: 6_492_000, pricingQualification: "reference" as const },
       },
     };
     const d = diffRecommendations(a, b);
@@ -367,5 +367,22 @@ describe("change-diff — required change classes", () => {
     const cmp = change(d, "comparator-changed")!;
     expect((cmp.after as { selfHostMonthly: number }).selfHostMonthly).toBe(5_000_000);
     expect((cmp.before as { selfHostMonthly: number }).selfHostMonthly).toBeCloseTo(7_176_630, 0);
+  });
+});
+
+describe("P1-UI3-1 — pricingAssumption is covered by the diff (pricing-changed, candidate scope)", () => {
+  it("a purchasing-model change surfaces as pricing-changed on the candidate + comparator-changed on the decision", () => {
+    const a = r1();
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuPricingModel = "savings-1yr";
+    const b = recommend({ workload: w, optimizeFor: "cost" });
+    const d = diffRecommendations(a, b);
+    expect(d.identical).toBe(false);
+    const pa = d.changes.find((c) => c.code === "pricing-changed" && c.scope === "candidate" && c.field === "pricingAssumption");
+    expect(pa).toBeTruthy();
+    expect((pa!.after as { qualification: string }).qualification).toBe("indicative-commitment");
+    const cmp = d.changes.find((c) => c.code === "comparator-changed");
+    expect((cmp!.after as { pricingQualification: string }).pricingQualification).toBe("indicative-commitment");
   });
 });

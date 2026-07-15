@@ -14,7 +14,7 @@
 //  4. registry provenance uses the registry's EXPORTED safe types (via the registry's public index).
 //  5. `recommend()` returns STRUCTURED facts only; `narrate()` renders prose (separate result types).
 // ============================================================================
-import type { CalcInputs } from "../types";
+import type { CalcInputs, GpuPricingModel } from "../types";
 // Safe registry types — imported through the registry's public index ONLY (never a deep path).
 import type { SelectionResult, ConfidenceCategory, Reason, Transformation, ProvenanceView } from "../benchmark-registry";
 
@@ -91,6 +91,44 @@ export type DecisionBasis =
   | "comparison-unavailable" // evidence-qualified exists but a trustworthy cost comparison is unavailable
   | "lower-cost"; // a trustworthy cost comparison decided it
 
+// ---------------------------------------------------------------------------
+// Pricing qualification (P1-UI3-1) — how the self-host $/hr behind a cost result must be QUALIFIED
+// ---------------------------------------------------------------------------
+
+/** How the modeled self-host GPU rate is qualified (P1-UI3-1):
+ *  - `reference` — the trusted price book's on-demand rate (the only unqualified comparison basis);
+ *  - `indicative-commitment` — an indicative Reserved/Savings-Plan PLANNING factor (not a quote);
+ *  - `indicative-spot` — an indicative Spot planning factor (fluctuates, interruptible);
+ *  - `override` — a manually entered $/hr replaced the book rate (no longer book provenance).
+ *  Anything but `reference` means the cost comparison is a qualified DIRECTIONAL planning result —
+ *  narration and presentation must never render it as an unqualified trustworthy price comparison. */
+export type PricingQualification = "reference" | "indicative-commitment" | "indicative-spot" | "override";
+
+/** The structured pricing assumption behind ONE candidate's self-host cost (P1-UI3-1). Every number is
+ *  sourced from the frozen engine (`effectiveInputs` + `GPU_COMMITMENT_DISCOUNT`/`effectiveGpuHourly`
+ *  from lib/self-host.ts) — the layer PRESERVES the engine's planning factors, it never re-derives or
+ *  duplicates them. Presentation shows the base rate and the modeled planning rate AS AN ASSUMPTION,
+ *  never as a quoted effective rate. */
+export interface PricingAssumption {
+  qualification: PricingQualification;
+  purchasingModel: GpuPricingModel; // the gpuPricingModel the engine actually computed with
+  onDemandBaseHourly: number; // trusted book on-demand $/hr (== servingFacts.gpuPricePerHr)
+  assumedDiscountPct: number; // engine GPU_COMMITMENT_DISCOUNT × 100 (0 for on-demand)
+  modeledEffectiveHourly: number; // engine effectiveGpuHourly(base, model) — a planning rate, not a quote
+  pricingEstimated: boolean; // the engine's PRICING-018 state: non-live book OR non-on-demand purchasing
+  assumptionSource: string; // identifier of the assumption's source (e.g. "gpu-commitment-discount:savings-1yr")
+}
+
+/** Customer-facing purchasing-model phrases — the SINGLE copy source for narrate() and the UI (the UI
+ *  must never reconstruct or duplicate pricing assumptions — P1-UI3-1). */
+export const PURCHASING_MODEL_LABELS: Record<GpuPricingModel, string> = {
+  "on-demand": "On-Demand",
+  "reserved-1yr": "1-year Reserved Instance",
+  "reserved-3yr": "3-year Reserved Instance",
+  "savings-1yr": "one-year Savings Plan",
+  spot: "Spot",
+};
+
 /** The EXACT cost comparator a lower-cost decision was derived from (P1-NARR-2): the cheapest
  *  comparison-qualified self-host candidate (deterministic cost→config-id tie-break) vs the API price.
  *  narrate() explains the cost decision from THIS — never from the optimization-selected bestSelfHost,
@@ -99,6 +137,9 @@ export interface CostComparator {
   selfHostCandidateId: string;
   selfHostMonthly: number;
   apiMonthly: number;
+  /** The pricing qualification of the comparator candidate (P1-UI3-1) — persisted ON the decision so
+   *  narration/summary/presentation qualify the cost result without reconstructing assumptions. */
+  pricingQualification: PricingQualification;
 }
 
 /** Structured facts only — NO prose (narrate() adds the rationale). */
@@ -194,6 +235,7 @@ export interface CandidateEvaluation {
   fleet: FleetReconciliation;
   cost: CostComparison;
   servingFacts: ServingFacts; // the candidate's ACTUAL GPU/precision facts (HOLD-4 P1-1)
+  pricingAssumption: PricingAssumption; // the structured pricing assumption behind cost.selfHostMonthly (P1-UI3-1)
   ttftS: number | null;
   ttftPercentile: string | null;
 

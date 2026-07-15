@@ -105,6 +105,7 @@ const CANDIDATE_FIELD_CODES = {
   fleet: "fleet-changed",
   cost: "cost-changed",
   servingFacts: "serving-facts-changed",
+  pricingAssumption: "pricing-changed", // structured pricing assumption (P1-UI3-1) — compared wholesale
   ttftS: "latency-changed",
   ttftPercentile: "latency-changed",
   rejections: "rejection-details-changed",

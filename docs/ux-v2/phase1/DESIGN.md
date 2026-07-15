@@ -481,3 +481,40 @@ while availability (weights/rights) is a catalog fact, not GPU feasibility.
 **After this revision:** recommendation tests 127, full suite 351, tsc clean; engine + registry
 byte-identical to `4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen
 at `d749309`.
+
+### 10.11 Narrow headless revision — pricing qualification (iteration-3 HOLD P1-UI3-1, reviewer-authorized)
+
+The iteration-3 review found that an indicative commitment discount (e.g. the 30% one-year Savings Plan
+planning factor) could produce an UNQUALIFIED executive recommendation: the decision flipped to
+self-host / lower-cost with "trustworthy cost comparison" wording, although the result rests on a
+planning factor, fallback GPU pricing and an aggressive utilization target. The approved structure did
+not preserve enough of the engine's `pricingEstimated` qualification, and the reviewer directed the fix
+at the STRUCTURED boundary (never UI-only copy or duplicated constants).
+
+- **`PricingAssumption` on every `CandidateEvaluation`** (schema.ts): `qualification`
+  (`reference | indicative-commitment | indicative-spot | override`), `purchasingModel`,
+  `onDemandBaseHourly`, `assumedDiscountPct`, `modeledEffectiveHourly`, `pricingEstimated`,
+  `assumptionSource`. Every number is PRESERVED from the frozen engine —
+  `GPU_COMMITMENT_DISCOUNT` / `effectiveGpuHourly` are imported from `lib/self-host.ts`, never
+  duplicated; `pricingEstimated` is composed from the same two engine facts (`crossover.gpuPriceSource`,
+  effective `gpuPricingModel`) as the engine's PRICING-018 state. Only the trusted on-demand book rate
+  is an unqualified `reference`.
+- **`CostComparator.pricingQualification`** persists the comparator candidate's qualification ON the
+  decision; `costComparatorValid` gains the invariant that it EXACTLY matches the candidate's
+  structured assumption (missing/mismatched → fail closed to neutral wording).
+- **narrate()**: a non-reference lower-cost result is a qualified DIRECTIONAL planning result — "Under
+  these assumptions, modeled self-host cost is lower: … Self-host pricing assumes a 30% one-year
+  Savings Plan discount off the on-demand rate ($113.00/GPU-hour → $79.10/GPU-hour modeled planning
+  rate) — an indicative planning factor, not an AWS quote." The base rate and modeled planning rate are
+  rendered AS AN ASSUMPTION, never as a quoted effective rate. Reference (on-demand) narration is
+  byte-identical to the approved wording. `PURCHASING_MODEL_LABELS` (schema.ts) is the single copy
+  source for narrate() and the UI.
+- **change-diff**: `pricingAssumption` joins the compile-time candidate coverage map
+  (`pricing-changed`, candidate scope); the comparator payload carries the qualification.
+- The decision itself is NOT suppressed — an indicative-commitment winner remains
+  `self-host / lower-cost`, qualified structurally so no consumer can render it unqualified.
+
+Tests: on-demand reference invariance (byte-identical narration, `reference` comparator), savings-1yr →
+`indicative-commitment` with the engine's 30% factor and the honest decision flip, spot →
+`indicative-spot` (65%), tampered comparator qualification → validator fails closed, purchasing-model
+change → `pricing-changed` + `comparator-changed` diff events. Suite: 359/359 in this worktree.

@@ -37,6 +37,9 @@ export function costComparatorValid(decision: Decision, api: ApiOption, evals: C
   if (cand.cost.selfHostMonthly !== cmp.selfHostMonthly) return false;
   if (cand.cost.apiMonthly !== cmp.apiMonthly) return false;
   if (api.monthlyCost !== cmp.apiMonthly) return false;
+  // P1-UI3-1: the persisted qualification must EXACTLY match the candidate's structured pricing
+  // assumption — a missing assumption or a mismatch means the qualification cannot be trusted → fail closed.
+  if (!cand.pricingAssumption || cand.pricingAssumption.qualification !== cmp.pricingQualification) return false;
   const cheapest = [...comparableCandidates(evals)].sort(byCostThenId)[0];
   if (!cheapest || cheapest.config.id !== cand.config.id) return false;
   if (decision.choice === "api") return cmp.apiMonthly <= cmp.selfHostMonthly;
@@ -93,6 +96,9 @@ export function deriveDecision(evals: CandidateEvaluation[], api: ApiOption, opt
     selfHostCandidateId: cheapest.config.id,
     selfHostMonthly: cheapest.cost.selfHostMonthly as number,
     apiMonthly: api.monthlyCost,
+    // P1-UI3-1: persist HOW the comparator candidate's self-host price is qualified, so narration and
+    // presentation qualify the cost result structurally (indicative planning factor vs reference rate).
+    pricingQualification: cheapest.pricingAssumption.qualification,
   };
   return api.monthlyCost <= costComparator.selfHostMonthly
     ? { choice: "api", basis: "lower-cost", costComparator }

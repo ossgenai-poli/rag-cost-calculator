@@ -14,7 +14,7 @@ vi.mock("../calc-engine", async (importOriginal) => {
 });
 
 import { recommend, evaluateCandidate } from "./recommend";
-import { deriveDecision } from "./decision";
+import { deriveDecision, costComparatorValid } from "./decision";
 import { loadCandidateCatalog, validateCandidateCatalog, PINNED_CANDIDATES } from "./candidate-catalog";
 import { defaultInputs, calculate } from "../calc-engine";
 import type { CalcInputs, PriceBook } from "../types";
@@ -440,5 +440,59 @@ describe("catalog validation fails closed", () => {
     const validated = validateCandidateCatalog(PINNED_CANDIDATES, priceBook);
     expect(Object.isFrozen(validated)).toBe(true);
     expect(Object.isFrozen(validated[0])).toBe(true);
+  });
+});
+
+describe("P1-UI3-1 — structured pricing qualification (assumption preserved from the engine)", () => {
+  it("on-demand: qualification=reference, 0% discount, modeled rate == base rate", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const r = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    const pa = r.evaluations[0].pricingAssumption;
+    expect(pa).toEqual({
+      qualification: "reference",
+      purchasingModel: "on-demand",
+      onDemandBaseHourly: 113,
+      assumedDiscountPct: 0,
+      modeledEffectiveHourly: 113,
+      pricingEstimated: true, // fallback price book — PRICING-018 (source state stays in pricing.gpuPriceSource)
+      assumptionSource: "price-book:on-demand",
+    });
+    expect(r.decision.costComparator).toMatchObject({ pricingQualification: "reference" });
+  });
+  it("savings-1yr: indicative-commitment with the ENGINE's 30% factor; comparator carries the qualification", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuPricingModel = "savings-1yr";
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    const pa = r.evaluations[0].pricingAssumption;
+    expect(pa.qualification).toBe("indicative-commitment");
+    expect(pa.purchasingModel).toBe("savings-1yr");
+    expect(pa.onDemandBaseHourly).toBe(113); // base on-demand rate, never replaced by a discounted rate
+    expect(pa.assumedDiscountPct).toBe(30); // GPU_COMMITMENT_DISCOUNT["savings-1yr"] — engine value, not a duplicate
+    expect(pa.modeledEffectiveHourly).toBeCloseTo(113 * 0.7, 10); // engine effectiveGpuHourly()
+    expect(pa.pricingEstimated).toBe(true);
+    expect(pa.assumptionSource).toBe("gpu-commitment-discount:savings-1yr");
+    // the decision flips honestly AND carries the qualification structurally
+    expect(r.decision).toMatchObject({ choice: "self-host", basis: "lower-cost" });
+    expect(r.decision.costComparator!.pricingQualification).toBe("indicative-commitment");
+  });
+  it("spot: indicative-spot with the engine's 65% factor", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuPricingModel = "spot";
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    expect(r.evaluations[0].pricingAssumption).toMatchObject({
+      qualification: "indicative-spot", assumedDiscountPct: 65, assumptionSource: "gpu-commitment-discount:spot",
+    });
+  });
+  it("comparator qualification mismatch fails the shared integrity validator closed", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuPricingModel = "savings-1yr";
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    const tampered = { ...r.decision, costComparator: { ...r.decision.costComparator!, pricingQualification: "reference" as const } };
+    expect(deriveDecision(r.evaluations, r.apiOption, { modelSelfHostable: true })).toEqual(r.decision);
+    expect(costComparatorValid(r.decision, r.apiOption, r.evaluations)).toBe(true);
+    expect(costComparatorValid(tampered, r.apiOption, r.evaluations)).toBe(false);
   });
 });

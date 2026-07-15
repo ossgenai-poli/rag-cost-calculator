@@ -200,7 +200,9 @@ describe("narrate — P1-NARR-2: cost prose uses the persisted comparator, never
     recommendationEligible: true, engineConfidence: "measured-scaled", effectiveConfidence: "measured-scaled",
     fleet: { boxes: 10, bindingDim: "prefill", equation: "eq" },
     cost: { selfHostMonthly: selfCost, apiMonthly: 6_492_000, verdict: "api-wins" },
-    servingFacts: sf(inst), ttftS: 1.0, ttftPercentile: "p99", rejections: [],
+    servingFacts: sf(inst),
+    pricingAssumption: { qualification: "reference", purchasingModel: "on-demand", onDemandBaseHourly: 113, assumedDiscountPct: 0, modeledEffectiveHourly: 113, pricingEstimated: true, assumptionSource: "price-book:on-demand" },
+    ttftS: 1.0, ttftPercentile: "p99", rejections: [],
   });
   const base = (decision: object, evals: object[], bestId: string) => ({
     decision,
@@ -214,7 +216,7 @@ describe("narrate — P1-NARR-2: cost prose uses the persisted comparator, never
 
   it("self-host wins: names the CHEAPEST comparator ($5.0M), not the optimization-selected bestSelfHost ($7.18M)", () => {
     const evals = [ev("dear-best", "p6-b200.48xlarge", 7_176_630), ev("cheap-cmp", "p5e.48xlarge", 5_000_000)];
-    const n = narrate(base({ choice: "self-host", basis: "lower-cost", costComparator: { selfHostCandidateId: "cheap-cmp", selfHostMonthly: 5_000_000, apiMonthly: 6_492_000 } }, evals, "dear-best"));
+    const n = narrate(base({ choice: "self-host", basis: "lower-cost", costComparator: { selfHostCandidateId: "cheap-cmp", selfHostMonthly: 5_000_000, apiMonthly: 6_492_000, pricingQualification: "reference" } }, evals, "dear-best"));
     expect(n.decision.rationale).toContain("$5,000,000/month");
     expect(n.decision.rationale).toContain("p5e.48xlarge"); // the comparator's instance
     expect(n.decision.rationale).not.toContain("$7,176,630"); // never the dearer bestSelfHost
@@ -224,7 +226,7 @@ describe("narrate — P1-NARR-2: cost prose uses the persisted comparator, never
 
   it("API wins: compares against the cheapest comparator and the inequality holds", () => {
     const evals = [ev("dear-best", "p6-b200.48xlarge", 8_000_000), ev("cheap-cmp", "p5e.48xlarge", 7_000_000)];
-    const n = narrate(base({ choice: "api", basis: "lower-cost", costComparator: { selfHostCandidateId: "cheap-cmp", selfHostMonthly: 7_000_000, apiMonthly: 6_492_000 } }, evals, "dear-best"));
+    const n = narrate(base({ choice: "api", basis: "lower-cost", costComparator: { selfHostCandidateId: "cheap-cmp", selfHostMonthly: 7_000_000, apiMonthly: 6_492_000, pricingQualification: "reference" } }, evals, "dear-best"));
     expect(n.decision.rationale).toContain("use the Claude Fable 5 (Bedrock) API at $6,492,000/month");
     expect(n.decision.rationale).toContain("cheapest qualified self-host option");
     expect(n.decision.rationale).toContain("$7,000,000/month"); // the comparator, not the $8M bestSelfHost
@@ -260,7 +262,7 @@ describe("narrate — P1-NARR-2: cost prose uses the persisted comparator, never
     s.decision = {
       choice: "self-host",
       basis: "lower-cost",
-      costComparator: { selfHostCandidateId: h200.config.id, selfHostMonthly: h200.cost.selfHostMonthly!, apiMonthly: s.apiOption.monthlyCost! },
+      costComparator: { selfHostCandidateId: h200.config.id, selfHostMonthly: h200.cost.selfHostMonthly!, apiMonthly: s.apiOption.monthlyCost!, pricingQualification: h200.pricingAssumption.qualification },
     };
     const n = narrate(s); // amounts reconcile and the inequality holds — eligibility alone must fail it closed
     expect(n.decision.rationale).toContain("comparison details unavailable");
@@ -272,7 +274,7 @@ describe("narrate — P1-NARR-2: cost prose uses the persisted comparator, never
     // Both candidates fully eligible/qualified; comparator points at the dearer one with amounts that
     // reconcile and an inequality that holds — but it is not the deterministic cheapest → neutral.
     const evals = [ev("cheap", "p5e.48xlarge", 5_000_000), ev("dear", "p6-b200.48xlarge", 7_176_630)];
-    const n = narrate(base({ choice: "api", basis: "lower-cost", costComparator: { selfHostCandidateId: "dear", selfHostMonthly: 7_176_630, apiMonthly: 6_492_000 } }, evals, "dear"));
+    const n = narrate(base({ choice: "api", basis: "lower-cost", costComparator: { selfHostCandidateId: "dear", selfHostMonthly: 7_176_630, apiMonthly: 6_492_000, pricingQualification: "reference" } }, evals, "dear"));
     expect(n.decision.rationale).toContain("comparison details unavailable");
     expect(n.decision.rationale).not.toContain("$7,176,630");
     expect(n.decision.rationale).not.toMatch(/lower-cost than/);
@@ -297,6 +299,43 @@ describe("narrate — determinism + prose hygiene", () => {
         if (n.bestSelfHost && n.bestSelfHost.confidence === "heuristic") expect(str).not.toMatch(/P99|P95/);
       }
       if (n.decision.choice === "api") expect(n.decision.rationale).not.toMatch(/Recommendation: self-host/);
+    }
+  });
+});
+
+describe("P1-UI3-1 — qualified narration when non-reference pricing influences the comparison", () => {
+  it("indicative commitment winner: 'Under these assumptions, modeled self-host cost is lower' + the exact assumption", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuPricingModel = "savings-1yr";
+    const n = narrate(recommend({ workload: w, optimizeFor: "cost" }));
+    expect(n.decision.rationale).toContain("Under these assumptions, modeled self-host cost is lower");
+    expect(n.decision.rationale).toContain("directional planning result");
+    expect(n.decision.rationale).toContain("a 30% one-year Savings Plan discount off the on-demand rate");
+    expect(n.decision.rationale).toContain("$113.00/GPU-hour → $79.10/GPU-hour modeled planning rate");
+    expect(n.decision.rationale).toContain("an indicative planning factor, not an AWS quote");
+    // never rendered as an unqualified flat winner claim
+    expect(n.decision.rationale).not.toMatch(/— lower-cost than the .* API at/);
+  });
+  it("reference (on-demand) narration is byte-identical to the approved wording — no qualifier injected", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const n = narrate(recommend({ workload: dsv4Workload(), optimizeFor: "cost" }));
+    expect(n.decision.rationale).toContain("lower-cost than the cheapest qualified self-host option");
+    expect(n.decision.rationale).not.toContain("Under these assumptions");
+    expect(n.decision.rationale).not.toContain("planning factor");
+  });
+  it("indicative pricing with an API winner is ALSO qualified (the comparison itself is estimated)", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuPricingModel = "savings-1yr";
+    w.traffic.queriesPerMonth = 5_000_000; // R5-scale: API stays cheaper even discounted
+    const n = narrate(recommend({ workload: w, optimizeFor: "cost" }));
+    if (n.decision.basis === "lower-cost" && n.decision.choice === "api") {
+      expect(n.decision.rationale).toContain("Under these assumptions, modeled API cost is lower");
+      expect(n.decision.rationale).toContain("not an AWS quote");
+    } else {
+      // if the small workload lands elsewhere the wording guard above still holds; assert no flat claim
+      expect(n.decision.rationale).not.toMatch(/— lower-cost than the cheapest qualified self-host option/);
     }
   });
 });

@@ -25,6 +25,7 @@ const evalFix = (o: Partial<CandidateEvaluation> = {}): CandidateEvaluation => (
   fleet: { boxes: 87, bindingDim: "prefill", equation: "" },
   cost: { selfHostMonthly: 7_176_630, apiMonthly: 6_492_000, verdict: "api-wins" },
   servingFacts: { instanceType: "p6-b200.48xlarge", gpuSku: "B200", weightBits: 4, kvBits: 16, weightPrecision: "fp4", kvPrecision: "bf16", gpuPricePerHr: 113, gpuPriceSource: "fallback", gpuPricingModel: "on-demand", uptimeHours: 730, utilTarget: 0.7 },
+  pricingAssumption: { qualification: "reference", purchasingModel: "on-demand", onDemandBaseHourly: 113, assumedDiscountPct: 0, modeledEffectiveHourly: 113, pricingEstimated: true, assumptionSource: "price-book:on-demand" },
   ttftS: 1.22,
   ttftPercentile: "p99",
   rejections: [],
@@ -57,12 +58,12 @@ describe("decision precedence (deterministic, first-match-wins)", () => {
   it("R1/R5-shape: evidence-qualified self-host dearer than API → api / lower-cost (+ persisted comparator)", () => {
     const d = deriveDecision([evalFix()], apiFix(), { modelSelfHostable: true });
     expect(d).toMatchObject({ choice: "api", basis: "lower-cost" });
-    expect(d.costComparator).toEqual({ selfHostCandidateId: "c", selfHostMonthly: 7_176_630, apiMonthly: 6_492_000 });
+    expect(d.costComparator).toEqual({ selfHostCandidateId: "c", selfHostMonthly: 7_176_630, apiMonthly: 6_492_000, pricingQualification: "reference" });
   });
   it("an evidence-qualified self-host cheaper than API → self-host / lower-cost (+ persisted comparator)", () => {
     const d = deriveDecision([evalFix({ cost: { selfHostMonthly: 100, apiMonthly: 6_492_000, verdict: "self-host-efficient" } })], apiFix(), { modelSelfHostable: true });
     expect(d).toMatchObject({ choice: "self-host", basis: "lower-cost" });
-    expect(d.costComparator).toEqual({ selfHostCandidateId: "c", selfHostMonthly: 100, apiMonthly: 6_492_000 });
+    expect(d.costComparator).toEqual({ selfHostCandidateId: "c", selfHostMonthly: 100, apiMonthly: 6_492_000, pricingQualification: "reference" });
   });
   it("P1-NARR-2: the comparator is the CHEAPEST qualified self-host with a cost→id tie-break", () => {
     const cheap = evalFix({ config: { ...evalFix().config, id: "b-cheap" }, cost: { selfHostMonthly: 5_000_000, apiMonthly: 6_492_000, verdict: "self-host-efficient" } });
