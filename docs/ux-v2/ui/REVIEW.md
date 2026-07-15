@@ -1,4 +1,11 @@
-# UI slice review — /advisor (vertical slice, revision 2 after UI HOLD-1)
+# UI slice review — /advisor (vertical slice, revision 3 after UI HOLD-2)
+
+## UI HOLD-2 fixes in this revision
+
+| Finding | Fix |
+|---|---|
+| **P1-UI-4** API-only page internally contradictory (availability note vs "technically feasible" narrative) | Resolved at the ROOT via the reviewer-authorized **narrow headless revision** (`ux/v2-phase1 @ 39a8a1a`, DESIGN §10.10): `DecisionBasis` gains **`self-host-unavailable`** with `availability: { reason: "api-only" \| "weights-unavailable" }`, derived from the trusted model-catalog `selfHostable` fact BEFORE any technical candidate feasibility; `self-host-infeasible` is reserved for genuine capacity/memory/topology failures; `narrate()` produces "This model is available through the API only; self-host weights are not available, so no self-host cost comparison was performed." and never uses "technically (in)feasible" for this state. `ux/v2-ui` is REBASED onto that revision; the UI now simply maps the structured basis (the earlier cosmetic clarification is removed — nothing is suppressed or rewritten). Contract, sweep, narrative and UI acceptance tests prove the states cannot be conflated (including a page-wide `not.toMatch(/technically\s+(in)?feasible/i)` for the API-only state, and the reverse for genuine infeasibility). |
+| **P3-A11Y** banner sentences concatenated | The generic error and "Showing the last valid result below." render as separate `<p>` blocks — accessible text no longer concatenates. |
 
 **Branch:** `ux/v2-ui` (from the approved complete headless baseline `ux/v2-phase1 @ e938c5d`).
 **Scope:** customer input journey · Simple/Expert mode · bounded decision summary · best-self-host +
@@ -11,7 +18,7 @@ cards, presets, exports.
 | Finding | Fix |
 |---|---|
 | **P1-UI-1** hero more authoritative than visible assumptions | Hero is now a BOUNDED conclusion per `decision.basis` ("Lowest modeled cost: API", "Directional cost result: undetermined", "API — no evidence-qualified self-host option", …). A prominent amber disclosure — "Different models are being compared; capability and quality are not normalized." — sits adjacent whenever `apiOption.modelId ≠ workload model`. Workload scale, the input-token formula (query + prompt + TopN×chunk), output tokens, both monthly costs, the **modeled difference** (absolute + % — labeled presentation arithmetic over the two structured amounts) and the evidence chip are all immediately visible in BOTH modes. Simple mode keeps the collapsed "Evidence & assumptions" disclosure (owner D1); rejected candidates stay Expert-only. |
-| **P1-UI-2** API-only misclassified as technical infeasibility | Availability (weights/rights) is a DISTINCT state derived from the price-book `selfHostable` fact: hero "API — this model is API-only (self-host unavailable)", card "This model is API-only; self-host weights are unavailable. Select an open-weight model to evaluate self-hosting.", dropdown grouped into "Open-weight (self-hostable)" / "API-only (self-host unavailable)" (owner D4), and self-host-specific controls (uptime, experimental check) disabled with a not-applicable note. A UI availability clarification renders above the narrated rationale. **Phase-2 item:** the frozen headless layer's `self-host-infeasible` basis/wording for API-only models should gain an availability-aware basis in the next approved headless revision. |
+| **P1-UI-2** API-only misclassified as technical infeasibility | Availability (weights/rights) is a DISTINCT state: hero, cost row, empty card, dropdown grouping (owner D4) and disabled self-host controls. **Superseded by UI HOLD-2 / P1-UI-4:** availability is now a first-class reason-coded headless basis (`self-host-unavailable`) — see the HOLD-2 table above. |
 | **P1-UI-3** mobile overflow (multi-adjustment state) | The adjustments table was replaced with WRAP-SAFE stacked rows (no `<table>`, `break-words`/`break-all`, wrapping value line). New acceptance test `scripts/verify-advisor-mobile.mjs`: at 375×812 it drives Top N=30/Top K=20/uptime=1000 (multiple adjustment rows) and asserts `document.documentElement.scrollWidth ≤ window.innerWidth` and zero console errors — **PASS** (scrollWidth 375 ≤ 375). The earlier review claim of "no horizontal scroll" was false for this state and is corrected by this fix + test. |
 | **P2-UI-1** raw contract errors customer-visible | Boundary-validator messages map through `components/advisor/copy.ts` to field-level customer wording ("Enter a number greater than 0.") with `aria-invalid` + `aria-describedby`; internal property paths never render. Numeric fields keep a local draft and COMMIT ON BLUR/Enter; the **last valid result stays on screen** while editing, with a "showing the last valid result" note (owner D6). |
 | **P2-UI-2** concatenated accessible heading names | Basis chip and the "secondary…" annotation are SIBLINGS of their headings; `<h2>` accessible names are now exactly "Lowest modeled cost: API" / "Best self-host option" (asserted in tests). |
@@ -27,7 +34,7 @@ light scheme pinned for isolated review, shared theme tokens deferred to product
 ```
 cd <worktree>                                # ux/v2-ui
 npm run dev                                  # open http://localhost:3000/advisor ("/" untouched)
-npx vitest run                               # 369 = 347 approved baseline + 18 advisor + 4 crypto-shim
+npx vitest run                               # 374 = 351 headless (incl. HOLD-2 revision) + 19 advisor + 4 crypto-shim
 npx tsc --noEmit                             # clean
 node scripts/verify-advisor-mobile.mjs       # 375px multi-adjustment overflow acceptance (APP_URL env to point elsewhere)
 ```
@@ -86,8 +93,10 @@ pinned benchmark artifacts; the browser shim must not become the permanent trust
 
 ## Remaining open items for owner/UX
 
-- Phase-2: availability-aware decision basis in the headless layer (see P1-UI-2 note above).
+- ~~Availability-aware decision basis~~ — DONE in the HOLD-2 narrow headless revision (`39a8a1a`).
 - Phase-2: consolidate narrate()'s internal label map with the UI copy contract when the headless layer
   next opens for approved changes (owner D3 is implemented UI-side).
 - Production theming via shared tokens (owner D7).
 - Live pricing wiring with explicit source/state (owner D5).
+- P2-ARCH-1: build-time/server-side pinned-artifact verification (browser shim must not become the
+  permanent trust boundary).
