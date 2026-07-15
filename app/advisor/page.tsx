@@ -31,7 +31,8 @@ import { friendlyFieldErrors, type FieldError } from "@/components/advisor/copy"
 const priceBook = pricesJson as unknown as PriceBook;
 
 // R1 canonical defaults (docs/ux-v2/18-reference-cases.md) — real approved reference output.
-const DEFAULT_STATE: AdvisorState = {
+// Exported for tests so fixtures are byte-identical to the page's state (QA-014 discipline).
+export const DEFAULT_STATE: AdvisorState = {
   modelId: "deepseek-v4-pro-oss",
   volume: 200_000_000,
   optimizeFor: "cost",
@@ -45,12 +46,17 @@ const DEFAULT_STATE: AdvisorState = {
   topN: 5,
   topK: 20,
   uptimeHours: 730,
+  utilTargetPct: 70, // matches the frozen defaultInputs utilTarget 0.7 → R1 numbers unchanged
+  haEnabled: true,
+  purchasingModel: "on-demand",
   experimental: false,
 };
 
 /** Build the engine workload from the journey state — the SAME defaultInputs() base the calculator
- *  uses, with only the journey fields overridden (no hidden extra assumptions). */
-function buildWorkload(s: AdvisorState): CalcInputs {
+ *  uses, with only the journey fields overridden (no hidden extra assumptions). The iteration-3
+ *  operations fields map to REAL engine inputs: utilTarget (fraction), haEnabled (N+1),
+ *  gpuPricingModel (indicative commitment discount). Exported for contract tests. */
+export function buildWorkload(s: AdvisorState): CalcInputs {
   const w = defaultInputs(priceBook);
   w.generation.mode = "self-hosted";
   w.generation.llmModelId = s.modelId;
@@ -59,6 +65,9 @@ function buildWorkload(s: AdvisorState): CalcInputs {
   w.generation.outTokens = s.outTokens;
   w.generation.promptOverhead = s.promptOverhead;
   w.generation.gpuUptimeHoursPerMonth = s.uptimeHours;
+  w.generation.utilTarget = s.utilTargetPct / 100;
+  w.generation.haEnabled = s.haEnabled;
+  w.generation.gpuPricingModel = s.purchasingModel;
   w.chunking.chunkSize = s.chunkSize;
   w.retrieval.topN = s.topN;
   w.retrieval.topK = s.topK;
@@ -161,6 +170,7 @@ export default function AdvisorPage() {
           <PresetBar
             state={state}
             provenance={presetProv}
+            selfHostAvailable={selfHostAvailable}
             onApply={(next, prov) => { setState(next); setPresetProv(prov); }}
             onUndo={(restored, prov) => { setState(restored); setPresetProv(prov); }}
           />

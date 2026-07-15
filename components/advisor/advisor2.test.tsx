@@ -21,7 +21,7 @@ const priceBook = pricesJson as unknown as PriceBook;
 const DEFAULTS: AdvisorState = {
   modelId: "deepseek-v4-pro-oss", volume: 200_000_000, optimizeFor: "cost", mode: "simple",
   ttftTargetMs: 2000, interactivityTarget: 30, outTokens: 500, queryTokens: 50, promptOverhead: 300,
-  chunkSize: 512, topN: 5, topK: 20, uptimeHours: 730, experimental: false,
+  chunkSize: 512, topN: 5, topK: 20, uptimeHours: 730, utilTargetPct: 70, haEnabled: true, purchasingModel: "on-demand", experimental: false,
 };
 function workload(volume = 200_000_000, mutate?: (w: CalcInputs) => void): CalcInputs {
   const w = defaultInputs(priceBook);
@@ -72,7 +72,7 @@ describe("presets — explicit origin tracking (P1-UI2-1)", () => {
     expect(next.ttftTargetMs).toBe(1500); // kept
     expect(provenance.origins.ttftTargetMs).toBe("manual"); // kept field stays manual-origin
     expect(provenance.origins.interactivityTarget).toBe("preset:strict-conversational");
-    expect(provenance.active).toMatchObject({ label: "Strict conversational target", fieldsKept: 1, modified: false });
+    expect(provenance.active.A).toMatchObject({ label: "Strict conversational target", fieldsKept: 1, modified: false });
   });
 
   it("preset→manual edit: chip becomes Modified and Undo is INVALIDATED (never overwrites later edits)", () => {
@@ -82,7 +82,7 @@ describe("presets — explicit origin tracking (P1-UI2-1)", () => {
     // SA manually edits a preset field afterwards…
     const after = { ...applied.next, ttftTargetMs: 1200 };
     const prov2 = registerManualEdit(applied.provenance, changedPresetFields(applied.next, after));
-    expect(prov2.active).toMatchObject({ modified: true }); // "Modified from …"
+    expect(prov2.active.A).toMatchObject({ modified: true }); // "Modified from …"
     expect(prov2.undo).toBeNull(); // undo invalidated
     expect(undoPreset(prov2)).toBeNull(); // no path can restore over the manual edit
     expect(prov2.origins.ttftTargetMs).toBe("manual");
@@ -96,7 +96,7 @@ describe("presets — explicit origin tracking (P1-UI2-1)", () => {
     const restored = undoPreset(applied.provenance)!;
     expect(restored.state).toEqual(state0);
     expect(restored.provenance.origins).toEqual(prov0.origins); // provenance restored with state
-    expect(restored.provenance.active).toBeNull();
+    expect(restored.provenance.active).toEqual({ A: null, B: null });
     expect(restored.revertedLabel).toBe("Strict conversational target");
   });
 

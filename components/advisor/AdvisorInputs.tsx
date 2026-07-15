@@ -10,7 +10,7 @@
 // - API-only models are grouped and labeled "self-host unavailable", and self-host-specific controls
 //   are disabled for them (P1-UI-2 / owner D4).
 import { useEffect, useState } from "react";
-import type { ModelPrice } from "@/lib/types";
+import type { GpuPricingModel, ModelPrice } from "@/lib/types";
 import type { OptimizeFor } from "@/lib/recommendation";
 import { EXPERT_FIELD_HELP, type FieldError } from "./copy";
 
@@ -28,8 +28,22 @@ export interface AdvisorState {
   topN: number;
   topK: number;
   uptimeHours: number;
+  // Iteration-3 structured journey-state contract (owner directive): utilization, redundancy/N+1 and
+  // purchasing are REAL engine inputs (utilTarget, haEnabled, gpuPricingModel) — never
+  // presentation-only preset state.
+  utilTargetPct: number; // percent (0,100]; mapped to the engine's utilTarget fraction
+  haEnabled: boolean; // N+1 serving-replica redundancy (NOT AZ/DR/compliance)
+  purchasingModel: GpuPricingModel; // commitment model → indicative discount off on-demand
   experimental: boolean;
 }
+
+export const PURCHASING_OPTIONS: Array<{ value: GpuPricingModel; label: string }> = [
+  { value: "on-demand", label: "On-demand" },
+  { value: "reserved-1yr", label: "Reserved 1-yr (indicative)" },
+  { value: "reserved-3yr", label: "Reserved 3-yr (indicative)" },
+  { value: "savings-1yr", label: "Savings Plan 1-yr (indicative)" },
+  { value: "spot", label: "Spot (indicative, interruptible)" },
+];
 
 const OPTIMIZE_LABELS: Record<OptimizeFor, string> = {
   cost: "Lowest cost",
@@ -169,6 +183,52 @@ export function AdvisorInputs({ state, defaults, models, selfHostAvailable, fiel
             <Num id="adv-out" label="Output tokens per answer" helpKey="outTokens" value={state.outTokens} defaultValue={defaults.outTokens} min={0} error={err("adv-out")} onCommit={(v) => set("outTokens", v)} />
             <Num id="adv-uptime" label="GPU fleet uptime" helpKey="uptimeHours" value={state.uptimeHours} defaultValue={defaults.uptimeHours} min={0} disabled={!selfHostAvailable} disabledNote={selfHostDisabledNote} error={err("adv-uptime")} onCommit={(v) => set("uptimeHours", v)} />
           </div>
+
+          {/* Iteration-3 journey-state contract: operations & purchasing are REAL engine inputs. */}
+          <fieldset className="space-y-3 rounded border border-slate-200 p-3" data-testid="ops-inputs">
+            <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Operations & purchasing</legend>
+            <Num id="adv-util" label="Utilization target" helpKey="utilTargetPct" value={state.utilTargetPct} defaultValue={defaults.utilTargetPct} min={1} disabled={!selfHostAvailable} disabledNote={selfHostDisabledNote} error={err("adv-util")} onCommit={(v) => set("utilTargetPct", v)} />
+            <div className="flex items-start gap-2">
+              <input
+                id="adv-ha"
+                type="checkbox"
+                checked={state.haEnabled}
+                disabled={!selfHostAvailable}
+                aria-describedby="adv-ha-help"
+                onChange={(e) => set("haEnabled", e.target.checked)}
+              />
+              <div>
+                <label htmlFor="adv-ha" className="text-xs text-slate-600">Spare serving replica (N+1)</label>
+                <p id="adv-ha-help" className="text-xs text-slate-500">
+                  Serving-replica redundancy only — it does <em>not</em> establish multi-AZ resilience, disaster recovery, or compliance.
+                  <span className="ml-1 rounded bg-slate-100 px-1 text-[10px] uppercase tracking-wide text-slate-500" data-testid="provenance-adv-ha">
+                    {state.haEnabled === defaults.haEnabled ? "assumed (default)" : "customer-entered"}
+                  </span>
+                </p>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="adv-purchasing" className="block text-xs font-medium text-slate-600">Purchasing model</label>
+              <select
+                id="adv-purchasing"
+                value={state.purchasingModel}
+                disabled={!selfHostAvailable}
+                aria-describedby="adv-purchasing-help"
+                onChange={(e) => set("purchasingModel", e.target.value as AdvisorState["purchasingModel"])}
+                className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm"
+              >
+                {PURCHASING_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <p id="adv-purchasing-help" className="mt-0.5 text-xs text-slate-500">
+                Commitment discounts are indicative — actual RI/Savings/Spot pricing varies with term and payment; get an AWS quote.
+                <span className="ml-1 rounded bg-slate-100 px-1 text-[10px] uppercase tracking-wide text-slate-500" data-testid="provenance-adv-purchasing">
+                  {state.purchasingModel === defaults.purchasingModel ? "assumed (default)" : "customer-entered"}
+                </span>
+              </p>
+            </div>
+          </fieldset>
           <div className="flex items-start gap-2">
             <input
               id="adv-experimental"

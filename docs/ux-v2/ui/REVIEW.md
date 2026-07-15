@@ -184,3 +184,57 @@ recurred once more under HMR churn; `rm -rf .next` + restart resolves it — cle
 |---|---|
 | **P2-UI2-3** canonical summary truncated the cost impact | `summarizeChanges` now RESERVES slots by category (decision · aggregated SLA/evidence consequence · best-self-host · relevant-candidate fleet · relevant-candidate cost · evidence/other) — never "append all and slice". Identical multi-candidate SLA failures aggregate into ONE slot ("Both modeled p6-b200.48xlarge configurations now fail the selected SLA…"); only the most decision-relevant candidate's fleet and cost rows take slots (others stay in the audit). Canonical live/test output: decision → evidence-gap with meaning · aggregated SLA line · best-self-host removed · Fleet 87 → 131 · **Self-host cost $7,176,630 → $10,806,190/mo** · evidence state measured-scaled → extrapolated — ≤6 items, "View all 23 technical changes" audit intact. |
 | **P2-UI2-4** valid diffs could render an empty summary | A non-identical diff can never yield an empty list: a workload-assumptions-only diff (e.g. TTFT 5000→4500 with no modeled outcome change) renders the deterministic sentence "Workload assumptions changed; the modeled decision, qualification, fleet, and cost did not change." (derived from effective-workload-changed present + no outcome codes); any other outcome-less diff renders "No material modeled outcome changed." Test proves the fallback invents no decision/fleet/cost text and the raw change stays under "View all 1 technical changes". |
+
+---
+
+# Iteration 3 — journey-state contract + family-B operational profiles (`ux/v2-ui-3`)
+
+**Branch:** `ux/v2-ui-3` (child of the immutable approved `ux/v2-ui-2 @ 7fdee3d`). Frozen baselines,
+the calculator at `/`, main and workflows untouched; no merge/deploy.
+
+## 1. Structured journey-state contract FIRST (owner directive)
+
+Utilization, redundancy and purchasing are REAL engine inputs, never presentation-only preset state:
+
+| Journey field | Engine input | Engine effect (verified via real outcomes) |
+|---|---|---|
+| `utilTargetPct` (%) | `generation.utilTarget` (fraction) | fleet sizing headroom — 85% shrinks the R1 fleet below 87 boxes |
+| `haEnabled` | `generation.haEnabled` | N+1 spare replica — off: 87 → 86 boxes (engine-derived) |
+| `purchasingModel` | `generation.gpuPricingModel` | indicative commitment discount — savings-1yr: $7,176,630 → $5,023,641/mo and the decision honestly flips to `self-host / lower-cost` |
+
+Expert "Operations & purchasing" controls carry decision support (units/defaults/why + provenance
+tags), the N+1 help states it is NOT AZ/DR/compliance, the purchasing select is labeled INDICATIVE, and
+all three are disabled for API-only models. Boundary validation maps `utilTarget`/`gpuPricingModel`
+failures to friendly field errors. Defaults (70% · N+1 on · on-demand) preserve the approved R1 output
+exactly. Serving facts stay honest: the base on-demand rate + purchasing model (never a fake
+"effective rate").
+
+## 2. Family-B operational profiles (07-presets §B) over the APPROVED provenance machinery
+
+Six profiles (Prototype · Production—balanced · Latency-sensitive · Cost-optimized · Business-hours ·
+24×7 high-availability posture) as declarative INPUT bundles over the new journey fields. The approved
+iteration-2 semantics are unchanged, generalized to mixed-type fields (booleans render on/off) and TWO
+families: per-family active chips (A and B coexist), manual edits mark only the owning family
+"Modified from …" and invalidate the single Undo, B→B switching produces zero conflicts. The HA-posture
+profile shows its persistent banner while active (including after later manual edits): "Architecture,
+security, quota and compliance review are still required — this preset does not deliver them." (renamed
+from "regulated" per Phase-0 P2-6). Operational profiles are disabled for API-only models.
+
+## Verification
+
+- `advisor3.test.tsx` (13): contract mapping + engine outcomes (R1 invariance, 87→86 N+1, 85% shrink,
+  savings-1yr economics + honest decision flip, fail-closed invalid ops inputs), profile set/values,
+  mixed-type preview, family independence, B→B zero conflicts, persistent banner, API-only disabling,
+  a11y/decision support. Totals: **399/399**, tsc clean, **375px mobile acceptance PASS**.
+- Live clean-browser probe (zero console errors): Cost-optimized → hero flips to "Lowest modeled cost:
+  Self-host" at $4,157,496/mo (85% util + indicative savings, engine-derived); A+B chips coexist;
+  HA-posture banner verbatim.
+
+## Open items for owner/UX review
+
+- **UI3-D1** "Business hours" = 220 h/mo (10 h × 22 days) — a proposed planning input; confirm or adjust.
+- **UI3-D2** Cost-optimized uses `savings-1yr` as the indicative committed-pricing stand-in (07 says
+  "indicative RI/Savings"); confirm or prefer `reserved-1yr`.
+- **UI3-D3** The savings-driven decision flip is honest engine output; consider whether the hero should
+  carry an "indicative pricing" qualifier when `purchasingModel ≠ on-demand` (crossover already marks
+  `pricingEstimated`).

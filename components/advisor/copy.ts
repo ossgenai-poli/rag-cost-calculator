@@ -34,6 +34,7 @@ export const EXPERT_FIELD_HELP: Record<string, FieldHelp> = {
   topK: { unit: "chunks", recommended: "default 20", why: "Chunks retrieved from the vector store before reranking." },
   outTokens: { unit: "tokens", recommended: "default 500", why: "Answer length; drives decode throughput demand." },
   uptimeHours: { unit: "h/mo", recommended: "default 730 (always-on)", why: "Billing hours for the self-host fleet; capped at 730 and disclosed." },
+  utilTargetPct: { unit: "%", recommended: "default 70 (balanced)", why: "Peak-load headroom the fleet is sized against; lower % = more GPUs, more headroom." },
 };
 
 /** Friendly, field-level validation wording (P2-UI-1). Keyed by the boundary validator's property
@@ -54,6 +55,8 @@ export const FIELD_ERROR_COPY: Array<{ pathToken: string; error: FieldError }> =
   { pathToken: "retrieval.topK", error: { inputId: "adv-topk", label: "Chunks retrieved (Top K)", message: "Enter at least 1 chunk." } },
   { pathToken: "generation.outTokens", error: { inputId: "adv-out", label: "Output tokens", message: "Enter 0 or more tokens." } },
   { pathToken: "gpuUptimeHoursPerMonth", error: { inputId: "adv-uptime", label: "GPU fleet uptime", message: "Enter 0 or more hours (0 uses the always-on default)." } },
+  { pathToken: "generation.utilTarget", error: { inputId: "adv-util", label: "Utilization target", message: "Enter a percentage between 1 and 100." } },
+  { pathToken: "generation.gpuPricingModel", error: { inputId: "adv-purchasing", label: "Purchasing model", message: "Choose one of the listed purchasing models." } },
 ];
 
 /** Map a boundary-validator error message to friendly field errors (unknown → a generic message). */
