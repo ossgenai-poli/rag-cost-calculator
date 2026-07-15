@@ -289,6 +289,68 @@ describe("HOLD-2 — trusted pricing, effective workload, complete validation", 
   });
 });
 
+describe("HOLD-3 — API comparison identity + complete boundary validation", () => {
+  it("P1-1: apiOption.modelId is the COMPARED API model, not the self-host model", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const r = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    expect(r.apiOption.modelId).toBe(r.effectiveWorkload.generation.apiComparisonModelId); // both "claude-fable-5"
+    expect(r.apiOption.modelId).not.toBe("deepseek-v4-pro-oss"); // not the self-host model
+    // self-host identity is still present structurally
+    expect(r.evaluations[0].config.llmModelId).toBe("deepseek-v4-pro-oss");
+    expect(r.effectiveWorkload.generation.llmModelId).toBe("deepseek-v4-pro-oss");
+  });
+
+  it("P1-1: a valid alternate LLM comparison reports THAT LLM and its trusted price", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload(); w.generation.apiComparisonModelId = "claude-opus-4-8"; // a different real LLM
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    expect(r.apiOption.modelId).toBe("claude-opus-4-8");
+    expect(r.apiOption.monthlyCost!).toBeGreaterThan(0);
+  });
+
+  it("P1-1: an embedding/rerank comparison id fails closed (kind must be llm)", () => {
+    const w = dsv4Workload(); w.generation.apiComparisonModelId = "titan-embed-v2"; // embedding, not llm
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/must be a model with kind "llm"/);
+  });
+
+  it("P2: an empty apiComparisonModelId normalizes to the selected LLM (frozen-calculator default)", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload(); w.generation.apiComparisonModelId = "";
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    expect(r.apiOption.modelId).toBe("deepseek-v4-pro-oss"); // the selected LLM
+  });
+
+  it("P1-2: invalid gpuPricingModel is rejected (never a silent on-demand fallback)", () => {
+    const w = dsv4Workload(); (w.generation as any).gpuPricingModel = "bogus";
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/gpuPricingModel/);
+  });
+  it("P1-2: invalid traffic.method is rejected", () => {
+    const w = dsv4Workload(); (w.traffic as any).method = "bogus";
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/traffic.method/);
+  });
+  it("P1-2: negative peakFactor is rejected", () => {
+    const w = dsv4Workload(); w.traffic.peakFactor = -1;
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/peakFactor/);
+  });
+  it("P1-2: utilTarget=0 is rejected (must be in (0,1])", () => {
+    const w = dsv4Workload(); w.generation.utilTarget = 0;
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/utilTarget/);
+  });
+  it("P1-2: negative topK/topN are rejected", () => {
+    const w = dsv4Workload(); w.retrieval.topK = -1; w.retrieval.topN = -2;
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/topK|topN/);
+  });
+  it("P1-2: negative gpuUptimeHoursPerMonth is rejected (no silent 730 fallback)", () => {
+    const w = dsv4Workload(); w.generation.gpuUptimeHoursPerMonth = -5;
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/gpuUptimeHoursPerMonth/);
+  });
+  it("P1-2: intentional topN>topK and uptime>730 are still accepted (reconciled, not rejected)", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload(); w.retrieval.topK = 3; w.retrieval.topN = 9; w.generation.gpuUptimeHoursPerMonth = 1000;
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).not.toThrow();
+  });
+});
+
 describe("catalog validation fails closed", () => {
   const good = PINNED_CANDIDATES[0];
   const clone = (o: CandidateConfig): CandidateConfig => JSON.parse(JSON.stringify(o));

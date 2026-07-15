@@ -323,3 +323,14 @@ each is captured here with its reproduction and resolution, and covered by tests
 
 **After HOLD-2:** recommendation tests 66, full suite 290, tsc clean; engine + registry byte-identical to
 `4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.
+
+### 10.2 Sweep review — HOLD-3 (findings, reproductions, fixes)
+
+| # | Finding (repro) | Fix |
+|---|---|---|
+| **P1-1** | `apiOption.modelId` reported the self-host model (`deepseek-v4-pro-oss`) while `effectiveWorkload.generation.apiComparisonModelId` was `claude-fable-5` — attributing Claude's API price to DeepSeek. An embedding id (`titan-embed-v2`) was accepted and priced as a generation API. | `apiOption.modelId` is now the **compared API model** (the normalized `apiComparisonModelId`); the self-host identity remains in `evaluations[].config` / `effectiveWorkload.generation.llmModelId`. Validation requires `apiComparisonModelId` (when set) to resolve to a `kind==="llm"` model. Tests: `apiOption.modelId === effectiveWorkload…apiComparisonModelId`; an alternate LLM reports that LLM + its trusted price; embedding/rerank ids fail closed. |
+| **P1-2** | "Complete validation" was piecemeal: `gpuPricingModel`/`traffic.method="bogus"` accepted; `peakFactor=-1`, `utilTarget=0`, `topK=-1/topN=-2` accepted; `gpuUptimeHoursPerMonth=-5` silently became 730. | Replaced the hand-picked checks with one authoritative boundary validator (`validate.ts`) run BEFORE candidate loading: all decision-relevant enums (`ragMode`, `refreshCadence`, `indexingAlgo`, `generation.mode`, `gpuPricingModel`, `traffic.method`, `managedKb.retrievalMode`), required nested objects, finite numbers, and domain constraints (`utilTarget∈(0,1]`, `peakFactor>0`, `topK≥1`, `topN≥0`, `gpuUptimeHoursPerMonth≥0`, …) following the calculator's own rules. Intentional `topN>topK` and `uptime>730` are still accepted (reconciled); malformed/non-finite/negative values fail closed. Reproductions added as public `recommend()` tests. |
+| **P2** | `apiComparisonModelId=""` failed as unknown, while the frozen calculator treats an unset comparison id as "use the selected LLM". | Empty/unset `apiComparisonModelId` is normalized to `llmModelId` in `resolveTrustedPrices` (and allowed by validation) — the documented compatible behavior; test asserts `apiOption.modelId === llmModelId`. |
+
+**After HOLD-3:** recommendation tests 77, full suite 301, tsc clean; engine + registry byte-identical to
+`4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.

@@ -18,13 +18,13 @@ import type {
 } from "./schema";
 import { loadCandidateCatalog } from "./candidate-catalog";
 import { loadPriceBook } from "./price-book";
+import { validateRecommendationRequest } from "./validate";
 import { buildRegistryRequest } from "./registry-request";
 import { reconcileConfidence } from "./reconcile";
 import { deriveDecision } from "./decision";
 import { rankSelfHost } from "./ranking";
 
 const UPTIME_CAP_HOURS = 730; // the engine caps GPU uptime at 730 h/mo (crossover HOURS_PER_MONTH)
-const OPTIMIZE_FOR = new Set<OptimizeFor>(["cost", "latency", "confidence", "predictability"]);
 
 // SLA-related engine infeasibility codes — these are NOT technical infeasibility (P1-1).
 const SLA_CODES = new Set(["ttft", "interactivity", "concurrency-below-min"]);
@@ -181,46 +181,18 @@ function toCard(kind: Card["kind"], e: CandidateEvaluation, bestCost: number | n
 const byId = (a: { config: CandidateConfig }, b: { config: CandidateConfig }) =>
   a.config.id < b.config.id ? -1 : a.config.id > b.config.id ? 1 : 0;
 
-const REFRESH_CADENCES = new Set(["one-time", "weekly", "monthly"]);
-const INDEXING_ALGOS = new Set(["hnsw", "ivf_pq", "ivf_fp16"]);
-const GEN_MODES = new Set(["api", "self-hosted"]);
-
-/** Fail-closed boundary validation of the COMPLETE public request (P1-3/HOLD-2 P1-4). Validates the
- *  request enums, nested workload enums, and model ids against the trusted price book BEFORE any
- *  candidate is loaded or evaluated. ragMode "B" (managed Bedrock KB) is explicitly UNSUPPORTED by the
- *  self-host recommendation sweep in Phase 1 (calculate() forces API mode for it), so it fails closed. */
-function validateRequest(req: RecommendationRequest, priceBook: PriceBook): void {
-  if (!req || typeof req !== "object") throw new Error("recommend: request object required");
-  if (!OPTIMIZE_FOR.has(req.optimizeFor)) throw new Error(`recommend: invalid optimizeFor "${String(req.optimizeFor)}"`);
-  if (req.experimentalProvenance != null && typeof req.experimentalProvenance !== "boolean") throw new Error("recommend: experimentalProvenance must be a boolean");
-  const w = req.workload;
-  if (!w || typeof w !== "object" || !w.generation || !w.corpus || !w.chunking || !w.retrieval || !w.vectorStore || !w.traffic) {
-    throw new Error("recommend: a complete workload (corpus/chunking/retrieval/vectorStore/generation/traffic) is required");
-  }
-  if (w.ragMode !== "A" && w.ragMode !== "B") throw new Error(`recommend: invalid ragMode "${String(w.ragMode)}"`);
-  if (w.ragMode === "B") throw new Error("recommend: ragMode 'B' (managed Bedrock KB) is not supported by the self-host recommendation sweep (Phase 1)");
-  if (!REFRESH_CADENCES.has(w.corpus.refreshCadence)) throw new Error(`recommend: invalid corpus.refreshCadence "${String(w.corpus.refreshCadence)}"`);
-  if (!INDEXING_ALGOS.has(w.vectorStore.indexingAlgo)) throw new Error(`recommend: invalid vectorStore.indexingAlgo "${String(w.vectorStore.indexingAlgo)}"`);
-  if (!GEN_MODES.has(w.generation.mode)) throw new Error(`recommend: invalid generation.mode "${String(w.generation.mode)}"`);
-  if (typeof w.generation.llmModelId !== "string" || !priceBook.models.some((m) => m.id === w.generation.llmModelId && m.kind === "llm")) {
-    throw new Error(`recommend: unknown llm model "${String(w.generation.llmModelId)}"`);
-  }
-  const compId = w.generation.apiComparisonModelId;
-  if (compId != null && !priceBook.models.some((m) => m.id === compId)) {
-    throw new Error(`recommend: unknown apiComparisonModelId "${String(compId)}"`);
-  }
-}
-
 /**
  * Patch the workload's model/API prices from the TRUSTED price book (HOLD-2 P1-2) so caller-supplied
  * raw price fields can never move the recommendation while provenance says fallback. The customer's model
  * CHOICE (llmModelId / apiComparisonModelId) is honored; only the PRICES are taken from the trusted book.
- * Preconditions (validated): both ids are known.
+ * An empty/unset `apiComparisonModelId` is normalized to `llmModelId` — the frozen calculator's "use the
+ * selected LLM" default (HOLD-3 P2). Preconditions (validated): ids are known LLM models.
  */
 function resolveTrustedPrices(workload: CalcInputs, priceBook: PriceBook): CalcInputs {
   const llm = priceBook.models.find((m) => m.id === workload.generation.llmModelId && m.kind === "llm")!;
-  const compId = workload.generation.apiComparisonModelId;
-  const comp = compId != null ? priceBook.models.find((m) => m.id === compId)! : llm;
+  const rawCompId = workload.generation.apiComparisonModelId;
+  const compId = rawCompId != null && rawCompId !== "" ? rawCompId : llm.id; // empty → selected LLM
+  const comp = priceBook.models.find((m) => m.id === compId && m.kind === "llm")!;
   return {
     ...workload,
     generation: {
@@ -267,7 +239,7 @@ function buildEffectiveWorkload(workload: CalcInputs): { effective: CalcInputs; 
  */
 export function recommend(req: RecommendationRequest): StructuredRecommendationResult {
   const priceBook = loadPriceBook();
-  validateRequest(req, priceBook);
+  validateRecommendationRequest(req, priceBook);
   // Patch model/API PRICES from the trusted price book (P1-2) — caller-supplied raw price fields can
   // never move the recommendation while provenance says fallback.
   const workload = resolveTrustedPrices(req.workload, priceBook);
@@ -296,8 +268,11 @@ export function recommend(req: RecommendationRequest): StructuredRecommendationR
   if (apiValues.size > 1) throw new Error("recommend: API cost diverges across exact-model candidates");
   const apiMonthly = evaluations.find((e) => e.cost.apiMonthly != null)?.cost.apiMonthly
     ?? (candidates.length === 0 ? apiMonthlyForWorkload(workload, priceBook) : null);
+  // HOLD-3 P1-1: apiOption identifies the COMPARED API model (not the self-host model). Both identities
+  // are structurally preserved — self-host model via `evaluations[].config` / `effectiveWorkload`, the
+  // compared API model here.
   const apiOption: ApiOption = {
-    modelId,
+    modelId: workload.generation.apiComparisonModelId,
     monthlyCost: apiMonthly,
     priceState: apiMonthly != null ? "priced" : "no-price",
     comparisonQualified: apiMonthly != null,
