@@ -10,18 +10,21 @@
 // distinct from technical infeasibility (P1-UI-2); friendly field-level validation with blur-commit
 // and last-valid-result preservation (P2-UI-1 / owner D6); "Evidence & assumptions" stays accessible
 // (collapsed) in Simple mode while rejected candidates remain Expert-only (owner D1).
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { defaultInputs } from "@/lib/calc-engine";
-import { recommend, narrate } from "@/lib/recommendation";
-import type { NarratedRecommendationResult } from "@/lib/recommendation";
+import { recommend, narrate, diffRecommendations } from "@/lib/recommendation";
+import type { NarratedRecommendationResult, RecommendationDiff, StructuredRecommendationResult } from "@/lib/recommendation";
 import type { CalcInputs, PriceBook } from "@/lib/types";
 import pricesJson from "@/public/prices.json";
 import { AdvisorInputs, type AdvisorState } from "@/components/advisor/AdvisorInputs";
 import { DecisionSummary } from "@/components/advisor/DecisionSummary";
 import { BestSelfHostCard } from "@/components/advisor/BestSelfHostCard";
+import { AlternativeCards } from "@/components/advisor/AlternativeCards";
 import { RejectedOptions } from "@/components/advisor/RejectedOptions";
 import { TrustPanel } from "@/components/advisor/TrustPanel";
 import { AdjustmentsPanel } from "@/components/advisor/AdjustmentsPanel";
+import { ChangesPanel } from "@/components/advisor/ChangesPanel";
+import { PresetBar } from "@/components/advisor/PresetBar";
 import { friendlyFieldErrors, type FieldError } from "@/components/advisor/copy";
 
 const priceBook = pricesJson as unknown as PriceBook;
@@ -65,7 +68,9 @@ function buildWorkload(s: AdvisorState): CalcInputs {
 }
 
 interface ComputeOutcome {
+  structured: StructuredRecommendationResult | null;
   result: NarratedRecommendationResult | null;
+  diff: RecommendationDiff | null;
   errorGeneric: string | null;
   fieldErrors: Record<string, FieldError>;
 }
@@ -73,12 +78,14 @@ interface ComputeOutcome {
 export default function AdvisorPage() {
   const [state, setState] = useState<AdvisorState>(DEFAULT_STATE);
   // P2-UI-1: the last VALID result stays on screen while the customer edits through an invalid state.
+  // Refs are READ inside the memo and COMMITTED in an effect (StrictMode-safe: the memo may run twice).
   const lastGood = useRef<NarratedRecommendationResult | null>(null);
+  const prevForDiff = useRef<StructuredRecommendationResult | null>(null);
 
-  // Deterministic: recommend() + narrate() are pure. Numeric inputs commit on blur (AdvisorInputs), so
-  // this recomputes per committed change, not per keystroke. Validation failures map to friendly
-  // field-level wording (never internal property paths) while the last valid result is preserved.
-  const { result, errorGeneric, fieldErrors } = useMemo<ComputeOutcome>(() => {
+  // Deterministic: recommend() + narrate() + diffRecommendations() are pure. Numeric inputs commit on
+  // blur (AdvisorInputs), so this recomputes per committed change, not per keystroke. Validation
+  // failures map to friendly field-level wording while the last valid result is preserved.
+  const outcome = useMemo<ComputeOutcome>(() => {
     try {
       const structured = recommend({
         workload: buildWorkload(state),
@@ -86,18 +93,29 @@ export default function AdvisorPage() {
         experimentalProvenance: state.experimental,
       });
       const narrated = narrate(structured);
-      lastGood.current = narrated;
-      return { result: narrated, errorGeneric: null, fieldErrors: {} };
+      // Reason-coded change tracking vs the previously COMMITTED valid result (approved change-diff).
+      const diff = prevForDiff.current ? diffRecommendations(prevForDiff.current, structured) : null;
+      return { structured, result: narrated, diff, errorGeneric: null, fieldErrors: {} };
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e);
       const friendly = friendlyFieldErrors(raw);
       return {
+        structured: null,
         result: lastGood.current, // preserve the last valid result while editing
+        diff: null,
         errorGeneric: friendly.generic,
         fieldErrors: Object.fromEntries(friendly.fields.map((f) => [f.inputId, f])),
       };
     }
   }, [state]);
+  const { result, diff, errorGeneric, fieldErrors } = outcome;
+
+  useEffect(() => {
+    if (outcome.structured && outcome.result) {
+      prevForDiff.current = outcome.structured;
+      lastGood.current = outcome.result;
+    }
+  }, [outcome]);
 
   const model = priceBook.models.find((m) => m.id === state.modelId);
   const selfHostAvailable = !!model && model.kind === "llm" && model.selfHostable === true;
@@ -129,15 +147,18 @@ export default function AdvisorPage() {
       </header>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[280px_1fr]">
-        <aside aria-label="Inputs" className="rounded-lg border border-slate-200 bg-white p-4">
-          <AdvisorInputs
-            state={state}
-            defaults={DEFAULT_STATE}
-            models={priceBook.models}
-            selfHostAvailable={selfHostAvailable}
-            fieldErrors={fieldErrors}
-            onChange={setState}
-          />
+        <aside aria-label="Inputs" className="space-y-3">
+          <PresetBar state={state} defaults={DEFAULT_STATE} onChange={setState} />
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <AdvisorInputs
+              state={state}
+              defaults={DEFAULT_STATE}
+              models={priceBook.models}
+              selfHostAvailable={selfHostAvailable}
+              fieldErrors={fieldErrors}
+              onChange={setState}
+            />
+          </div>
         </aside>
 
         <div className="min-w-0 space-y-4">
@@ -151,8 +172,10 @@ export default function AdvisorPage() {
           {result && (
             <>
               <DecisionSummary result={result} />
+              <ChangesPanel diff={diff} />
               <AdjustmentsPanel result={result} />
               <BestSelfHostCard result={result} />
+              <AlternativeCards result={result} />
               {/* Owner D1: evidence & assumptions stay ACCESSIBLE (collapsed) in Simple mode;
                   rejected candidates remain Expert-only. */}
               {state.mode === "expert" && <RejectedOptions result={result} />}

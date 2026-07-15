@@ -100,3 +100,66 @@ pinned benchmark artifacts; the browser shim must not become the permanent trust
 - Live pricing wiring with explicit source/state (owner D5).
 - P2-ARCH-1: build-time/server-side pinned-artifact verification (browser shim must not become the
   permanent trust boundary).
+
+---
+
+# Iteration 2 — presets · change tracking · alternatives (`ux/v2-ui-2`)
+
+**Branch:** `ux/v2-ui-2` (child of the immutable approved `ux/v2-ui @ f02b51f`; headless baseline
+`ux/v2-phase1 @ 39a8a1a` unchanged). New files only: `presets.ts`, `PresetBar.tsx`, `ChangesPanel.tsx`,
+`AlternativeCards.tsx`, `advisor2.test.tsx` (+ page wiring). Frozen surfaces byte-identical; the
+calculator at `/`, main and workflows untouched; no merge/deploy.
+
+## What this iteration adds (Phase-0 journey pieces)
+
+1. **Response-experience presets (07-presets.md, family A / Stage C).** Four declarative INPUT bundles
+   (Conversational · Interactive RAG · Analyst/research · Batch) seeding `ttftTargetMs` +
+   `interactivityTarget` only — a preset never hardcodes an output. Full documented contract: preview of
+   exactly which fields change (old → new, "no change" greyed), conflicts with SA-edited fields default
+   to KEEP, explicit "Apply all", single Undo restoring the exact pre-apply state (+ "Reverted …" toast),
+   active chip "Preset (n fields kept)". Family B (operational profiles) is deferred — it needs
+   utilization/N+1/purchasing in the journey state (**UI2-D2**).
+2. **"What changed" panel.** On every committed input change, the APPROVED structured
+   `diffRecommendations(previousResult, nextResult)` renders reason-coded rows verbatim
+   (`code · field · before → after`); object values defer to the structured audit rather than being
+   summarized in invented language. StrictMode-safe (refs committed in effects). Live example: applying
+   Conversational (1 s TTFT) honestly flips the decision to `api (evidence-gap)` — B200 misses the SLA —
+   and the panel reports `decision-changed api (lower-cost) → api (evidence-gap)` plus the
+   gate/fleet/cost rows.
+3. **Alternatives cards (06 cards 2–3).** Renders `alternatives[]` (lowest-cost / highest-confidence /
+   lowest-latency) with config, chip, cost + Δ-vs-best, trade-off — only when the headless layer produced
+   a DISTINCT candidate. With today's pinned catalog this is an HONEST "none — single distinct
+   configuration" note (the R1 worked example); populated rendering is covered by structured-fixture
+   tests.
+
+## Value → source (new elements)
+
+| UI element | Source |
+|---|---|
+| Preset preview rows | pure input comparison `computePreview(current, defaults, bundle)` — never an engine re-run |
+| Active chip / kept count | `applyPreset` result (fields kept = conflicts resolved to the SA's value) |
+| What-changed rows | `diffRecommendations(prev, next).changes[]` verbatim (`code`, `field`, `candidateId`, `before → after`) |
+| Alternative cards | `alternatives[].{kind, config.label, confidence, costMonthly, costDeltaVsBest, tradeoff}` |
+
+## Tests & verification
+
+- `advisor2.test.tsx` (11): preview/no-change/conflict semantics; conflicts KEPT by default; explicit
+  opt-in uses the preset value; undo snapshot exactness; presets-set-inputs-not-outputs (engine still
+  derives the fleet); ChangesPanel renders R1→R5 `fleet 87 → 4` + cost rows and control→experimental
+  decision/evidence rows verbatim, empty for identical/no diff; alternatives honest-empty at R1,
+  structured-fixture card rendering, hidden without a primary.
+- Totals: **385/385** (374 approved baselines + 11), `tsc --noEmit` clean, **375px mobile acceptance
+  PASS** (multi-adjustment state re-verified).
+- Live clean-browser probe (headless Chrome, fresh profile): preview → apply → active chip →
+  what-changed (23 reason-coded rows) → undo toast, **zero console errors**.
+- Dev-server hygiene note: two occurrences of a corrupted `.next` dev cache (core chunks 404 → no
+  hydration) were fixed with `rm -rf .next` + restart; not a code defect (clean-profile probes pass).
+
+## Open items for owner/UX review
+
+- **UI2-D1** Preset bundle VALUES (1000/50 · 2000/30 · 5000/15 · 30000/5) are proposed planning inputs
+  mapped from the doc's qualitative rows — confirm or adjust.
+- **UI2-D2** Family B operational profiles (utilization/N+1/uptime/purchasing) need those fields in the
+  journey state — next iteration candidate.
+- **UI2-D3** What-changed verbosity: the full reason-coded list can be long (23 rows on an SLA flip);
+  consider grouping by candidate or a "top changes" summary in a later pass.
