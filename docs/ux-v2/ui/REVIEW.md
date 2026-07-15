@@ -163,3 +163,17 @@ calculator at `/`, main and workflows untouched; no merge/deploy.
   journey state — next iteration candidate.
 - **UI2-D3** What-changed verbosity: the full reason-coded list can be long (23 rows on an SLA flip);
   consider grouping by candidate or a "top changes" summary in a later pass.
+
+## Iteration-2 HOLD remediation (revision 2 of this iteration)
+
+| Finding | Fix |
+|---|---|
+| **P1-UI2-1** preset provenance inferred from values | EXPLICIT per-field origin (`default \| manual \| preset:<id>`) is stored with state (`presets.ts` pure transitions; page owns `PresetProvenance`). Conflicts arise ONLY from `manual` origin — fields written by a previous preset switch normally (repro A: Strict-conversational → Analyst previews ZERO conflicts and applies without opt-ins, live-verified). A manual edit after apply flips the chip to "Modified from <preset>" and INVALIDATES Undo (repro B: live-verified — Undo control removed); safe Undo restores the exact pre-apply state AND origins. Acceptance tests: preset→preset switching, manual-conflict-only, preset→manual chip/undo invalidation, safe-undo exactness. |
+| **P1-UI2-2** Batch not representable by the interactive SLA contract | **Batch removed** from the bundle set (owner position) — to return only with a structured non-interactive/throughput objective, never by loosening interactive SLA values. Conversational retained as **"Strict conversational target"**, described as an aggressive CUSTOMER TARGET, not a universal recommendation. Interactive RAG + Analyst retained per owner. Test pins the exact bundle set + wording. |
+| **P2-UI2-1** inaccurate preview/action wording | Dynamic header: "«Preset» proposes N difference(s): X selected to change, Y kept." (live: "proposes 2 differences: 2 selected to change, 0 kept"). Actions: **"Apply selected changes"** (honors per-field choices) + a distinct **"Use all preset values"** override shown only when conflicts exist. `previewCounts` unit-tested for kept/selected splits. |
+| **P2-UI2-2** 23-row change list needs a customer summary | `change-summary.ts`: a compact (≤6 item) impact summary derived DETERMINISTICALLY from decision/gate/rejection/confidence/fleet/cost change codes, with the complete reason-coded audit under a collapsed "View all N technical changes". Canonical strict-conversational case (live + test): decision `api (lower-cost) → api (evidence-gap) — no SLA-compatible configuration has qualifying evidence`; both measured B200 configs `now fail the selected SLA (rejection: sla-unmet-ttft-or-streaming)`; `Best self-host option removed`; material fleet/cost rows (best-self-host candidate prioritized so the cap never truncates the decision-relevant facts). |
+
+Live clean-browser probe after remediation: apply → accurate header → chip+Undo → summary+audit →
+preset→preset (0 conflicts) → manual edit → "Modified from …" + Undo removed. Zero console errors.
+Totals: **385/385**, tsc clean, 375px mobile acceptance PASS. (Dev note: `.next` cache corruption
+recurred once more under HMR churn; `rm -rf .next` + restart resolves it — clean-profile probes green.)

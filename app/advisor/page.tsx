@@ -25,6 +25,7 @@ import { TrustPanel } from "@/components/advisor/TrustPanel";
 import { AdjustmentsPanel } from "@/components/advisor/AdjustmentsPanel";
 import { ChangesPanel } from "@/components/advisor/ChangesPanel";
 import { PresetBar } from "@/components/advisor/PresetBar";
+import { changedPresetFields, initialProvenance, registerManualEdit, type PresetProvenance } from "@/components/advisor/presets";
 import { friendlyFieldErrors, type FieldError } from "@/components/advisor/copy";
 
 const priceBook = pricesJson as unknown as PriceBook;
@@ -77,6 +78,15 @@ interface ComputeOutcome {
 
 export default function AdvisorPage() {
   const [state, setState] = useState<AdvisorState>(DEFAULT_STATE);
+  // P1-UI2-1: explicit per-field preset provenance (default | manual | preset:<id>) stored WITH state.
+  const [presetProv, setPresetProv] = useState<PresetProvenance>(initialProvenance());
+
+  // Committed input changes from the form: any change to a preset-managed field is a MANUAL edit —
+  // origins flip to manual, an active chip becomes "Modified from …", and Undo is invalidated.
+  const handleInputsChange = (next: AdvisorState) => {
+    setPresetProv((prov) => registerManualEdit(prov, changedPresetFields(state, next)));
+    setState(next);
+  };
   // P2-UI-1: the last VALID result stays on screen while the customer edits through an invalid state.
   // Refs are READ inside the memo and COMMITTED in an effect (StrictMode-safe: the memo may run twice).
   const lastGood = useRef<NarratedRecommendationResult | null>(null);
@@ -148,7 +158,12 @@ export default function AdvisorPage() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[280px_1fr]">
         <aside aria-label="Inputs" className="space-y-3">
-          <PresetBar state={state} defaults={DEFAULT_STATE} onChange={setState} />
+          <PresetBar
+            state={state}
+            provenance={presetProv}
+            onApply={(next, prov) => { setState(next); setPresetProv(prov); }}
+            onUndo={(restored, prov) => { setState(restored); setPresetProv(prov); }}
+          />
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             <AdvisorInputs
               state={state}
@@ -156,7 +171,7 @@ export default function AdvisorPage() {
               models={priceBook.models}
               selfHostAvailable={selfHostAvailable}
               fieldErrors={fieldErrors}
-              onChange={setState}
+              onChange={handleInputsChange}
             />
           </div>
         </aside>
