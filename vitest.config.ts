@@ -9,7 +9,7 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } },
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts", "components/**/*.test.{ts,tsx}"],
+    include: ["lib/**/*.test.ts", "components/**/*.test.{ts,tsx}", "scripts/**/*.test.ts"],
     coverage: {
       provider: "v8",
       include: ["lib/calc-engine.ts", "lib/crossover.ts"],

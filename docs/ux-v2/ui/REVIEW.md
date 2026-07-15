@@ -575,3 +575,40 @@ suspended-selection and multi-alternative paths cannot be reached through UI cli
 single-eligible pinned catalog, so they are covered by the fixture-based acceptance tests above (the
 same real-demotion + synthetic-fixture pattern the iteration-6 review exercised). Isolation unchanged
 (headless `faa9af7`; all frozen pins intact; no merge/deploy/CI; `.claude/` excluded).
+
+---
+
+# Iteration 7 — P2-ARCH-1 build-time artifact verification + merge-readiness dossier
+
+**Branch:** `ux/v2-ui-7` (from the IMMUTABLE approved iteration-6 baseline `ux/v2-ui-6 @ 6ab53fa`;
+headless unchanged at the approved `faa9af7`). Scope: the last recorded technical item that needs no
+new authorization — **P2-ARCH-1**, recorded at the first UI review ("Phase-2 should move
+pinned-artifact verification to build-time/server-side so the browser shim never becomes the permanent
+trust boundary") — plus consolidation for the separately-authorized merge review. No UI, headless,
+registry or engine changes.
+
+## 1. P2-ARCH-1 — the build fails closed on unverified artifacts
+`scripts/verify-artifacts.ts` runs in Node via new `prebuild` AND `prebuild:static` hooks, BEFORE any
+build output exists: it loads the pinned catalog through the registry's PUBLIC index (no new surface),
+where `node:crypto` is the real platform implementation, so every raw-snapshot checksum is verified
+against `MANIFEST.json` fail-closed — any tamper/mismatch throws → non-zero exit → the build never
+emits a byte. The exported `verifyPinnedArtifacts()` core additionally rejects an empty catalog. The
+client-side sha256 shim (byte-parity-tested, incl. the real manifest checksums) REMAINS as runtime
+defense-in-depth; it is no longer the only verification point. Acceptance tests: the real pinned
+catalog verifies with the real record count; a checksum failure or empty catalog throws (never a
+warning); the actual CLI exits 0 with the verified-count line; BOTH build entrypoints are wired
+(package.json asserted). The build:static gate log shows the verification executing before Next.
+
+## 2. Merge-readiness dossier
+`docs/ux-v2/MERGE-READINESS.md`: the complete approved-baseline table (every immutable pin with its
+verdict scope), the current verification matrix, the P2-ARCH-1 trust-boundary record, what a merge
+would and would NOT ship (owner-accepted deferrals UI6-D1 / D3 / D5 / D7), and the merge preconditions
+for the authorizing reviewer. The dossier explicitly does NOT authorize a merge — main stays frozen at
+`d749309` and both workflows remain main-only and untriggered.
+
+## Verification
+**489/489** tests (4 new in `scripts/verify-artifacts.test.ts`; vitest include extended to
+`scripts/**/*.test.ts`), `tsc --noEmit` clean, `build:static` clean WITH the new verification gate
+visible in the build log, **375px mobile acceptance PASS** (UI byte-unchanged this iteration).
+Isolation: frozen surfaces untouched; no merge/deploy/CI; `.claude/` excluded. Long-stale tracker item
+#18 (boundary-guard extension + QA handoff — delivered during Phase 1) closed with a note.
