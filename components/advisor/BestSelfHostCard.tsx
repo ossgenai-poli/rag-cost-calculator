@@ -6,23 +6,23 @@
 // this renders the coverage explanation and NEVER promotes a GPU configuration.
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
 import { ConfidenceChip } from "./ConfidenceChip";
-import type { SelfHostAvailability } from "./DecisionSummary";
 
 function usd(v: number | null): string {
   if (v == null || !Number.isFinite(v)) return "unavailable";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 }
 
-export function BestSelfHostCard({ result, availability }: { result: NarratedRecommendationResult; availability: SelfHostAvailability }) {
+export function BestSelfHostCard({ result }: { result: NarratedRecommendationResult }) {
   const card = result.bestSelfHost;
   if (!card) {
-    // Honest empty state — sourced from decision.basis + availability; no GPU shown. Weights/rights
-    // availability is a DISTINCT state, never "technical infeasibility" (P1-UI-2 / owner D4).
+    // Honest empty state — keyed off the STRUCTURED decision.basis; no GPU shown. Availability
+    // (`self-host-unavailable`, a reason-coded catalog fact — P1-UI-4) is a DISTINCT state from
+    // technical infeasibility.
     return (
       <section aria-labelledby="bsh-heading" data-testid="best-self-host-empty" className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
         <h2 id="bsh-heading" className="text-base font-semibold text-slate-700">Self-host option</h2>
         <p className="mt-1 text-sm text-slate-600" data-testid="bsh-empty-reason">
-          {availability === "api-only"
+          {result.decision.basis === "self-host-unavailable"
             ? "This model is API-only; self-host weights are unavailable. Select an open-weight model to evaluate self-hosting."
             : result.decision.basis === "no-modeled-candidate"
               ? "No self-host configuration is currently modeled for this model — a catalog-coverage gap, not a technical limitation."

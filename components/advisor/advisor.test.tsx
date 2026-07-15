@@ -43,21 +43,21 @@ const baseState: AdvisorState = {
 describe("advisor — bounded decision-first hierarchy (R1 real reference output)", () => {
   const r1 = run();
   it("hero is a BOUNDED conclusion with the basis chip OUTSIDE the heading", () => {
-    const html = renderToStaticMarkup(<DecisionSummary result={r1} availability="available" />);
+    const html = renderToStaticMarkup(<DecisionSummary result={r1} />);
     expect(html).toContain("Lowest modeled cost: API"); // bounded, not "Use the API"
     expect(html).toMatch(/<h2[^>]*id="decision-heading"[^>]*>Lowest modeled cost: API<\/h2>/); // clean accessible name (P2-UI-2)
     expect(html).toContain("basis: lower-cost");
     expect(html).toContain("Recommendation: use the Claude Fable 5 (Bedrock) API"); // narrate() verbatim
   });
   it("cross-model disclosure is prominent when the compared models differ", () => {
-    const html = renderToStaticMarkup(<DecisionSummary result={r1} availability="available" />);
+    const html = renderToStaticMarkup(<DecisionSummary result={r1} />);
     expect(html).toContain("Different models are being compared; capability and quality are not normalized.");
     // same-model comparison carries no disclosure
     const same = run((w) => { w.generation.apiComparisonModelId = "deepseek-v4-pro-oss"; });
-    expect(renderToStaticMarkup(<DecisionSummary result={same} availability="available" />)).not.toContain("capability and quality are not normalized");
+    expect(renderToStaticMarkup(<DecisionSummary result={same} />)).not.toContain("capability and quality are not normalized");
   });
   it("costs, modeled difference and assumptions are immediately visible (structured values)", () => {
-    const html = renderToStaticMarkup(<DecisionSummary result={r1} availability="available" />);
+    const html = renderToStaticMarkup(<DecisionSummary result={r1} />);
     expect(html).toContain("$6,492,000/mo"); // apiOption.monthlyCost (R1)
     expect(html).toContain("$7,176,630/mo"); // bestSelfHost.costMonthly (R1)
     expect(html).toContain("+$684,630/mo (11% vs API)"); // labeled presentation arithmetic over the two amounts
@@ -68,7 +68,7 @@ describe("advisor — bounded decision-first hierarchy (R1 real reference output
     expect(html).not.toContain("p6-b200 · INT4"); // no GPU in the decision block
   });
   it("BestSelfHostCard: annotation outside the heading; chip + verbatim fleet equation", () => {
-    const html = renderToStaticMarkup(<BestSelfHostCard result={r1} availability="available" />);
+    const html = renderToStaticMarkup(<BestSelfHostCard result={r1} />);
     expect(html).toMatch(/<h2[^>]*id="bsh-heading"[^>]*>Best self-host option<\/h2>/); // clean name (P2-UI-2)
     expect(html).toContain("secondary — the decision above is the recommendation");
     expect(html).toContain("p6-b200 · INT4");
@@ -79,25 +79,36 @@ describe("advisor — bounded decision-first hierarchy (R1 real reference output
   });
 });
 
-describe("advisor — availability vs infeasibility (P1-UI-2) and honest empty states", () => {
-  it("API-only model → availability wording, never 'technically feasible/infeasible'", () => {
+describe("advisor — availability vs infeasibility (P1-UI-4) and honest empty states", () => {
+  it("API-only model → reason-coded availability basis + narrated wording; NEVER 'technically (in)feasible' anywhere", () => {
     const r = run((w) => { w.generation.llmModelId = "claude-opus-4-8"; });
-    expect(r.decision.basis).toBe("self-host-infeasible"); // headless contract unchanged
-    const card = renderToStaticMarkup(<BestSelfHostCard result={r} availability="api-only" />);
+    expect(r.decision).toMatchObject({ choice: "api", basis: "self-host-unavailable", availability: { reason: "api-only" } });
+    const card = renderToStaticMarkup(<BestSelfHostCard result={r} />);
     expect(card).toContain("This model is API-only; self-host weights are unavailable.");
     expect(card).toContain("Select an open-weight model to evaluate self-hosting.");
-    expect(card).not.toMatch(/technically feasible/i);
-    const hero = renderToStaticMarkup(<DecisionSummary result={r} availability="api-only" />);
+    const hero = renderToStaticMarkup(<DecisionSummary result={r} />);
     expect(hero).toContain("API — this model is API-only (self-host unavailable)");
     expect(hero).toContain("unavailable (API-only model)");
-    expect(hero).toContain("Availability: this model is API-only"); // clarification precedes the frozen rationale wording
+    // the narrated rationale now carries the availability semantics natively (P1-UI-4)
+    expect(hero).toContain("This model is available through the API only; self-host weights are not available, so no self-host cost comparison was performed.");
+    // the page never shows contradictory feasibility language in this state — ANY surface
+    const all = hero + card + renderToStaticMarkup(<TrustPanel result={r} />) + renderToStaticMarkup(<RejectedOptions result={r} />);
+    expect(all).not.toMatch(/technically\s+(in)?feasible/i);
+  });
+  it("genuine infeasibility keeps its own wording (states not conflated in the UI)", () => {
+    const r = run(); // self-hostable model; shape the basis to the technical state
+    const shaped = { ...r, bestSelfHost: null, decision: { ...r.decision, choice: "api" as const, basis: "self-host-infeasible" as const } };
+    const card = renderToStaticMarkup(<BestSelfHostCard result={shaped} />);
+    expect(card).toContain("No modeled self-host configuration is technically feasible for this workload.");
+    expect(card).not.toContain("API-only");
+    expect(renderToStaticMarkup(<DecisionSummary result={shaped} />)).toContain("API — no modeled self-host configuration is technically feasible");
   });
   it("experimental R1 (unbenchmarked) → empty state, no GPU, evidence visible", () => {
     const r = run(undefined, "cost", true);
-    const html = renderToStaticMarkup(<BestSelfHostCard result={r} availability="available" />);
+    const html = renderToStaticMarkup(<BestSelfHostCard result={r} />);
     expect(html).toContain("No self-host configuration has qualifying benchmark evidence");
     expect(html).not.toContain("p6-b200 · INT4");
-    const hero = renderToStaticMarkup(<DecisionSummary result={r} availability="available" />);
+    const hero = renderToStaticMarkup(<DecisionSummary result={r} />);
     expect(hero).toContain("API — no evidence-qualified self-host option");
     const trust = renderToStaticMarkup(<TrustPanel result={r} />);
     expect(trust).toContain('data-confidence="unbenchmarked"');
@@ -106,9 +117,9 @@ describe("advisor — availability vs infeasibility (P1-UI-2) and honest empty s
   });
   it("no-modeled-candidate (minimax) → coverage-gap wording", () => {
     const r = run((w) => { w.generation.llmModelId = "minimax-m3-oss"; });
-    const html = renderToStaticMarkup(<BestSelfHostCard result={r} availability="available" />);
+    const html = renderToStaticMarkup(<BestSelfHostCard result={r} />);
     expect(html).toContain("catalog-coverage gap");
-    expect(renderToStaticMarkup(<DecisionSummary result={r} availability="available" />)).toContain("API — no modeled self-host configuration yet");
+    expect(renderToStaticMarkup(<DecisionSummary result={r} />)).toContain("API — no modeled self-host configuration yet");
   });
   it("low-TTFT: B200 rejected on sla-unmet; SLA empty-state wording via basis branch", () => {
     const r = run((w) => { w.generation.ttftTargetMs = 100; });
@@ -116,8 +127,8 @@ describe("advisor — availability vs infeasibility (P1-UI-2) and honest empty s
     const b200 = r.rejected.find((x) => x.config.id === "deepseek-v4-pro-oss·p6-b200.48xlarge·w4kv16")!;
     expect(b200.code).toBe("sla-unmet-ttft-or-streaming");
     const slaShaped = { ...r, decision: { ...r.decision, basis: "sla" as const } };
-    expect(renderToStaticMarkup(<BestSelfHostCard result={slaShaped} availability="available" />)).toContain("cannot meet the interactivity / TTFT SLA");
-    expect(renderToStaticMarkup(<DecisionSummary result={slaShaped} availability="available" />)).toContain("API — modeled self-host misses the latency SLA");
+    expect(renderToStaticMarkup(<BestSelfHostCard result={slaShaped} />)).toContain("cannot meet the interactivity / TTFT SLA");
+    expect(renderToStaticMarkup(<DecisionSummary result={slaShaped} />)).toContain("API — modeled self-host misses the latency SLA");
   });
 });
 
@@ -212,19 +223,19 @@ describe("advisor — page, accessibility, determinism, honesty", () => {
   });
   it("rendering is deterministic (byte-identical for identical structured input)", () => {
     const r = run();
-    expect(renderToStaticMarkup(<DecisionSummary result={r} availability="available" />)).toBe(renderToStaticMarkup(<DecisionSummary result={r} availability="available" />));
+    expect(renderToStaticMarkup(<DecisionSummary result={r} />)).toBe(renderToStaticMarkup(<DecisionSummary result={r} />));
     expect(renderToStaticMarkup(<TrustPanel result={r} />)).toBe(renderToStaticMarkup(<TrustPanel result={r} />));
   });
   it("no NaN/undefined and no unsupported percentile/Measured claims in any rendered surface", () => {
-    for (const [r, avail] of [
-      [run(), "available"],
-      [run(undefined, "cost", true), "available"],
-      [run((w) => { w.generation.llmModelId = "minimax-m3-oss"; }), "available"],
-      [run((w) => { w.generation.llmModelId = "claude-opus-4-8"; }), "api-only"],
-    ] as const) {
+    for (const r of [
+      run(),
+      run(undefined, "cost", true),
+      run((w) => { w.generation.llmModelId = "minimax-m3-oss"; }),
+      run((w) => { w.generation.llmModelId = "claude-opus-4-8"; }),
+    ]) {
       const html =
-        renderToStaticMarkup(<DecisionSummary result={r} availability={avail} />) +
-        renderToStaticMarkup(<BestSelfHostCard result={r} availability={avail} />) +
+        renderToStaticMarkup(<DecisionSummary result={r} />) +
+        renderToStaticMarkup(<BestSelfHostCard result={r} />) +
         renderToStaticMarkup(<RejectedOptions result={r} />) +
         renderToStaticMarkup(<TrustPanel result={r} />) +
         renderToStaticMarkup(<AdjustmentsPanel result={r} />);

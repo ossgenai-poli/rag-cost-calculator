@@ -10,26 +10,24 @@
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
 import { ConfidenceChip } from "./ConfidenceChip";
 
-export type SelfHostAvailability = "available" | "api-only";
-
 function usd(v: number | null): string {
   if (v == null || !Number.isFinite(v)) return "unavailable";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 }
 const num = (v: number) => new Intl.NumberFormat("en-US").format(v);
 
-/** Bounded hero per decision.basis (+ availability for the API-only state — P1-UI-2). */
-function hero(result: NarratedRecommendationResult, availability: SelfHostAvailability): string {
+/** Bounded hero per decision.basis. Availability is now a FIRST-CLASS headless basis (P1-UI-4):
+ *  `self-host-unavailable` (reason-coded, catalog fact) is distinct from `self-host-infeasible`
+ *  (genuine technical failure) — the UI simply maps the structured basis. */
+function hero(result: NarratedRecommendationResult): string {
   const { choice, basis } = result.decision;
   if (basis === "lower-cost") return choice === "api" ? "Lowest modeled cost: API" : "Lowest modeled cost: Self-host";
   if (basis === "comparison-unavailable") return "Directional cost result: undetermined";
   if (basis === "evidence-gap") return "API — no evidence-qualified self-host option";
   if (basis === "no-modeled-candidate") return "API — no modeled self-host configuration yet";
   if (basis === "sla") return "API — modeled self-host misses the latency SLA";
-  // self-host-infeasible: availability (weights/rights) is NOT technical infeasibility (P1-UI-2).
-  return availability === "api-only"
-    ? "API — this model is API-only (self-host unavailable)"
-    : "API — no modeled self-host configuration is technically feasible";
+  if (basis === "self-host-unavailable") return "API — this model is API-only (self-host unavailable)";
+  return "API — no modeled self-host configuration is technically feasible";
 }
 
 const CHOICE_STYLE: Record<string, string> = {
@@ -38,7 +36,7 @@ const CHOICE_STYLE: Record<string, string> = {
   undetermined: "border-amber-400 bg-amber-50",
 };
 
-export function DecisionSummary({ result, availability }: { result: NarratedRecommendationResult; availability: SelfHostAvailability }) {
+export function DecisionSummary({ result }: { result: NarratedRecommendationResult }) {
   const { decision, apiOption, bestSelfHost, effectiveWorkload: w } = result;
   const apiCost = apiOption.monthlyCost;
   const selfCost = bestSelfHost?.costMonthly ?? null;
@@ -52,7 +50,7 @@ export function DecisionSummary({ result, availability }: { result: NarratedReco
     <section aria-labelledby="decision-heading" data-testid="decision-summary" className={`rounded-lg border-2 p-4 ${CHOICE_STYLE[decision.choice]}`}>
       {/* Level 1 — bounded conclusion. Basis chip is a SIBLING of the heading (clean accessible name). */}
       <div className="flex flex-wrap items-center gap-2">
-        <h2 id="decision-heading" className="text-lg font-semibold text-slate-900">{hero(result, availability)}</h2>
+        <h2 id="decision-heading" className="text-lg font-semibold text-slate-900">{hero(result)}</h2>
         <span className="rounded bg-white/70 border border-slate-300 px-2 py-0.5 text-xs text-slate-600" data-testid="decision-basis" aria-label={`Decision basis: ${decision.basis}`}>
           basis: {decision.basis}
         </span>
@@ -65,16 +63,8 @@ export function DecisionSummary({ result, availability }: { result: NarratedReco
         </p>
       )}
 
-      {/* P1-UI-2 — availability clarification (price-book fact): weights/rights availability is NOT
-          GPU technical infeasibility. The narrated text below is the frozen calculation-layer wording;
-          an availability-aware basis in the headless layer is a Phase-2 item (REVIEW.md). */}
-      {availability === "api-only" && (
-        <p className="mt-2 text-sm font-medium text-slate-700" data-testid="availability-note">
-          Availability: this model is API-only — self-host weights are unavailable, so there is no self-host configuration to model.
-        </p>
-      )}
-
-      {/* Level 2 — the deterministic why (narrate() rationale, verbatim). */}
+      {/* Level 2 — the deterministic why (narrate() rationale, verbatim; the headless layer now
+          carries availability semantics natively — P1-UI-4 — so no UI clarification is needed). */}
       <p className="mt-2 text-sm text-slate-800" data-testid="decision-rationale">{decision.rationale}</p>
 
       {/* Level 3 — costs, modeled difference and evidence state, immediately visible. */}
@@ -86,7 +76,7 @@ export function DecisionSummary({ result, availability }: { result: NarratedReco
         <div className="rounded border border-slate-200 bg-white p-2">
           <dt className="text-xs uppercase tracking-wide text-slate-500">Best self-host — {result.selfHostModelLabel}</dt>
           <dd className="text-base font-semibold text-slate-900" data-testid="selfhost-monthly">
-            {bestSelfHost ? `${usd(selfCost)}/mo` : availability === "api-only" ? "unavailable (API-only model)" : "none evidence-qualified"}
+            {bestSelfHost ? `${usd(selfCost)}/mo` : decision.basis === "self-host-unavailable" ? "unavailable (API-only model)" : "none evidence-qualified"}
           </dd>
         </div>
         <div className="rounded border border-slate-200 bg-white p-2">

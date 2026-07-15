@@ -101,7 +101,6 @@ export default function AdvisorPage() {
 
   const model = priceBook.models.find((m) => m.id === state.modelId);
   const selfHostAvailable = !!model && model.kind === "llm" && model.selfHostable === true;
-  const availability = selfHostAvailable ? ("available" as const) : ("api-only" as const);
 
   // Self-contained light surface: the calculator globals are dark-themed; the advisor slice pins its
   // own scheme so the Phase-0 light-mode wireframe rendering holds (owner D7: shared tokens later).
@@ -144,15 +143,16 @@ export default function AdvisorPage() {
         <div className="min-w-0 space-y-4">
           {errorGeneric && (
             <div role="alert" data-testid="input-error" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-              {errorGeneric}
-              {result && <span className="ml-1 text-red-600">Showing the last valid result below.</span>}
+              {/* P3-A11Y: distinct blocks so accessible text never concatenates sentences. */}
+              <p>{errorGeneric}</p>
+              {result && <p className="mt-1 text-red-600">Showing the last valid result below.</p>}
             </div>
           )}
           {result && (
             <>
-              <DecisionSummary result={result} availability={availability} />
+              <DecisionSummary result={result} />
               <AdjustmentsPanel result={result} />
-              <BestSelfHostCard result={result} availability={availability} />
+              <BestSelfHostCard result={result} />
               {/* Owner D1: evidence & assumptions stay ACCESSIBLE (collapsed) in Simple mode;
                   rejected candidates remain Expert-only. */}
               {state.mode === "expert" && <RejectedOptions result={result} />}
