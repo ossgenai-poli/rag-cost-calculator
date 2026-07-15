@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "prebuild": "npm run verify-artifacts",
+    "prebuild:static": "npm run verify-artifacts",
+    "verify-artifacts": "tsx scripts/verify-artifacts.ts",
     "build:static": "cross-env STATIC_EXPORT=true next build",
     "start": "next start",
     "lint": "next lint",

@@ -1,0 +1,40 @@
+{
+  "_snapshot": {
+    "kind": "verified",
+    "source": "InferenceX",
+    "sourceUrl": "https://github.com/SemiAnalysisAI/InferenceX",
+    "pinnedRunId": "27434759052",
+    "pinnedRunUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27434759052",
+    "recipeCommit": "45126b036efafc9d7ecee0f242ebab9790ba887c",
+    "retrievedAt": "2026-07-14",
+    "license": "Apache-2.0",
+    "attribution": "SemiAnalysis InferenceX",
+    "note": "Verified real snapshot pulled from the InferenceX benchmark DB (latest_benchmarks joined to configs/workflow_runs). Pinned to an immutable run+commit, not a Release."
+  },
+  "config": {
+    "model": "dsv4",
+    "checkpoint": "DeepSeek-V4-Pro",
+    "hardware": "b200",
+    "gpu_mem_gb": 192,
+    "form_factor": "SXM",
+    "precision": "fp4",
+    "kv_precision": "fp8",
+    "framework": "trt",
+    "framework_version": "trtllm",
+    "image": "ghcr.io/semianalysisai/trtllm-deepseek-v4:feat-deepseek_v4-c185066",
+    "spec_method": "none",
+    "disagg": false,
+    "num_prefill_gpu": 8,
+    "num_decode_gpu": 8,
+    "tp": 8, "pp": 1, "ep": 1, "dp": 1,
+    "is_multinode": false,
+    "interconnect": "NVLink (single node)",
+    "date": "2026-06-12"
+  },
+  "points": [
+    { "isl": 1024, "osl": 1024, "conc": 4,  "metrics": { "median_intvty": 85.2, "output_tput_per_gpu": 38.2,  "input_tput_per_gpu": 38.6,  "p99_ttft": 4.52, "median_ttft": 0.226 } },
+    { "isl": 1024, "osl": 1024, "conc": 8,  "metrics": { "median_intvty": 72.4, "output_tput_per_gpu": 66.2,  "input_tput_per_gpu": 65.8,  "p99_ttft": 3.22, "median_ttft": 0.228 } },
+    { "isl": 1024, "osl": 1024, "conc": 16, "metrics": { "median_intvty": 56.7, "output_tput_per_gpu": 106.4, "input_tput_per_gpu": 107.5, "p99_ttft": 2.24, "median_ttft": 0.231 } },
+    { "isl": 1024, "osl": 1024, "conc": 32, "metrics": { "median_intvty": 42.8, "output_tput_per_gpu": 163.9, "input_tput_per_gpu": 163.4, "p99_ttft": 1.22, "median_ttft": 0.237 } }
+  ]
+}

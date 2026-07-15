@@ -1,0 +1,40 @@
+{
+  "_snapshot": {
+    "kind": "illustrative-pending-ingestion",
+    "source": "MLPerf Inference",
+    "sourceUrl": "https://github.com/mlcommons/inference_results_v6.0",
+    "harnessUrl": "https://github.com/mlcommons/inference",
+    "pinnedCommit": "PINNED_COMMIT_TBD",
+    "retrievedAt": "2026-07-14",
+    "license": "MLCommons (attribution required)",
+    "attribution": "MLCommons MLPerf Inference v6.0",
+    "note": "ILLUSTRATIVE pinned example for the vertical slice — structure/provenance are real; the numeric result is a placeholder pending real ingestion in the update workflow. Not presented in the UX as a verified measurement. A single MLPerf result is a latency/accuracy-qualified VALIDATION point, not a full concurrency curve."
+  },
+  "result": {
+    "version": "v6.0",
+    "division": "closed",
+    "submitter": "ExampleSubmitter",
+    "benchmark": "llama3.1-70b",
+    "checkpoint": "Llama-3.1-70B-Instruct",
+    "scenario": "Server",
+    "system": {
+      "name": "HGX-H200x8 (submitter system)",
+      "accelerator": "NVIDIA H200 SXM 141GB",
+      "accelerator_count": 8,
+      "gpu_mem_gb": 141,
+      "form_factor": "SXM",
+      "host": "not-an-aws-instance",
+      "interconnect": "NVLink (single node)"
+    },
+    "software": { "framework": "tensorrt-llm", "version": "MLPerf-v6.0-harness", "precision": "fp8", "kv_precision": "fp8" },
+    "workload": { "isl": 1024, "osl": 1024 },
+    "latency_constraints": { "ttft_ms": 450, "tpot_ms": 40 },
+    "measured": {
+      "ttft_p99_ms": 410,
+      "tpot_p99_ms": 34,
+      "tokens_per_second_system": 5200,
+      "per_accelerator_tokens_per_second": 650,
+      "input_tokens_per_second_per_accelerator": 640
+    }
+  }
+}
