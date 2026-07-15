@@ -73,9 +73,11 @@ export function riskLines(r: NarratedRecommendationResult): RiskLine[] {
         text: "Monthly traffic is assumed to be served within the selected active hours; startup/drain/checkpoint time, accelerator availability, capacity reservations, quotas, and operational automation are not established by these settings.",
       });
     }
+    // P2-UI4-2: defaults may never have been "entered" by the customer — the wording claims only
+    // what is structurally known (the modeled values), not their per-field origin.
     lines.push({
       key: "ops-assumptions",
-      text: `Operational cost assumptions (entered, not verified): networking ${usd(r.effectiveWorkload.ops.networkingMonthly$)}/mo · observability ${usd(r.effectiveWorkload.ops.observabilityMonthly$)}/mo · ${r.effectiveWorkload.ops.overheadPct}% overhead markup.`,
+      text: `Modeled operational cost adders (default or customer-provided; not independently verified): networking ${usd(r.effectiveWorkload.ops.networkingMonthly$)}/mo · observability ${usd(r.effectiveWorkload.ops.observabilityMonthly$)}/mo · ${r.effectiveWorkload.ops.overheadPct}% overhead markup.`,
     });
   }
 

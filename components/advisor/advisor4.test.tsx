@@ -80,7 +80,7 @@ describe("Stage-F export — deterministic report in the EXACT hierarchy order",
     const a = buildReport(nDefault());
     const b = buildReport(nDefault());
     expect(a).toBe(b);
-    const order = ["## 1. Recommendation", "## 2. Why", "## 3. Estimated cost", "## 4. Recommended architecture", "## 5. Confidence", "## 6. Risks & exclusions", "## 7. Advanced evidence"];
+    const order = ["## 1. Recommendation", "## 2. Why", "## 3. Estimated cost", "## 4. Recommended deployment & architecture", "## 5. Confidence", "## 6. Risks & exclusions", "## 7. Advanced evidence"];
     let last = -1;
     for (const h of order) {
       const i = a.indexOf(h);
@@ -98,9 +98,11 @@ describe("Stage-F export — deterministic report in the EXACT hierarchy order",
     const b200 = r.evaluations.find((e) => e.config.id === "deepseek-v4-pro-oss·p6-b200.48xlarge·w4kv16")!;
     expect(md).toContain(b200.fleet.equation); // the RELEVANT candidate's fleet equation, verbatim
     expect(md).toContain("87 boxes (prefill-bound)");
-    expect(md).toContain("Evidence state: measured-scaled (engine: measured-scaled).");
+    expect(md).toContain("Self-host capacity evidence state: measured-scaled (engine: measured-scaled).");
     for (const l of riskLines(r)) expect(md).toContain(`- ${l.text}`); // §6 = the SAME shared lines
-    expect(md).toContain("| deepseek-v4-pro-oss·p6-b200.48xlarge·w4kv16 | yes | yes | yes | 87 | $7,176,630 | measured-scaled |");
+    expect(md).toContain(
+      "| deepseek-v4-pro-oss·p6-b200.48xlarge·w4kv16 | yes | yes | yes | yes | yes (self-host comparison input) | 87 | $7,176,630 | measured-scaled |"
+    );
     expect(md).toContain("presentation arithmetic");
   });
   it("indicative case: the report carries the qualifier, the qualified narrative and the quote risk", () => {
@@ -110,9 +112,12 @@ describe("Stage-F export — deterministic report in the EXACT hierarchy order",
     expect(md).toContain("obtain an AWS quote before committing");
     expect(md).toContain("savings-1yr purchasing ($113/hr on-demand base rate)");
   });
-  it("API-only case: no self-host architecture is described; availability wording flows through", () => {
+  it("API-only case: the API is the recommended deployment; no self-host architecture is described", () => {
     const md = buildReport(narrate(recommend({ workload: buildWorkload({ ...DEFAULT_STATE, modelId: "claude-opus-4-8" }), optimizeFor: "cost" })));
-    expect(md).toContain("No self-host configuration is described for this result.");
+    expect(md).toContain("Recommended deployment: the Claude Fable 5 (Bedrock) API (managed service — no self-host fleet to provision).");
+    expect(md).toContain("Self-host capacity evidence: none qualified");
+    expect(md).not.toContain("Best modeled self-host alternative");
+    expect(md).not.toContain("Fleet equation:");
     expect(md).toContain("available through the API only");
     expect(md).not.toMatch(/technically\s+(in)?feasible/i);
   });
@@ -123,5 +128,67 @@ describe("Stage-F export — deterministic report in the EXACT hierarchy order",
     expect(html).toContain('data-testid="export-download"');
     expect(html).toContain("## 1. Recommendation"); // the preview is the real report
     expect(html).toContain("identical inputs produce an identical report");
+  });
+});
+
+describe("iteration-4 HOLD — architecture ROLE always matches decision.choice (P1-UI4-1)", () => {
+  it("API winner (R1): the API is the recommended deployment; B200 is EXPLICITLY a non-recommended alternative", () => {
+    const md = buildReport(nDefault());
+    expect(md).toContain("Recommended deployment: the Claude Fable 5 (Bedrock) API (managed service — no self-host fleet to provision).");
+    expect(md).toContain("Best modeled self-host alternative — not the overall recommendation:");
+    expect(md).not.toContain("Recommended self-host architecture");
+    // the alternative label precedes the fleet lines it qualifies
+    expect(md.indexOf("Best modeled self-host alternative")).toBeLessThan(md.indexOf("Fleet equation:"));
+    // level-1 evidence token is explicitly SELF-HOST CAPACITY evidence
+    expect(md).toContain("Self-host capacity evidence: measured-scaled");
+    expect(md).not.toMatch(/\nEvidence: measured-scaled/);
+  });
+  it("self-host winner (cost-optimized): the architecture is owned by the recommendation", () => {
+    const md = buildReport(nCostOpt());
+    expect(md).toContain("Recommended self-host architecture:");
+    expect(md).not.toContain("Best modeled self-host alternative");
+    expect(md).not.toContain("Recommended deployment: the Claude Fable 5 (Bedrock) API");
+  });
+  it("undetermined: no deployment architecture is recommended; the self-host card is an evaluated option", () => {
+    const s = recommend({ workload: buildWorkload(DEFAULT_STATE), optimizeFor: "cost" });
+    const shaped = { ...s, decision: { choice: "undetermined" as const, basis: "comparison-unavailable" as const } };
+    const md = buildReport(narrate(shaped));
+    expect(md).toContain("**Directional cost result: undetermined**");
+    expect(md).toContain("No deployment architecture is recommended — the decision is undetermined.");
+    expect(md).toContain("Evaluated self-host option — not a recommendation:");
+    expect(md).not.toContain("Recommended self-host architecture");
+    expect(md).not.toContain("Recommended deployment: the");
+  });
+});
+
+describe("iteration-4 HOLD — ineligible dollar amounts are diagnostics, never comparables (P1-UI4-2)", () => {
+  it("R1 full catalog: heuristic rows are marked diagnostic; ONLY the persisted comparator is the comparison input", () => {
+    const r = nDefault();
+    const md = buildReport(r);
+    expect(md).toContain("audit diagnostics; they did not influence the recommendation and are not cost-comparison inputs");
+    expect(md).toContain("Modeled diagnostic cost $/mo");
+    // heuristic candidates: ineligible + diagnostic-marked amounts, never comparison inputs
+    const h200Row = md.split("\n").find((l) => l.includes("p5e.48xlarge·w4kv16"))!;
+    expect(h200Row).toContain("| no | no |");
+    expect(h200Row).toMatch(/\(diagnostic only — not used\)/);
+    const h100Row = md.split("\n").find((l) => l.includes("·p5.48xlarge·w4kv16"))!;
+    expect(h100Row).toMatch(/\(diagnostic only — not used\)/);
+    // exactly one comparison-input marker, and it is the persisted comparator id
+    const marks = md.split("\n").filter((l) => l.includes("yes (self-host comparison input)"));
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toContain(r.decision.costComparator!.selfHostCandidateId);
+  });
+  it("an undetermined decision (no comparator) marks NO row as a comparison input", () => {
+    const s = recommend({ workload: buildWorkload(DEFAULT_STATE), optimizeFor: "cost" });
+    const shaped = { ...s, decision: { choice: "undetermined" as const, basis: "comparison-unavailable" as const } };
+    expect(buildReport(narrate(shaped))).not.toContain("yes (self-host comparison input)");
+  });
+});
+
+describe("iteration-4 HOLD — P2 copy corrections", () => {
+  it("ops risk line claims only what is structurally known (P2-UI4-2)", () => {
+    const line = riskLines(nDefault()).find((l) => l.key === "ops-assumptions")!.text;
+    expect(line).toContain("Modeled operational cost adders (default or customer-provided; not independently verified)");
+    expect(line).not.toContain("entered, not verified");
   });
 });

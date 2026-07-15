@@ -375,3 +375,24 @@ byte-identical output for identical input (asserted). `ExportPanel` offers Copy 
   an additional format (CSV of the evidence table / PDF) in a later pass.
 - **UI4-D3** The report's §7 includes ALL evaluations and rejections (complete audit); confirm this
   should stay complete rather than truncated for very large future catalogs.
+
+## Iteration-4 HOLD remediation (export semantics + copy states)
+
+| Finding | Fix |
+|---|---|
+| **P1-UI4-1** exported recommendation vs architecture contradiction | §4 is now "Recommended deployment & architecture" with the architecture's ROLE always derived from `decision.choice`: an API winner states "Recommended deployment: the {API model} API (managed service — no self-host fleet to provision)." and renders any self-host card ONLY under "Best modeled self-host alternative — not the overall recommendation:"; a self-host winner owns "Recommended self-host architecture:"; an undetermined decision states "No deployment architecture is recommended — the decision is undetermined." with any card labeled "Evaluated self-host option — not a recommendation:". The level-1 token is relabeled "Self-host capacity evidence: …" ("none qualified" when no card) and §5 reads "Self-host capacity evidence state: …" — never implying the API recommendation itself was benchmark-measured. Acceptance tests cover all four states (api / self-host / API-only / undetermined) and assert role wording can never conflict with the choice. |
+| **P1-UI4-2** rejected heuristic dollars looked decision-usable | The §7 audit keeps its complete rows (UI4-D3) but the status is unmistakable: a leading sentence ("Rejected or ineligible candidates' modeled projections below are audit diagnostics; they did not influence the recommendation and are not cost-comparison inputs."), new "Recommendation eligible" and "Used in decision comparison" columns, the cost column renamed "Modeled diagnostic cost $/mo", and ineligible amounts suffixed "(diagnostic only — not used)". Tests assert exactly ONE row — `decision.costComparator.selfHostCandidateId` — is marked "yes (self-host comparison input)" (and none when the decision is undetermined), and that the heuristic H100/H200 rows carry the diagnostic mark. |
+| **P2-UI4-1** silent copy failure | Explicit idle/success/error copy state: success is claimed ONLY when `writeText` resolves (`role="status"` "Report copied to the clipboard."); a rejection renders `role="alert"` "Copy unavailable — open the preview and copy manually." Live-verified with clipboard.writeText forced to reject: the alert renders with the exact wording. |
+| **P2-UI4-2** "entered" inaccurate for defaults | The ops risk line now reads "Modeled operational cost adders (default or customer-provided; not independently verified): …" (UI4-D1 wording correction applied; per-field origin is not structurally available for these fields, so the copy claims only the modeled values). |
+
+Owner decisions recorded: UI4-D1 risk templates approved with the wording correction; UI4-D2
+Markdown-only for this phase (PDF/CSV deferred); UI4-D3 complete-over-truncated download with the
+collapsed preview retained — audit candidates are never omitted as the catalog grows.
+
+### Verification (this revision)
+**446/446** tests (6 new HOLD acceptance tests), `tsc --noEmit` clean, `build:static` clean, **375px
+mobile acceptance PASS**, fresh-profile live probe ZERO console errors — verified live: role-corrected
+§4 ("Recommended deployment: the Claude Fable 5 (Bedrock) API" + the alternative label), "Self-host
+capacity evidence" token, diagnostic marks with exactly one comparison-input row, corrected ops
+wording, and the denied-clipboard alert path. Isolation unchanged (headless untouched at `faa9af7`;
+all frozen pins intact).
