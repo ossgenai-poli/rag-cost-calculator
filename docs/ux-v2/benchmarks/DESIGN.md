@@ -252,6 +252,17 @@ Plus determinism: the selector is a pure function of (RequestSpec, pinned catalo
   lacks a reviewed AWS-host mapping and prefix-cache metadata — neither inferred); measured-exact is
   exercised end-to-end via a fully-specified synthetic record.
 
+### Round-7 hardening
+- **Structural evidence boundary (P1-BENCH-012):** the earlier `__resolveOperatingPointForTest` export
+  was still a runtime export of the production `index` module, so any app component could import it and
+  inject arbitrary records/policy — the boundary was protected only by naming. It is now **removed**.
+  `index.ts` exports ONLY the pinned `resolveOperatingPoint` + safe types; there is no exported
+  test/injection entry point. Synthetic catalogs are driven either through the lower-level
+  `selectBest`/`evaluate` (records in hand) or by module-mocking `loadCatalog()` in a test-only file.
+  A **source-boundary guard test** enforces that no production file references any injection helper and
+  that `index.ts` exposes no catalog-injection surface — "test-only" now means structurally
+  unreachable from production, not a naming convention.
+
 ### Round-6 hardening
 - **No public catalog override (P1-BENCH-010):** the public `ResolveOptions` no longer carries a
   `catalog`. Production `resolveOperatingPoint()` ALWAYS resolves the pinned, checksum-verified

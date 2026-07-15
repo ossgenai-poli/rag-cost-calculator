@@ -3,8 +3,7 @@
 // authoritative operating point PLUS full provenance and a comparison against the
 // frozen rc-qa-11 control. EXPERIMENTAL; the engine is unchanged. See DESIGN.md.
 // ============================================================================
-import type { BenchmarkRecord, OperatingPoint, Reason, RequestSpec, SelectionResult } from "./schema";
-import type { HostEquivalenceEntry } from "./equivalence";
+import type { OperatingPoint, Reason, RequestSpec, SelectionResult } from "./schema";
 import { loadCatalog } from "./sources";
 import { selectBest } from "./select";
 import { requestBoundaryErrors } from "./eligibility";
@@ -20,40 +19,17 @@ export interface ResolveOptions {
   mode: "control" | "experimental";
   /** Explicit rc-qa-11 inputs so the control can be computed for comparison. */
   control?: ControlRequest;
-  // NOTE (P1-BENCH-010 / P1/P2-BENCH-009): the PUBLIC resolver exposes NO catalog and NO trust-policy
-  // injection. Production ALWAYS consumes the pinned, checksum-verified loadCatalog() and the frozen
-  // equivalence policy — an ordinary caller cannot supply arbitrary (unnormalized, unverified) records
-  // or an unreviewed equivalence. Synthetic fixtures go through the internal test-only resolver below.
+  // TRUST BOUNDARY (P1-BENCH-010 / P1-BENCH-012): the PUBLIC resolver exposes NO catalog and NO
+  // trust-policy injection, and this module exports NO test/injection entry point of any kind.
+  // Production ALWAYS consumes the pinned, checksum-verified loadCatalog() and the frozen equivalence
+  // policy — no importable production API accepts arbitrary (unnormalized, unverified) records. The
+  // synthetic/injected path is exercised ONLY through the lower-level selectBest()/evaluate() (records
+  // already in hand) or by module-mocking loadCatalog() in tests — never through this module.
 }
 
-/** INTERNAL, TEST-ONLY options — allows a synthetic (already-normalized) catalog and an injected
- *  reviewed host-equivalence for unit fixtures. NOT part of the production API. */
-export interface TestResolveOptions extends ResolveOptions {
-  /** Synthetic catalog for tests ONLY. Production has no way to reach this path. */
-  catalog?: BenchmarkRecord[];
-  /** Injected reviewed host-equivalence for tests ONLY. */
-  hostAllowlist?: readonly HostEquivalenceEntry[];
-}
-
-/** PUBLIC resolver. Always uses the pinned, verified catalog and frozen policy — no caller override. */
+/** PUBLIC resolver — the ONLY resolver. Always uses the pinned, verified catalog and frozen policy;
+ *  there is no caller-supplied catalog or equivalence override. */
 export function resolveOperatingPoint(req: RequestSpec, opts: ResolveOptions): SelectionResult {
-  return resolveCore(req, { mode: opts.mode, control: opts.control });
-}
-
-/** TEST-ONLY resolver. Accepts a synthetic catalog / injected host equivalence. Never call from
- *  production or UI code — it deliberately bypasses the pinned-catalog trust boundary for fixtures. */
-export function __resolveOperatingPointForTest(req: RequestSpec, opts: TestResolveOptions): SelectionResult {
-  return resolveCore(req, opts);
-}
-
-interface CoreResolveOptions {
-  mode: "control" | "experimental";
-  control?: ControlRequest;
-  catalog?: BenchmarkRecord[];
-  hostAllowlist?: readonly HostEquivalenceEntry[];
-}
-
-function resolveCore(req: RequestSpec, opts: CoreResolveOptions): SelectionResult {
   const control = controlResolve(opts.control);
 
   // Control mode returns EXACTLY the frozen selection — proves no regression when experimental is off.
@@ -87,10 +63,9 @@ function resolveCore(req: RequestSpec, opts: CoreResolveOptions): SelectionResul
     };
   }
 
-  // Production ALWAYS resolves the pinned, checksum-verified catalog; only the test-only resolver
-  // supplies a synthetic catalog / injected equivalence (never reachable from the public API).
-  const catalog = opts.catalog ?? loadCatalog();
-  const best = selectBest(catalog, req, { hostAllowlist: opts.hostAllowlist });
+  // ALWAYS the pinned, checksum-verified catalog and frozen equivalence policy — no caller override.
+  const catalog = loadCatalog();
+  const best = selectBest(catalog, req);
 
   if (!best) {
     // No qualified measurement → unbenchmarked. NEVER fabricate from FLOPS/bandwidth.

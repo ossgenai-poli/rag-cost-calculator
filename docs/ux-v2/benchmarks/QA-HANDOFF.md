@@ -20,10 +20,16 @@ The layer **imports** the frozen `lib/benchmarks.ts` read-only (the control wrap
 ## Run the tests
 
 ```
-npx vitest run lib/benchmark-registry     # 37/37 — the guarantees + all P1/P2 reproductions (six rounds)
-npx vitest run                            # 221/221 — frozen 184 + new 37 (no regression)
+npx vitest run lib/benchmark-registry     # 40/40 — the guarantees + all P1/P2 reproductions (seven rounds)
+npx vitest run                            # 224/224 — frozen 184 + new 40 (no regression)
 npx tsc --noEmit                          # clean
 ```
+
+**Round 7 (seventh HOLD) — make the evidence boundary structural, not naming-based:**
+
+| Finding | Fix |
+|---|---|
+| **P1-BENCH-012** a `__`-prefixed test resolver was still exported from the production `index` | **deleted** `__resolveOperatingPointForTest`/`TestResolveOptions` from `index.ts` entirely. The production module now exports ONLY the pinned `resolveOperatingPoint` (no catalog, no equivalence injection) + safe types. The synthetic/injected path is exercised only through the lower-level `selectBest`/`evaluate` (records in hand) or by **module-mocking `loadCatalog()`** in a dedicated test file (`resolver-catalog.test.ts`) — never through an importable production API. Added a **source-boundary guard test**: it walks every production `.ts/.tsx` under `lib/`, `components/`, `app/` (excluding `*.test.*`) and asserts none reference a test/injection helper, and that `index.ts` exposes no `ForTest`/catalog-injection surface. "test-only" is now structurally unavailable to production, not merely prefixed with `__` |
 
 **Round 6 (sixth HOLD) — close the last two trust-boundary gaps:**
 

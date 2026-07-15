@@ -4,7 +4,9 @@
 // provenance, and injected (never-mutated) host equivalence.
 import { describe, it, expect } from "vitest";
 import type { BenchmarkRecord, Provenance, RequestSpec } from "./schema";
-import { resolveOperatingPoint, __resolveOperatingPointForTest } from "./index";
+import { resolveOperatingPoint } from "./index";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { loadCatalog, loadAllSnapshots } from "./sources";
 import { inferencexAdapter } from "./sources/inferencex";
 import { mlperfAdapter } from "./sources/mlperf";
@@ -161,12 +163,6 @@ describe("catalog / provenance / control (architecture-only slice)", () => {
     expect(res.status).toBe("unbenchmarked");
     expect(codes(loadCatalog().find((r) => r.concurrency === 8)!, dsv4Req({ concurrency: 8 }))).toContain("host-not-equivalent");
   });
-  it("measured-exact end-to-end is exercised with a fully-specified synthetic record", () => {
-    const res = __resolveOperatingPointForTest(fullReq(), { mode: "experimental", catalog: [mk({ id: "x" })] });
-    expect(res.status).toBe("selected");
-    expect(res.record!.provenance.rawChecksum).toBe(res.provenance!.full.rawChecksum);
-    expect(res.operatingPoint!.tputPerGpu).toBe(600);
-  });
   it("GB200 NVL72 total is never split into per-GPU", () => {
     const gb200 = loadAllSnapshots().find((r) => r.gpuSku === "GB200")!;
     expect(gb200.perGpuReported).toBe(false);
@@ -181,13 +177,6 @@ describe("catalog / provenance / control (architecture-only slice)", () => {
     const op = operatingPointAt(getBenchmarkCurve("dsv4", "p6-b200.48xlarge", 4, 2910, 500)!.points, 30);
     expect(res.operatingPoint!.tputPerGpu).toBe(op.tputPerGpu);
     expect(res.differsFromControl).toBe(false);
-  });
-  it("control-diff compares concurrency/interactivity", () => {
-    const rec = mk({ id: "d", modelId: "dsv4", checkpoint: "DeepSeek-V4-Pro", gpuSku: "B200", awsRepresentativeInstances: ["p6-b200.48xlarge"], weightPrecision: "fp4", framework: "trt", concurrency: 16, outputTputPerGpu: 106.4, inputTputPerGpu: 107.5, intvty: 56.7, ttft: { value: 2.24, percentile: "p99" } });
-    const control = { inferencexKey: "dsv4", instanceType: "p6-b200.48xlarge", weightBits: 4, isl: 1024, osl: 1024, interactivityTarget: 30 };
-    const res = __resolveOperatingPointForTest(dsv4Req({ concurrency: 16 }), { mode: "experimental", catalog: [rec], control });
-    expect(res.status).toBe("selected");
-    expect(res.differsFromControl).toBe(true);
   });
 });
 
@@ -232,14 +221,14 @@ describe("R5-P1-BENCH-006 — public resolver validates the request BEFORE catal
     const r2 = resolveOperatingPoint(fullReq({ interactivity: { ttftSlaMs: NaN, ttftPercentile: "bogus" as any } }), { mode: "experimental" });
     expect(r2.status).toBe("invalid-request");
   });
-  it("validation precedes catalog access — invalid on an EMPTY catalog is still invalid-request", () => {
-    expect(__resolveOperatingPointForTest(fullReq({ isl: 0 }), { mode: "experimental", catalog: [] }).status).toBe("invalid-request");
-  });
-  it("a valid, complete request with no evidence → unbenchmarked (the reserved meaning)", () => {
-    const res = __resolveOperatingPointForTest(fullReq(), { mode: "experimental", catalog: [] });
+  it("a valid request with no match in the pinned catalog → unbenchmarked (the reserved meaning)", () => {
+    const res = resolveOperatingPoint(fullReq({ modelId: "no-such-model" }), { mode: "experimental" });
     expect(res.status).toBe("unbenchmarked");
     expect(res.reasons.some((x) => x.code === "unbenchmarked")).toBe(true);
   });
+  // The empty-catalog ordering cases (validation precedes catalog access) are proven against the PUBLIC
+  // resolver with a module-mocked loadCatalog() in resolver-catalog.test.ts — the production API itself
+  // exposes no catalog injection (P1-BENCH-012).
 });
 
 describe("R5-P1-BENCH-007 — a non-identical sequence bucket is never measured-exact", () => {
@@ -250,10 +239,11 @@ describe("R5-P1-BENCH-007 — a non-identical sequence bucket is never measured-
     expect(m.evidenceStatus).toBe("measured-scaled");
     expect(m.evidenceStatus).not.toBe("measured-exact");
     expect(m.transformations![0].factor).toBe(4);
-    const res = __resolveOperatingPointForTest(fullReq({ isl: 4096 }), { mode: "experimental", catalog: [rec] });
-    expect(res.status).toBe("selected");
-    expect(res.record!.id).toBe("s4x");
-    expect(res.confidence).toBe("extrapolated"); // measured-scaled never carries a source-class exact confidence
+    // and through selection (records in hand — no resolver catalog injection):
+    const best = selectBest([rec], fullReq({ isl: 4096 }))!;
+    expect(best.record.id).toBe("s4x");
+    expect(best.evidenceStatus).toBe("measured-scaled");
+    expect(best.confidence).toBe("extrapolated"); // measured-scaled never carries a source-class exact confidence
   });
   it("a different OSL bucket is a hard mismatch (no OSL transform)", () => {
     expect(codes(mk({ id: "o", osl: 512 }), fullReq({ osl: 1024 }))).toContain("osl-mismatch");
@@ -284,7 +274,7 @@ describe("R5-P1/P2-BENCH-009 — production trust policy is frozen and not publi
     // Same-SKU, non-AWS-representative record: only an INJECTED (internal) allowlist could proxy it.
     // The public resolver exposes no such injection → the record stays unbenchmarked.
     const rec = mk({ id: "h", hostSystem: "hgx-h200-reviewed", awsRepresentativeInstances: [] });
-    expect(__resolveOperatingPointForTest(fullReq(), { mode: "experimental", catalog: [rec] }).status).toBe("unbenchmarked");
+    expect(selectBest([rec], fullReq())).toBeNull(); // no reviewed host equivalence → ineligible
     // …while the internal evaluator CAN inject a reviewed fixture (tests only):
     expect(evaluate(rec, fullReq(), { hostAllowlist: TEST_HOST }).evidenceStatus).toBe("proxy");
   });
@@ -292,14 +282,43 @@ describe("R5-P1/P2-BENCH-009 — production trust policy is frozen and not publi
 
 describe("R6-P1-BENCH-010 — the public resolver never consumes a caller-supplied catalog", () => {
   it("public resolveOperatingPoint ignores injected records (pinned, verified catalog only)", () => {
-    const fabricated = mk({ id: "fab" }); // WOULD be measured-exact for fullReq() via the test resolver
+    const fabricated = mk({ id: "fab" }); // a fully-specified record that WOULD be measured-exact for fullReq()
     // The public API exposes no `catalog`; forcing one via `as any` must have NO effect — production
     // always uses the pinned catalog, in which fullReq (llama/H200) has no match → unbenchmarked.
     const pub = resolveOperatingPoint(fullReq(), { mode: "experimental", catalog: [fabricated] } as any);
     expect(pub.status).toBe("unbenchmarked");
     expect(pub.status).not.toBe("selected");
-    // The internal test-only resolver DOES accept a synthetic catalog (proves the fixture is valid):
-    expect(__resolveOperatingPointForTest(fullReq(), { mode: "experimental", catalog: [fabricated] }).status).toBe("selected");
+    // The fixture itself IS valid at the eligibility layer (records in hand) — proving the guarantee
+    // above is real refusal, not an invalid fixture:
+    expect(selectBest([fabricated], fullReq())!.evidenceStatus).toBe("measured-exact");
+  });
+});
+
+describe("R7-P1-BENCH-012 — no test/injection resolver is reachable from production code", () => {
+  const root = process.cwd(); // worktree root
+  const isProdSource = (f: string) => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$/.test(f) && !f.endsWith(".d.ts");
+  function walk(dir: string, out: string[] = []): string[] {
+    if (!existsSync(dir)) return out;
+    for (const name of readdirSync(dir)) {
+      if (name === "node_modules" || name === ".git" || name === ".next" || name === "out") continue;
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) walk(p, out);
+      else if (isProdSource(name)) out.push(p);
+    }
+    return out;
+  }
+  const prodFiles = ["lib", "components", "app"].flatMap((d) => walk(join(root, d)));
+
+  it("the production index exports only the pinned resolver — no ForTest/catalog-injection surface", () => {
+    const src = readFileSync(join(root, "lib/benchmark-registry/index.ts"), "utf8");
+    expect(src).toContain("export function resolveOperatingPoint");
+    expect(src).not.toMatch(/export\s+(function|const|interface|type)\s+\w*ForTest/);
+    expect(src).not.toMatch(/catalog\?:/); // ResolveOptions carries no catalog
+  });
+  it("no production source file references a test-only injection helper", () => {
+    expect(prodFiles.length).toBeGreaterThan(0); // sanity: the walk found real files
+    const offenders = prodFiles.filter((f) => /ForTest|resolveInjectable|__resolveOperatingPoint/.test(readFileSync(f, "utf8")));
+    expect(offenders).toEqual([]);
   });
 });
 
