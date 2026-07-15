@@ -77,9 +77,10 @@ export type Verdict = "api-wins" | "self-host-efficient" | "infeasible" | "undet
 export type DecisionChoice = "api" | "self-host" | "undetermined";
 
 /** Deterministic precedence (first match wins):
- *  self-host-infeasible → sla → evidence-gap → comparison-unavailable → lower-cost. */
+ *  no-modeled-candidate → self-host-infeasible → sla → evidence-gap → comparison-unavailable → lower-cost. */
 export type DecisionBasis =
-  | "self-host-infeasible" // no technically feasible self-host candidate
+  | "no-modeled-candidate" // the model IS self-hostable, but the pinned catalog models no candidate for it (coverage gap, not infeasibility) — P1-2
+  | "self-host-infeasible" // genuinely non-self-hostable, OR candidates exist but none is technically feasible
   | "sla" // feasible exist but none satisfy the SLA
   | "evidence-gap" // SLA-qualified exist but none are evidence-qualified
   | "comparison-unavailable" // evidence-qualified exists but a trustworthy cost comparison is unavailable
@@ -188,6 +189,22 @@ export interface ControlComparison {
   cause: "new-data" | "selection-rule" | "none";
 }
 
+/** A material engine normalization the customer should see (entered vs actually computed) — P1-6. */
+export interface InputAdjustment {
+  field: string;
+  entered: number;
+  calculated: number;
+}
+
+/** Structured pricing provenance so narration can never imply live pricing while using fallback (P1-6). */
+export interface PricingProvenance {
+  source: PriceBookSource; // the price book's own live/fallback state
+  asOf: string; // PriceBook.updatedAt
+  region: string;
+  gpuPriceSource: "live" | "fallback" | "override" | "mixed"; // reconciled across the swept candidates
+}
+export type PriceBookSource = "live" | "fallback";
+
 /** STRUCTURED recommendation output from recommend() — facts only, no prose (rev-2 #5).
  *  `bestSelfHost === null` is an HONEST empty state. The overall answer is `decision`. */
 export interface StructuredRecommendationResult {
@@ -199,6 +216,10 @@ export interface StructuredRecommendationResult {
   evaluations: CandidateEvaluation[];
   mode: "control" | "experimental";
   controlComparison?: ControlComparison;
+  // P1-6 — honest-narration inputs, reconciled ONCE at result level (consistent across candidates).
+  effectiveWorkload: CalcInputs; // the NORMALIZED inputs the engine actually computed with
+  inputAdjustments: InputAdjustment[]; // entered-vs-calculated (incl. the 730h uptime cap)
+  pricing: PricingProvenance; // source / asOf / region / gpu-price source
 }
 
 /** The request carries ONLY workload + preference (rev-2 #3). The curated candidate catalog is pinned and
@@ -233,6 +254,9 @@ export interface NarratedRecommendationResult {
   evaluations: CandidateEvaluation[];
   mode: "control" | "experimental";
   controlComparison?: ControlComparison;
+  effectiveWorkload: CalcInputs;
+  inputAdjustments: InputAdjustment[];
+  pricing: PricingProvenance;
 }
 
 export const RECOMMENDATION_CAPTION =

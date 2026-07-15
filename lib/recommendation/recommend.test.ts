@@ -7,11 +7,16 @@ vi.mock("./candidate-catalog", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./candidate-catalog")>();
   return { ...actual, loadCandidateCatalog: vi.fn(actual.loadCandidateCatalog) };
 });
+// Spy seam for P2-1: wrap calculate() (calls through) so we can count invocations; keep everything else real.
+vi.mock("../calc-engine", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../calc-engine")>();
+  return { ...actual, calculate: vi.fn(actual.calculate) };
+});
 
 import { recommend, evaluateCandidate } from "./recommend";
 import { deriveDecision } from "./decision";
 import { loadCandidateCatalog, validateCandidateCatalog, PINNED_CANDIDATES } from "./candidate-catalog";
-import { defaultInputs } from "../calc-engine";
+import { defaultInputs, calculate } from "../calc-engine";
 import type { CalcInputs, PriceBook } from "../types";
 import type { CandidateConfig } from "./schema";
 import pricesJson from "../../public/prices.json";
@@ -126,7 +131,7 @@ describe("sweep — gate separation, comparison, determinism, injection, single-
     const ev = evaluateCandidate(C.b200Int4, dsv4Workload(), zeroPriced, "control");
     expect(ev.evidenceQualified).toBe(true); // still evidence-qualified…
     expect(ev.comparisonQualified).toBe(false); // …but not comparable
-    const d = deriveDecision([ev], { modelId: "deepseek-v4-pro-oss", monthlyCost: 6_492_000, priceState: "priced", comparisonQualified: true });
+    const d = deriveDecision([ev], { modelId: "deepseek-v4-pro-oss", monthlyCost: 6_492_000, priceState: "priced", comparisonQualified: true }, { modelSelfHostable: true });
     expect(d).toEqual({ choice: "undetermined", basis: "comparison-unavailable" });
   });
 
@@ -164,17 +169,65 @@ describe("sweep — gate separation, comparison, determinism, injection, single-
     expect(new Set(r.evaluations.map((e) => e.config.id)).size).toBe(4);
   });
 
-  it("rejection precedence: a technically infeasible candidate reports the TECHNICAL code, not evidence", () => {
-    // Force an operationally-absurd fleet: enormous volume → fleet/topology infeasibility takes precedence.
-    mockedCatalog.mockReturnValue([C.h200Int4]); // heuristic (also evidence-gap) but tech must win
-    const r = recommend({ workload: dsv4Workload(1e12), optimizeFor: "cost" });
+  it("P1-1: low-TTFT B200 → technicallyFeasible=true, slaQualified=false, sla-unmet, api/sla (not a technical/fleet code)", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.ttftTargetMs = 100; // ~1.22s actual TTFT can't meet a 100ms SLA
+    const r = recommend({ workload: w, optimizeFor: "cost" });
     const ev = r.evaluations[0];
-    if (!ev.technicallyFeasible) {
-      expect(["model-does-not-fit-serving-group", "node-count-exceeds-topology", "fleet-exceeds-practical-limit", "context-window-overflow"]).toContain(ev.rejections[0].code);
-    } else {
-      // If the engine still sizes it, it is at least not a false 'infeasible'; evidence gate then applies.
-      expect(ev.rejections[0].code).toBe("evidence-below-threshold");
-    }
+    expect(ev.technicallyFeasible).toBe(true); // SLA failure is NOT technical infeasibility
+    expect(ev.slaQualified).toBe(false);
+    expect(ev.rejections[0].code).toBe("sla-unmet-ttft-or-streaming"); // structured code, not a fleet regex
+    expect(r.bestSelfHost).toBeNull();
+    expect(r.decision).toEqual({ choice: "api", basis: "sla" });
+  });
+
+  it("P1-2: self-hostable model with no pinned candidate → api/no-modeled-candidate (zero evaluations)", () => {
+    mockedCatalog.mockReturnValue([...PINNED_CANDIDATES]); // only deepseek candidates
+    const w = dsv4Workload();
+    w.generation.llmModelId = "minimax-m3-oss"; // self-hostable, but not in the pinned dsv4 catalog
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    expect(r.evaluations.length).toBe(0);
+    expect(r.decision).toEqual({ choice: "api", basis: "no-modeled-candidate" });
+  });
+
+  it("P1-2: a non-self-hostable (API-only) model → api/self-host-infeasible", () => {
+    mockedCatalog.mockReturnValue([...PINNED_CANDIDATES]);
+    const w = dsv4Workload();
+    w.generation.llmModelId = "claude-opus-4-8"; // API-only (selfHostable falsy)
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    expect(r.decision).toEqual({ choice: "api", basis: "self-host-infeasible" });
+  });
+
+  it("P1-3: an invalid optimizeFor is rejected at the public boundary", () => {
+    expect(() => recommend({ workload: dsv4Workload(), optimizeFor: "bogus" as any })).toThrow(/invalid optimizeFor/);
+  });
+
+  it("P1-6: result carries effectiveWorkload, input adjustments (730 uptime cap) and pricing provenance", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuUptimeHoursPerMonth = 1000; // > 730 cap
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    expect(r.effectiveWorkload).toBeDefined();
+    expect(r.inputAdjustments).toContainEqual({ field: "gpuUptimeHoursPerMonth", entered: 1000, calculated: 730 });
+    expect(r.pricing.source).toBe("fallback");
+    expect(r.pricing.region).toBe("us-east-1");
+    expect(typeof r.pricing.asOf).toBe("string");
+    expect(["live", "fallback", "override", "mixed"]).toContain(r.pricing.gpuPriceSource);
+  });
+
+  it("P2-1: calculate() is invoked exactly once per candidate (spy)", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4, C.b200Fp8, C.h200Int4, C.h100Int4]);
+    vi.mocked(calculate).mockClear();
+    recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    expect(vi.mocked(calculate)).toHaveBeenCalledTimes(4);
+  });
+
+  it("P2-1: API cost is identical across exact-model candidates (else fail closed)", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4, C.b200Fp8, C.h200Int4, C.h100Int4]);
+    const r = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    const apis = new Set(r.evaluations.map((e) => Math.round(e.cost.apiMonthly!)));
+    expect(apis.size).toBe(1);
   });
 });
 
@@ -205,5 +258,17 @@ describe("catalog validation fails closed", () => {
   it("malformed field", () => {
     const bad = clone(good); (bad as any).gpuSku = 123;
     expect(() => validateCandidateCatalog([bad], priceBook)).toThrow(/malformed gpuSku/);
+  });
+  it("P1-3: gpuSku that does not match the reviewed accelerator (p6-b200 claiming H100)", () => {
+    const bad = clone(good); bad.gpuSku = "H100"; // p6-b200 is B200
+    expect(() => validateCandidateCatalog([bad], priceBook)).toThrow(/does not match the reviewed accelerator/);
+  });
+  it("P1-3: the pinned catalog and its entries are frozen (immutable)", () => {
+    expect(Object.isFrozen(PINNED_CANDIDATES)).toBe(true);
+    expect(Object.isFrozen(PINNED_CANDIDATES[0])).toBe(true);
+    expect(() => { (PINNED_CANDIDATES[0] as any).gpuSku = "X"; }).toThrow();
+    const validated = validateCandidateCatalog(PINNED_CANDIDATES, priceBook);
+    expect(Object.isFrozen(validated)).toBe(true);
+    expect(Object.isFrozen(validated[0])).toBe(true);
   });
 });

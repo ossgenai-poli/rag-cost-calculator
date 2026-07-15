@@ -11,18 +11,31 @@ import pricesJson from "../../public/prices.json";
 const ALLOWED_WEIGHT_BITS = new Set([4, 8, 16]);
 const ALLOWED_KV_BITS = new Set([8, 16]);
 
+// Reviewed AWS instance → accelerator (curated fact — a small local copy, NOT a deep-import of the
+// registry's internal instance-map, which the boundary guard forbids). A candidate's gpuSku MUST match
+// its instance's reviewed accelerator (P1-3) — a p6-b200 record claiming "H100" fails closed.
+export const REVIEWED_INSTANCE_ACCELERATOR: Readonly<Record<string, string>> = Object.freeze({
+  "p6-b200.48xlarge": "B200",
+  "p6-b300.48xlarge": "B300",
+  "p5en.48xlarge": "H200",
+  "p5e.48xlarge": "H200",
+  "p5.48xlarge": "H100",
+  "g4dn.xlarge": "T4",
+});
+
 /** The single canonical id for a candidate — the only accepted `id` value (rev-2 #4). */
 export function canonicalCandidateId(c: Pick<CandidateConfig, "llmModelId" | "instanceType" | "weightBits" | "kvBits">): string {
   return `${c.llmModelId}·${c.instanceType}·w${c.weightBits}kv${c.kvBits}`;
 }
 
-/** The pinned catalog. Curated dsv4 (DeepSeek-V4-Pro) infra/precision points only. */
-export const PINNED_CANDIDATES: CandidateConfig[] = [
-  { id: "deepseek-v4-pro-oss·p6-b200.48xlarge·w4kv16", llmModelId: "deepseek-v4-pro-oss", instanceType: "p6-b200.48xlarge", gpuSku: "B200", weightBits: 4, kvBits: 16, label: "p6-b200 · INT4" },
-  { id: "deepseek-v4-pro-oss·p6-b200.48xlarge·w8kv16", llmModelId: "deepseek-v4-pro-oss", instanceType: "p6-b200.48xlarge", gpuSku: "B200", weightBits: 8, kvBits: 16, label: "p6-b200 · FP8" },
-  { id: "deepseek-v4-pro-oss·p5e.48xlarge·w4kv16", llmModelId: "deepseek-v4-pro-oss", instanceType: "p5e.48xlarge", gpuSku: "H200", weightBits: 4, kvBits: 16, label: "p5e (H200) · INT4" },
-  { id: "deepseek-v4-pro-oss·p5.48xlarge·w4kv16", llmModelId: "deepseek-v4-pro-oss", instanceType: "p5.48xlarge", gpuSku: "H100", weightBits: 4, kvBits: 16, label: "p5 (H100) · INT4" },
-];
+/** The pinned catalog. Curated dsv4 (DeepSeek-V4-Pro) infra/precision points only. Deep-frozen so no
+ *  caller can mutate the pinned policy (P1-3). */
+export const PINNED_CANDIDATES: readonly Readonly<CandidateConfig>[] = Object.freeze([
+  Object.freeze({ id: "deepseek-v4-pro-oss·p6-b200.48xlarge·w4kv16", llmModelId: "deepseek-v4-pro-oss", instanceType: "p6-b200.48xlarge", gpuSku: "B200", weightBits: 4, kvBits: 16, label: "p6-b200 · INT4" }),
+  Object.freeze({ id: "deepseek-v4-pro-oss·p6-b200.48xlarge·w8kv16", llmModelId: "deepseek-v4-pro-oss", instanceType: "p6-b200.48xlarge", gpuSku: "B200", weightBits: 8, kvBits: 16, label: "p6-b200 · FP8" }),
+  Object.freeze({ id: "deepseek-v4-pro-oss·p5e.48xlarge·w4kv16", llmModelId: "deepseek-v4-pro-oss", instanceType: "p5e.48xlarge", gpuSku: "H200", weightBits: 4, kvBits: 16, label: "p5e (H200) · INT4" }),
+  Object.freeze({ id: "deepseek-v4-pro-oss·p5.48xlarge·w4kv16", llmModelId: "deepseek-v4-pro-oss", instanceType: "p5.48xlarge", gpuSku: "H100", weightBits: 4, kvBits: 16, label: "p5 (H100) · INT4" }),
+]);
 
 /** Validate a candidate catalog against the price book. Fail closed (throws) on: empty set, malformed
  *  field, unsupported model, unknown AWS instance, invalid precision, non-canonical id, or a duplicate. */
@@ -43,13 +56,16 @@ export function validateCandidateCatalog(entries: unknown, priceBook: PriceBook)
     if (!Number.isInteger(c.kvBits) || !ALLOWED_KV_BITS.has(c.kvBits as number)) throw new Error(`candidate-catalog: invalid kvBits ${c.kvBits}`);
     if (!modelIds.has(c.llmModelId)) throw new Error(`candidate-catalog: unsupported model ${c.llmModelId}`);
     if (!instanceTypes.has(c.instanceType)) throw new Error(`candidate-catalog: unknown AWS instance ${c.instanceType}`);
+    const reviewedSku = REVIEWED_INSTANCE_ACCELERATOR[c.instanceType];
+    if (!reviewedSku) throw new Error(`candidate-catalog: no reviewed accelerator for instance ${c.instanceType}`);
+    if (c.gpuSku !== reviewedSku) throw new Error(`candidate-catalog: gpuSku ${c.gpuSku} does not match the reviewed accelerator ${reviewedSku} for ${c.instanceType}`);
     const canonical = canonicalCandidateId(c as CandidateConfig);
     if (c.id !== canonical) throw new Error(`candidate-catalog: non-canonical id ${c.id} (expected ${canonical})`);
     if (seen.has(canonical)) throw new Error(`candidate-catalog: duplicate candidate ${canonical}`);
     seen.add(canonical);
-    out.push(c as CandidateConfig);
+    out.push(Object.freeze({ ...(c as CandidateConfig) })); // return immutable validated records (P1-3)
   }
-  return out;
+  return Object.freeze(out) as CandidateConfig[];
 }
 
 /** Load the pinned, validated candidate catalog. Tests module-mock THIS to control the sweep set — the

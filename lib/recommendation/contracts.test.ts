@@ -5,6 +5,8 @@
 import { describe, it, expect } from "vitest";
 import type { ApiOption, CandidateEvaluation, RegistryEvidence, StructuredRecommendationResult } from "./schema";
 import { deriveDecision } from "./decision";
+import { engineConfidenceFrom } from "./recommend";
+import type { CapacityResult } from "../types";
 import { reconcileConfidence } from "./reconcile";
 import { rankSelfHost } from "./ranking";
 import { buildRegistryRequest } from "./registry-request";
@@ -32,30 +34,30 @@ const apiFix = (o: Partial<ApiOption> = {}): ApiOption => ({ modelId: "dsv4", mo
 describe("decision precedence (deterministic, first-match-wins)", () => {
   it("technically infeasible takes precedence over SLA / evidence gap", () => {
     // Even with (contradictory) sla+evidence flags set, infeasibility wins.
-    const d = deriveDecision([evalFix({ technicallyFeasible: false })], apiFix());
+    const d = deriveDecision([evalFix({ technicallyFeasible: false })], apiFix(), { modelSelfHostable: true });
     expect(d).toEqual({ choice: "api", basis: "self-host-infeasible" });
   });
   it("SLA failure takes precedence over evidence gap", () => {
-    const d = deriveDecision([evalFix({ slaQualified: false, evidenceQualified: false })], apiFix());
+    const d = deriveDecision([evalFix({ slaQualified: false, evidenceQualified: false })], apiFix(), { modelSelfHostable: true });
     expect(d).toEqual({ choice: "api", basis: "sla" });
   });
   it("a heuristic-only candidate → evidence-gap (feasible + SLA, not evidence-qualified)", () => {
-    const d = deriveDecision([evalFix({ evidenceQualified: false, engineConfidence: "heuristic", effectiveConfidence: "heuristic" })], apiFix());
+    const d = deriveDecision([evalFix({ evidenceQualified: false, engineConfidence: "heuristic", effectiveConfidence: "heuristic" })], apiFix(), { modelSelfHostable: true });
     expect(d).toEqual({ choice: "api", basis: "evidence-gap" });
   });
   it("missing self-host price → undetermined / comparison-unavailable", () => {
-    const d = deriveDecision([evalFix({ priceQualified: false, cost: { selfHostMonthly: null, apiMonthly: 6_492_000, verdict: "undetermined" } })], apiFix());
+    const d = deriveDecision([evalFix({ priceQualified: false, comparisonQualified: false, cost: { selfHostMonthly: null, apiMonthly: 6_492_000, verdict: "undetermined" } })], apiFix(), { modelSelfHostable: true });
     expect(d).toEqual({ choice: "undetermined", basis: "comparison-unavailable" });
   });
   it("missing API price → undetermined / comparison-unavailable", () => {
-    const d = deriveDecision([evalFix()], apiFix({ monthlyCost: null, priceState: "no-price", comparisonQualified: false }));
+    const d = deriveDecision([evalFix()], apiFix({ monthlyCost: null, priceState: "no-price", comparisonQualified: false }), { modelSelfHostable: true });
     expect(d).toEqual({ choice: "undetermined", basis: "comparison-unavailable" });
   });
   it("R1/R5-shape: evidence-qualified self-host dearer than API → api / lower-cost", () => {
-    expect(deriveDecision([evalFix()], apiFix())).toEqual({ choice: "api", basis: "lower-cost" });
+    expect(deriveDecision([evalFix()], apiFix(), { modelSelfHostable: true })).toEqual({ choice: "api", basis: "lower-cost" });
   });
   it("an evidence-qualified self-host cheaper than API → self-host / lower-cost", () => {
-    const d = deriveDecision([evalFix({ cost: { selfHostMonthly: 100, apiMonthly: 6_492_000, verdict: "self-host-efficient" } })], apiFix());
+    const d = deriveDecision([evalFix({ cost: { selfHostMonthly: 100, apiMonthly: 6_492_000, verdict: "self-host-efficient" } })], apiFix(), { modelSelfHostable: true });
     expect(d).toEqual({ choice: "self-host", basis: "lower-cost" });
   });
 });
@@ -69,8 +71,8 @@ describe("optimizeFor ranks self-host candidates but never flips the top-level d
     expect(rankSelfHost([cheapSlow, dearFast], "latency")[0].config.id).toBe("b");
   });
   it("the API/self-host decision is identical across axes (uses the cheapest self-host vs API)", () => {
-    const d1 = deriveDecision([cheapSlow, dearFast], api);
-    const d2 = deriveDecision([cheapSlow, dearFast], api);
+    const d1 = deriveDecision([cheapSlow, dearFast], api, { modelSelfHostable: true });
+    const d2 = deriveDecision([cheapSlow, dearFast], api, { modelSelfHostable: true });
     expect(d1).toEqual({ choice: "api", basis: "lower-cost" }); // 500 <= 1000
     expect(d2).toEqual(d1);
   });
@@ -116,6 +118,54 @@ describe("registry mapping stays honest — incomplete mapping is invalid/unbenc
   });
 });
 
+describe("P1-4 — engine evidence classification requires a traceable, allowed transformation", () => {
+  // A measured-scaled RESULT must be a traceable, same-precision, ISL-scaled measurement.
+  const capBase = (o: Partial<CapacityResult>): CapacityResult => ({
+    source: "extrapolated", benchmarkAvailable: true, prefillEstimated: false, prefillIslScale: 2.84,
+    precisionUsed: "fp4", precisionRequested: "fp4",
+    benchmarkProvenance: { source: "InferenceX", sourceUrl: "u", methodologyUrl: "m", asOf: "2026-07-14", runId: "1", runUrl: "r", commit: "c", date: "d", image: "i", specMethod: "none", disagg: false, topology: "t" },
+    ...o,
+  } as CapacityResult);
+  it("traceable, same-precision, ISL-scaled → measured-scaled (R1 behavior preserved)", () => {
+    expect(engineConfidenceFrom(capBase({}))).toBe("measured-scaled");
+  });
+  it("untraceable provenance (no benchmarkProvenance) → extrapolated (fails evidence)", () => {
+    expect(engineConfidenceFrom(capBase({ benchmarkProvenance: undefined }))).toBe("extrapolated");
+  });
+  it("estimated prefill (partial/untraceable) → extrapolated", () => {
+    expect(engineConfidenceFrom(capBase({ prefillEstimated: true }))).toBe("extrapolated");
+  });
+  it("no ISL-scale transform recorded → extrapolated", () => {
+    expect(engineConfidenceFrom(capBase({ prefillIslScale: undefined }))).toBe("extrapolated");
+  });
+  it("precision substitution (fp4 used for fp8) → extrapolated", () => {
+    expect(engineConfidenceFrom(capBase({ precisionRequested: "fp8" }))).toBe("extrapolated");
+  });
+  it("heuristic / proxy stay themselves", () => {
+    expect(engineConfidenceFrom(capBase({ source: "heuristic" }))).toBe("heuristic");
+    expect(engineConfidenceFrom(capBase({ source: "proxy" }))).toBe("proxy");
+  });
+});
+
+describe("P1-5 — deriveDecision requires comparisonQualified on BOTH sides", () => {
+  it("candidate comparisonQualified=false (prices present) → comparison-unavailable", () => {
+    const ev = evalFix({ comparisonQualified: false }); // priceQualified/costs still present
+    expect(deriveDecision([ev], apiFix(), { modelSelfHostable: true })).toEqual({ choice: "undetermined", basis: "comparison-unavailable" });
+  });
+  it("API comparisonQualified=false (monthlyCost present) → comparison-unavailable", () => {
+    expect(deriveDecision([evalFix()], apiFix({ comparisonQualified: false }), { modelSelfHostable: true })).toEqual({ choice: "undetermined", basis: "comparison-unavailable" });
+  });
+});
+
+describe("P1-2 — zero candidates: coverage gap vs genuine infeasibility", () => {
+  it("self-hostable model, no candidate → no-modeled-candidate", () => {
+    expect(deriveDecision([], apiFix(), { modelSelfHostable: true })).toEqual({ choice: "api", basis: "no-modeled-candidate" });
+  });
+  it("non-self-hostable model, no candidate → self-host-infeasible", () => {
+    expect(deriveDecision([], apiFix(), { modelSelfHostable: false })).toEqual({ choice: "api", basis: "self-host-infeasible" });
+  });
+});
+
 describe("structured recommender carries NO prose (reviewer point 5)", () => {
   it("a StructuredRecommendationResult compiles and holds only facts", () => {
     const structured: StructuredRecommendationResult = {
@@ -126,6 +176,9 @@ describe("structured recommender carries NO prose (reviewer point 5)", () => {
       rejected: [],
       evaluations: [evalFix()],
       mode: "control",
+      effectiveWorkload: {} as any,
+      inputAdjustments: [],
+      pricing: { source: "fallback", asOf: "2026-07-14", region: "us-east-1", gpuPriceSource: "fallback" },
     };
     // No `rationale` / `bindingConstraint` / `tradeoff` fields exist on the structured result.
     expect("rationale" in (structured.decision as object)).toBe(false);

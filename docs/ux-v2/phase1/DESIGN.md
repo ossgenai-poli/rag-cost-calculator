@@ -138,12 +138,14 @@ is unit-tested.
 (never conflate "can't run" with "not enough evidence", and **never** treat a missing price as
 infeasibility — rev-2 #2):
 
-1. **`technicallyFeasible`** (excludes price) — `crossover.feasible`; `capacity.contextOverflow` →
-   `context-window-overflow`; `crossover.infeasibility[]` → `model-does-not-fit-serving-group` /
-   `node-count-exceeds-topology` / `fleet-exceeds-practical-limit`; no compatible runtime/precision →
-   `no-compatible-runtime-or-precision`.
-2. **`slaQualified`** — `capacity.slaAchievable && ttftMet && interactivityMet` (P99 TTFT + streaming +
-   N+1). Fail → `sla-unmet-ttft-or-streaming`.
+1. **`technicallyFeasible`** (excludes **price AND SLA** — HOLD-1 P1-1/P1-2) — derived from STRUCTURED
+   engine codes, never message regexes. `capacity.contextOverflow` → `context-window-overflow`; a
+   `crossover.infeasibility[]` code that is NOT an SLA code (`ttft`/`interactivity`/
+   `concurrency-below-min`) maps via a fixed table (`manual-cap`→`fleet-exceeds-practical-limit`, else
+   `model-does-not-fit-serving-group`). SLA/TTFT/interactivity failures do **not** touch technical
+   feasibility.
+2. **`slaQualified`** — `capacity.slaAchievable && ttftMet && interactivityMet && concWithinLimit` (P99
+   TTFT + streaming + concurrency + N+1). Fail → `sla-unmet-ttft-or-streaming`.
 3. **`evidenceQualified`** — `effectiveConfidence ∈ {measured, measured-scaled}` on a real applicable
    benchmark (§3.1). `proxy` / `heuristic` / substituted-precision `extrapolated` / `unbenchmarked` →
    `evidence-below-threshold` (kept for Expert review, never a primary card). **A heuristic H200 stays
@@ -167,12 +169,14 @@ produce a nondeterministic basis. `optimizeFor` does **not** enter here (it rank
 
 | # | Condition | `choice` / `basis` |
 |---|---|---|
-| 1 | no `technicallyFeasible` self-host candidate | `api` / `self-host-infeasible` |
+| 0 | **zero candidates**, model IS self-hostable (catalog coverage gap) | `api` / `no-modeled-candidate` |
+| 0′ | **zero candidates**, model is NOT self-hostable | `api` / `self-host-infeasible` |
+| 1 | candidates exist, none `technicallyFeasible` | `api` / `self-host-infeasible` |
 | 2 | feasible exist, but none `slaQualified` | `api` / `sla` |
 | 3 | SLA-qualified exist, but none `evidenceQualified` | `api` / `evidence-gap` |
-| 4 | evidence-qualified exists, but no trustworthy cost comparison (`apiOption.monthlyCost == null` **or** no priced self-host) | `undetermined` / `comparison-unavailable` |
-| 5 | trustworthy comparison: `apiOption.monthlyCost ≤` cheapest evidence-qualified self-host | `api` / `lower-cost` |
-| 5′ | trustworthy comparison: cheapest evidence-qualified self-host is cheaper | `self-host` / `lower-cost` |
+| 4 | evidence-qualified exists, but **either side** lacks `comparisonQualified` (API price missing, or no comparison-qualified self-host) | `undetermined` / `comparison-unavailable` |
+| 5 | trustworthy comparison: `apiOption.monthlyCost ≤` cheapest comparison-qualified self-host | `api` / `lower-cost` |
+| 5′ | trustworthy comparison: cheapest comparison-qualified self-host is cheaper | `self-host` / `lower-cost` |
 
 So **R1/R5 → `api` / `lower-cost`** with `bestSelfHost = p6-b200`; a **heuristic-only** case (R3/R4,
 `bestSelfHost=null`) → **`api` / `evidence-gap`** (never `lower-cost` — the $554k/$522k heuristic numbers
@@ -287,3 +291,23 @@ The registry stays byte-identical to its approved `4b2c848` state; this layer on
 5. **Alternative distinctness** — v1 uses the exact same-id rule (§4.1). Fuzzy percentage thresholds are
    deferred to the UI phase.
 6. **Narrative locale/format** — md/plain strings now; HTML rendering is a UI-phase concern.
+
+---
+
+## 10. Sweep review — HOLD-1 (findings, reproductions, fixes)
+
+The first focused sweep QA returned HOLD with six P1 findings + one P2. All are fixed on this branch;
+each is captured here with its reproduction and resolution, and covered by tests.
+
+| # | Finding (repro) | Fix |
+|---|---|---|
+| **P1-1** | `ttftTargetMs=100` on B200: `technicallyFeasible=false`, rejection `fleet-exceeds-practical-limit` (a TTFT SLA failure folded into technical feasibility via `crossover.feasible`, then mislabeled by a `/instances/` message regex). | `technicallyFeasible` now derives from **structured** infeasibility codes and EXCLUDES the SLA codes (`ttft`/`interactivity`/`concurrency-below-min`). No message regexes. SLA maps to `sla-unmet-ttft-or-streaming`. Test: B200 low-TTFT → `technicallyFeasible=true`, `slaQualified=false`, `sla-unmet-ttft-or-streaming`, `decision=api/sla`. |
+| **P1-2** | `minimax-m3-oss`/`glm-5.2-oss`/`nemotron-3-ultra-oss` (all `selfHostable`) with no pinned candidate → `api/self-host-infeasible`. | New basis **`no-modeled-candidate`**: self-hostable model + zero candidates → `api/no-modeled-candidate`; `self-host-infeasible` is reserved for genuinely non-self-hostable models or candidates that are all technically infeasible. Tests cover both. |
+| **P1-3** | `optimizeFor:"bogus"` accepted; a `p6-b200` candidate with `gpuSku:"H100"` passed validation; `PINNED_CANDIDATES` mutable. | Boundary enum validation (`optimizeFor`, `experimentalProvenance`, workload) fails closed; catalog validation checks `gpuSku` against a reviewed `REVIEWED_INSTANCE_ACCELERATOR` map (a local curated copy — not a registry deep-import); `PINNED_CANDIDATES` and every entry are `Object.freeze`d and `validateCandidateCatalog` returns frozen records. Negative tests for all three. |
+| **P1-4** | A synthetic `extrapolated` result with matching precision but partial-topology reasons / no provenance was classified `measured-scaled`. | `engineConfidenceFrom` now requires a **traceable, same-precision, ISL-scaled** measurement (real `benchmarkProvenance`, `prefillEstimated=false`, a defined `prefillIslScale`, `precisionUsed===precisionRequested`) from STRUCTURED fields; anything else stays `extrapolated`. R1's sequence-scaled behavior preserved. Negatives for untraceable provenance, estimated prefill, no ISL scale, precision substitution. |
+| **P1-5** | `deriveDecision` returned `lower-cost` even when `comparisonQualified=false`. | A cost decision now requires `comparisonQualified` on **both** the API option and the selected self-host candidate; otherwise `comparison-unavailable`. Contract tests for both sides. |
+| **P1-6** | Result lacked effective inputs / clamp notes / price provenance; `recommend()` imported `prices.json` directly. | Added `effectiveWorkload` (GPU-independent normalized inputs), `inputAdjustments` (incl. the 730h uptime cap), and `pricing` (`source`/`asOf`/`region`/reconciled `gpuPriceSource`); reconciled once at result level with a cross-candidate consistency assertion. Introduced the trusted `loadPriceBook()` seam (default = pinned reference book; production wires live/fallback; tests module-mock). |
+| **P2-1** | "evaluated exactly once" checked output length; API cost silently took the first non-null. | Added a `calculate()` spy seam asserting exactly one call per candidate; `recommend()` now asserts the API cost is identical across exact-model candidates and fails closed otherwise. |
+
+**After HOLD-1:** recommendation tests 58, full suite 282, tsc clean; engine + registry byte-identical to
+`4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.
