@@ -334,3 +334,14 @@ each is captured here with its reproduction and resolution, and covered by tests
 
 **After HOLD-3:** recommendation tests 77, full suite 301, tsc clean; engine + registry byte-identical to
 `4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.
+
+### 10.3 Sweep review — HOLD-4 (findings, reproductions, fixes)
+
+| # | Finding (repro) | Fix |
+|---|---|---|
+| **P1-1** | `effectiveWorkload` was a full `CalcInputs` carrying the caller's GPU/precision fields, which the sweep overrides per candidate — so `effectiveWorkload` said `p5.48xlarge / weightBits=16` while `bestSelfHost` was `p6-b200 / INT4` (two conflicting sources of truth; caller `gpuPricePerHr=999`/invented fields could be narrated as candidate facts). | `effectiveWorkload` is now a **workload-only** `EffectiveWorkload` type that EXCLUDES the candidate-varying fields (`gpuInstanceType`, `gpuPricePerHr`, `sustainedTokPerSec`, `weightBits`, `kvBits`). The ACTUAL applied serving facts now live on each `CandidateEvaluation.servingFacts` (instance/SKU, weight+KV precision, effective GPU $/hr + source, pricing model, uptime, utilTarget), derived from the exact `calc.effectiveInputs` so they reconcile with what `calculate()` consumed. Tamper test: caller GPU/price fields never appear as candidate facts; `servingFacts` reflect the pinned candidate + trusted price. |
+| **P1-2** | `gpuUptimeHoursPerMonth=0` was accepted, `effectiveWorkload` showed 730, `inputAdjustments` was empty — a silent 0→730. | `buildEffectiveWorkload` now **discloses** the default: `entered≤0` emits `{field:"gpuUptimeHoursPerMonth", entered:0, calculated:730}` and `servingFacts.uptimeHours=730`. Negative uptime is still rejected by the validator. |
+| **cleanup** | `weightBits`/`kvBits` accepted any non-negative number; `gpuInstanceType` unvalidated; `sustainedTokPerSec` unvalidated. | Validator now requires `weightBits∈{4,8,16}`, `kvBits∈{8,16}` (exact), `gpuInstanceType` present in the trusted price book, and `sustainedTokPerSec` finite ≥ 0. Negatives added (`weightBits=3`, `kvBits=7`, `gpuInstanceType="made-up"` all fail closed). |
+
+**After HOLD-4:** recommendation tests 81, full suite 305, tsc clean; engine + registry byte-identical to
+`4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.

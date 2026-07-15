@@ -24,6 +24,7 @@ const evalFix = (o: Partial<CandidateEvaluation> = {}): CandidateEvaluation => (
   effectiveConfidence: "measured-scaled",
   fleet: { boxes: 87, bindingDim: "prefill", equation: "" },
   cost: { selfHostMonthly: 7_176_630, apiMonthly: 6_492_000, verdict: "api-wins" },
+  servingFacts: { instanceType: "p6-b200.48xlarge", gpuSku: "B200", weightBits: 4, kvBits: 16, weightPrecision: "fp4", kvPrecision: "bf16", gpuPricePerHr: 113, gpuPriceSource: "fallback", gpuPricingModel: "on-demand", uptimeHours: 730, utilTarget: 0.7 },
   ttftS: 1.22,
   ttftPercentile: "p99",
   rejections: [],

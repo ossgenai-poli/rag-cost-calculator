@@ -12,14 +12,14 @@ import { explainFleetSizing } from "../fleet-explain";
 import { resolveOperatingPoint } from "../benchmark-registry";
 
 import type {
-  ApiOption, Card, CandidateConfig, CandidateEvaluation, EffectiveConfidence, EngineConfidence,
-  InputAdjustment, OptimizeFor, PricingProvenance, ReasonCode, RecommendationRequest, RegistryEvidence,
-  Rejection, StructuredRecommendationResult, Verdict,
+  ApiOption, Card, CandidateConfig, CandidateEvaluation, EffectiveConfidence, EffectiveWorkload,
+  EngineConfidence, InputAdjustment, OptimizeFor, PricingProvenance, ReasonCode, RecommendationRequest,
+  RegistryEvidence, Rejection, ServingFacts, StructuredRecommendationResult, Verdict,
 } from "./schema";
 import { loadCandidateCatalog } from "./candidate-catalog";
 import { loadPriceBook } from "./price-book";
 import { validateRecommendationRequest } from "./validate";
-import { buildRegistryRequest } from "./registry-request";
+import { buildRegistryRequest, precisionFromBits } from "./registry-request";
 import { reconcileConfidence } from "./reconcile";
 import { deriveDecision } from "./decision";
 import { rankSelfHost } from "./ranking";
@@ -142,6 +142,22 @@ function runCandidate(candidate: CandidateConfig, workload: CalcInputs, priceBoo
   else if (!slaQualified) rejections.push({ code: "sla-unmet-ttft-or-streaming", message: `no operating point meets the ${inputs.generation.ttftTargetMs}ms P99 TTFT / ${inputs.generation.interactivityTarget} tok/s streaming SLA (TTFT ${cap.ttftS.toFixed(2)}s)` });
   else if (!evidenceQualified) rejections.push({ code: "evidence-below-threshold", message: `evidence is ${effectiveConfidence} (not measured/measured-scaled on a real applicable benchmark)` });
 
+  // The ACTUAL serving facts the engine computed with, from the exact effectiveInputs (HOLD-4 P1-1).
+  const ei = calc.effectiveInputs.generation;
+  const servingFacts: ServingFacts = {
+    instanceType: ei.gpuInstanceType,
+    gpuSku: candidate.gpuSku,
+    weightBits: ei.weightBits,
+    kvBits: ei.kvBits,
+    weightPrecision: precisionFromBits(ei.weightBits),
+    kvPrecision: precisionFromBits(ei.kvBits),
+    gpuPricePerHr: ei.gpuPricePerHr,
+    gpuPriceSource: cx.gpuPriceSource,
+    gpuPricingModel: ei.gpuPricingModel,
+    uptimeHours: ei.gpuUptimeHoursPerMonth > 0 ? Math.min(ei.gpuUptimeHoursPerMonth, UPTIME_CAP_HOURS) : UPTIME_CAP_HOURS,
+    utilTarget: ei.utilTarget,
+  };
+
   const eq = explainFleetSizing(cx);
   const evaluation: CandidateEvaluation = {
     config: candidate,
@@ -160,6 +176,7 @@ function runCandidate(candidate: CandidateConfig, workload: CalcInputs, priceBoo
       equation: `${Math.round(eq.peakDemandTokS)} ${eq.dimension} tok/s ÷ (${Math.round(eq.perReplicaTokS)} × ${eq.utilTarget}) → ${eq.throughputReplicas} replica(s) → ${cx.boxes} boxes`,
     },
     cost: { selfHostMonthly, apiMonthly, verdict },
+    servingFacts,
     ttftS: Number.isFinite(cap.ttftS) ? cap.ttftS : null,
     ttftPercentile: cap.ttftPercentile ?? null,
     rejections,
@@ -212,21 +229,26 @@ function resolveTrustedPrices(workload: CalcInputs, priceBook: PriceBook): CalcI
  * Returns the effective workload and the structured adjustments; every adjustment agrees with the
  * effective workload by construction.
  */
-function buildEffectiveWorkload(workload: CalcInputs): { effective: CalcInputs; adjustments: InputAdjustment[] } {
+function buildEffectiveWorkload(workload: CalcInputs): { effective: EffectiveWorkload; adjustments: InputAdjustment[] } {
   const norm = normalizeInputs(workload);
   const adjustments: InputAdjustment[] = inputClampNotes(workload).map((n) => ({ field: n.field, entered: n.entered, calculated: n.calculated }));
 
   const enteredUptime = norm.generation.gpuUptimeHoursPerMonth;
   const cappedUptime = enteredUptime > 0 ? Math.min(enteredUptime, UPTIME_CAP_HOURS) : UPTIME_CAP_HOURS;
-  if (Number.isFinite(enteredUptime) && enteredUptime > UPTIME_CAP_HOURS) adjustments.push({ field: "gpuUptimeHoursPerMonth", entered: enteredUptime, calculated: UPTIME_CAP_HOURS });
+  if (enteredUptime > UPTIME_CAP_HOURS) adjustments.push({ field: "gpuUptimeHoursPerMonth", entered: enteredUptime, calculated: UPTIME_CAP_HOURS });
+  else if (enteredUptime <= 0) adjustments.push({ field: "gpuUptimeHoursPerMonth", entered: enteredUptime, calculated: UPTIME_CAP_HOURS }); // HOLD-4 P1-2: disclose the 0→730 default, never silent
 
   const enteredTopN = norm.retrieval.topN;
   const effTopN = Math.min(enteredTopN, norm.retrieval.topK);
   if (enteredTopN > norm.retrieval.topK) adjustments.push({ field: "retrieval.topN", entered: enteredTopN, calculated: effTopN });
 
-  const effective: CalcInputs = {
+  // WORKLOAD-ONLY effective inputs — strip the candidate-varying GPU/precision fields (HOLD-4 P1-1);
+  // their actual applied values live on each CandidateEvaluation.servingFacts.
+  const { gpuInstanceType, gpuPricePerHr, sustainedTokPerSec, weightBits, kvBits, ...genRest } = norm.generation;
+  void gpuInstanceType; void gpuPricePerHr; void sustainedTokPerSec; void weightBits; void kvBits;
+  const effective: EffectiveWorkload = {
     ...norm,
-    generation: { ...norm.generation, gpuUptimeHoursPerMonth: cappedUptime },
+    generation: { ...genRest, gpuUptimeHoursPerMonth: cappedUptime },
     retrieval: { ...norm.retrieval, topN: effTopN },
   };
   return { effective, adjustments };

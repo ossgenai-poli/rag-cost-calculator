@@ -15,6 +15,8 @@ const GEN_MODES = new Set(["api", "self-hosted"]);
 const GPU_PRICING_MODELS = new Set(["on-demand", "reserved-1yr", "reserved-3yr", "savings-1yr", "spot"]);
 const TRAFFIC_METHODS = new Set(["monthly", "qps"]);
 const MANAGED_KB_MODES = new Set(["standard", "agentic"]);
+const WEIGHT_BITS = new Set([4, 8, 16]);
+const KV_BITS = new Set([8, 16]);
 
 const fail = (m: string): never => {
   throw new Error(`recommend: ${m}`);
@@ -97,11 +99,15 @@ export function validateRecommendationRequest(req: RecommendationRequest, priceB
   pos(g.interactivityTarget, "generation.interactivityTarget");
   pos(g.maxContextLen, "generation.maxContextLen");
   pos(g.maxConcurrentSeqs, "generation.maxConcurrentSeqs");
-  nonNeg(g.weightBits, "generation.weightBits");
-  nonNeg(g.kvBits, "generation.kvBits");
+  // Candidate-varying fields — the sweep overrides these per pinned candidate, but they must still be
+  // well-formed exact values (HOLD-4 related cleanup); they never appear in the effective workload.
+  if (!WEIGHT_BITS.has(g.weightBits as number)) fail("generation.weightBits must be one of 4 | 8 | 16");
+  if (!KV_BITS.has(g.kvBits as number)) fail("generation.kvBits must be one of 8 | 16");
+  nonNeg(g.sustainedTokPerSec, "generation.sustainedTokPerSec");
   bool(g.autoSizeFleet, "generation.autoSizeFleet");
   bool(g.haEnabled, "generation.haEnabled");
   str(g.gpuInstanceType, "generation.gpuInstanceType");
+  if (!priceBook.gpus.some((x) => x.instanceType === g.gpuInstanceType)) fail(`unknown generation.gpuInstanceType "${String(g.gpuInstanceType)}"`);
 
   // managed KB
   enumOf(w.managedKb.retrievalMode, MANAGED_KB_MODES, "managedKb.retrievalMode");

@@ -351,6 +351,56 @@ describe("HOLD-3 — API comparison identity + complete boundary validation", ()
   });
 });
 
+describe("HOLD-4 — effectiveWorkload is workload-only; candidate facts live on servingFacts", () => {
+  it("P1-1: caller GPU/price fields never appear as calculated candidate facts", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuInstanceType = "p5.48xlarge"; // a real-but-different instance (overridden by the candidate)
+    w.generation.gpuPricePerHr = 999;
+    w.generation.sustainedTokPerSec = 1;
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    // effectiveWorkload has NO candidate-varying GPU/precision fields
+    const g = r.effectiveWorkload.generation as any;
+    for (const f of ["gpuInstanceType", "gpuPricePerHr", "sustainedTokPerSec", "weightBits", "kvBits"]) expect(g[f]).toBeUndefined();
+    // servingFacts reflect the PINNED candidate + trusted price, not the caller's
+    const sf = r.evaluations[0].servingFacts;
+    expect(sf.instanceType).toBe("p6-b200.48xlarge");
+    expect(sf.gpuSku).toBe("B200");
+    expect(sf.weightBits).toBe(4);
+    expect(sf.gpuPricePerHr).toBe(113); // trusted p6-b200 $/hr, never the caller's 999
+    expect(sf.gpuPricePerHr).not.toBe(999);
+  });
+
+  it("P1-1: servingFacts reconcile with the exact calculate() input across all candidates", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4, C.h200Int4, C.h100Int4]);
+    const r = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    const byId = Object.fromEntries(r.evaluations.map((e) => [e.config.id, e]));
+    expect(byId[C.b200Int4.id].servingFacts.instanceType).toBe("p6-b200.48xlarge");
+    expect(byId[C.h200Int4.id].servingFacts.instanceType).toBe("p5e.48xlarge");
+    expect(byId[C.h100Int4.id].servingFacts.instanceType).toBe("p5.48xlarge");
+    for (const e of r.evaluations) expect(e.servingFacts.gpuSku).toBe(e.config.gpuSku);
+  });
+
+  it("P1-2: gpuUptimeHoursPerMonth=0 discloses the 0→730 default (never silent)", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuUptimeHoursPerMonth = 0;
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    expect(r.effectiveWorkload.generation.gpuUptimeHoursPerMonth).toBe(730);
+    expect(r.inputAdjustments).toContainEqual({ field: "gpuUptimeHoursPerMonth", entered: 0, calculated: 730 });
+    expect(r.evaluations[0].servingFacts.uptimeHours).toBe(730);
+  });
+
+  it("cleanup: weightBits/kvBits must be exact supported values; a made-up instance fails closed", () => {
+    const w1 = dsv4Workload(); w1.generation.weightBits = 3;
+    expect(() => recommend({ workload: w1, optimizeFor: "cost" })).toThrow(/weightBits must be one of/);
+    const w2 = dsv4Workload(); w2.generation.kvBits = 7;
+    expect(() => recommend({ workload: w2, optimizeFor: "cost" })).toThrow(/kvBits must be one of/);
+    const w3 = dsv4Workload(); w3.generation.gpuInstanceType = "made-up";
+    expect(() => recommend({ workload: w3, optimizeFor: "cost" })).toThrow(/unknown generation.gpuInstanceType/);
+  });
+});
+
 describe("catalog validation fails closed", () => {
   const good = PINNED_CANDIDATES[0];
   const clone = (o: CandidateConfig): CandidateConfig => JSON.parse(JSON.stringify(o));

@@ -134,6 +134,23 @@ export interface CostComparison {
   verdict: Verdict;
 }
 
+/** The ACTUAL serving facts the frozen engine computed with for THIS candidate — reconciled with the
+ *  exact `calculate()` input (HOLD-4 P1-1). Candidate-varying GPU/precision facts live HERE, never in the
+ *  global effective workload. narrate() sources candidate facts from here, never from a stale CalcInputs. */
+export interface ServingFacts {
+  instanceType: string; // the pinned candidate's AWS instance the engine actually used
+  gpuSku: string;
+  weightBits: number;
+  kvBits: number;
+  weightPrecision: string;
+  kvPrecision: string;
+  gpuPricePerHr: number; // trusted on-demand $/hr from the price book (not a caller field)
+  gpuPriceSource: string; // crossover.gpuPriceSource
+  gpuPricingModel: string;
+  uptimeHours: number; // the uptime the engine actually used (≤ 730)
+  utilTarget: number;
+}
+
 /** Per-candidate evaluation — the full audit record and the STRUCTURED input to narrate(). */
 export interface CandidateEvaluation {
   config: CandidateConfig;
@@ -154,6 +171,7 @@ export interface CandidateEvaluation {
   // (6) structured explanation inputs.
   fleet: FleetReconciliation;
   cost: CostComparison;
+  servingFacts: ServingFacts; // the candidate's ACTUAL GPU/precision facts (HOLD-4 P1-1)
   ttftS: number | null;
   ttftPercentile: string | null;
 
@@ -196,6 +214,17 @@ export interface InputAdjustment {
   calculated: number;
 }
 
+/** Candidate-VARYING generation fields — determined by the pinned candidate + price book, NOT the
+ *  customer's workload. Excluded from the global effective workload (HOLD-4 P1-1); the actual applied
+ *  values live on each `CandidateEvaluation.servingFacts`. */
+export type CandidateVaryingGenerationField = "gpuInstanceType" | "gpuPricePerHr" | "sustainedTokPerSec" | "weightBits" | "kvBits";
+
+/** The WORKLOAD-ONLY effective inputs (no candidate-varying GPU/precision facts). This is the single
+ *  authoritative global effective-input contract for narration; candidate facts come from servingFacts. */
+export interface EffectiveWorkload extends Omit<CalcInputs, "generation"> {
+  generation: Omit<CalcInputs["generation"], CandidateVaryingGenerationField>;
+}
+
 /** Structured pricing provenance so narration can never imply live pricing while using fallback (P1-6). */
 export interface PricingProvenance {
   source: PriceBookSource; // the price book's own live/fallback state
@@ -217,8 +246,8 @@ export interface StructuredRecommendationResult {
   mode: "control" | "experimental";
   controlComparison?: ControlComparison;
   // P1-6 — honest-narration inputs, reconciled ONCE at result level (consistent across candidates).
-  effectiveWorkload: CalcInputs; // the NORMALIZED inputs the engine actually computed with
-  inputAdjustments: InputAdjustment[]; // entered-vs-calculated (incl. the 730h uptime cap)
+  effectiveWorkload: EffectiveWorkload; // WORKLOAD-ONLY normalized inputs (no candidate-varying GPU/precision — HOLD-4 P1-1)
+  inputAdjustments: InputAdjustment[]; // entered-vs-calculated (incl. the 730h uptime cap / 0→730 default)
   pricing: PricingProvenance; // source / asOf / region / gpu-price source
 }
 
@@ -254,7 +283,7 @@ export interface NarratedRecommendationResult {
   evaluations: CandidateEvaluation[];
   mode: "control" | "experimental";
   controlComparison?: ControlComparison;
-  effectiveWorkload: CalcInputs;
+  effectiveWorkload: EffectiveWorkload;
   inputAdjustments: InputAdjustment[];
   pricing: PricingProvenance;
 }
