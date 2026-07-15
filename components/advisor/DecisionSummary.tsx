@@ -11,6 +11,13 @@ import type { NarratedRecommendationResult } from "@/lib/recommendation";
 import { PURCHASING_MODEL_LABELS } from "@/lib/recommendation";
 import { ConfidenceChip } from "./ConfidenceChip";
 
+/** Per-query rate over displayed structured values — LABELED presentation arithmetic (4 decimals).
+ *  Exported so the report builder (report.ts) frames cost identically. */
+export function perQuery(monthly: number | null, queriesPerMonth: number): string {
+  if (monthly == null || !Number.isFinite(monthly) || queriesPerMonth <= 0) return "unavailable";
+  return `$${(monthly / queriesPerMonth).toFixed(4)}/query`;
+}
+
 function usd(v: number | null): string {
   if (v == null || !Number.isFinite(v)) return "unavailable";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
@@ -19,8 +26,9 @@ const num = (v: number) => new Intl.NumberFormat("en-US").format(v);
 
 /** Bounded hero per decision.basis. Availability is now a FIRST-CLASS headless basis (P1-UI-4):
  *  `self-host-unavailable` (reason-coded, catalog fact) is distinct from `self-host-infeasible`
- *  (genuine technical failure) — the UI simply maps the structured basis. */
-function hero(result: NarratedRecommendationResult): string {
+ *  (genuine technical failure) — the UI simply maps the structured basis. Exported as the SINGLE
+ *  level-1 verdict line, reused verbatim by the report builder (report.ts). */
+export function heroLine(result: NarratedRecommendationResult): string {
   const { choice, basis } = result.decision;
   if (basis === "lower-cost") {
     // P1-UI3-1 / UI3-D3: a non-reference pricing qualification (indicative commitment/Spot planning
@@ -65,7 +73,7 @@ export function DecisionSummary({ result }: { result: NarratedRecommendationResu
     <section aria-labelledby="decision-heading" data-testid="decision-summary" className={`rounded-lg border-2 p-4 ${CHOICE_STYLE[decision.choice]}`}>
       {/* Level 1 — bounded conclusion. Basis chip is a SIBLING of the heading (clean accessible name). */}
       <div className="flex flex-wrap items-center gap-2">
-        <h2 id="decision-heading" className="text-lg font-semibold text-slate-900">{hero(result)}</h2>
+        <h2 id="decision-heading" className="text-lg font-semibold text-slate-900">{heroLine(result)}</h2>
         <span className="rounded bg-white/70 border border-slate-300 px-2 py-0.5 text-xs text-slate-600" data-testid="decision-basis" aria-label={`Decision basis: ${decision.basis}`}>
           basis: {decision.basis}
         </span>
@@ -105,12 +113,22 @@ export function DecisionSummary({ result }: { result: NarratedRecommendationResu
         <div className="rounded border border-slate-200 bg-white p-2">
           <dt className="text-xs uppercase tracking-wide text-slate-500">API — {apiOption.modelLabel}</dt>
           <dd className="text-base font-semibold text-slate-900" data-testid="api-monthly">{usd(apiCost)}/mo</dd>
+          {apiCost != null && (
+            <dd className="text-xs text-slate-600" data-testid="api-framing">
+              {usd(apiCost * 12)}/yr · {perQuery(apiCost, w.traffic.queriesPerMonth)}
+            </dd>
+          )}
         </div>
         <div className="rounded border border-slate-200 bg-white p-2">
           <dt className="text-xs uppercase tracking-wide text-slate-500">Best self-host — {result.selfHostModelLabel}</dt>
           <dd className="text-base font-semibold text-slate-900" data-testid="selfhost-monthly">
             {bestSelfHost ? `${usd(selfCost)}/mo` : decision.basis === "self-host-unavailable" ? "unavailable (API-only model)" : "none evidence-qualified"}
           </dd>
+          {selfCost != null && (
+            <dd className="text-xs text-slate-600" data-testid="selfhost-framing">
+              {usd(selfCost * 12)}/yr · {perQuery(selfCost, w.traffic.queriesPerMonth)}
+            </dd>
+          )}
         </div>
         <div className="rounded border border-slate-200 bg-white p-2">
           <dt className="text-xs uppercase tracking-wide text-slate-500">Modeled difference</dt>

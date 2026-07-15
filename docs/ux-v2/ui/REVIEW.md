@@ -315,3 +315,63 @@ vs engine effectiveGpuHourly, qualification / pricingEstimated / assumptionSourc
 exact 95%/$1 tamper repro now fails closed to neutral wording end-to-end through narrate(). No UI
 changes — this branch is rebased onto the fix. Gates re-run: headless 364/364; UI **428/428**, tsc,
 build:static, 375px mobile PASS, fresh-profile live probe zero console errors.
+
+---
+
+# Iteration 4 — result-hierarchy completion (risks & exclusions · cost framing) + Stage-F export
+
+**Branch:** `ux/v2-ui-4` (from the IMMUTABLE approved iteration-3 baseline `ux/v2-ui-3 @ 63ebce6`;
+headless consumed unchanged at the approved `ux/v2-phase1 @ faa9af7`). Scope read from the Phase-0
+plan: the remaining unbuilt pieces of docs/ux-v2/10-result-hierarchy.md (level 6 "Risks & exclusions",
+level-3 annual/per-query framing) and the export that "reproduces this exact order" — the last item on
+the slice-1 out-of-scope list (alternatives cards and presets shipped in iterations 2–3). No headless
+changes this iteration.
+
+## 1. Level 6 — Risks & exclusions (deterministic, flag-driven)
+`components/advisor/risks.ts` assembles the checklist from ACTIVE structured flags only (doc 10 §6):
+always-on planning-capacity/load-test line and quota-not-verified line (boxes × instance × SKU from the
+relevant candidate's fleet + servingFacts) when a self-host configuration is described; N+1 scope line
+(or the explicit N+1-off line) from `generation.haEnabled`; "obtain an AWS quote" ONLY when
+`pricingAssumption.qualification ≠ reference`; the evidence-state line with exact ladder tokens for any
+non-measured state; the active-window line when hours < 730; entered ops-cost assumptions
+(networking/observability/overhead) verbatim; pinned-price-book line when `pricing.source ≠ live`;
+cross-model caveat when the compared models differ. Fixed templates keyed by structured conditions —
+nothing inferred or authored; deterministic byte-stable output. `RisksPanel` renders the lines verbatim
+in BOTH modes, placed per the fixed hierarchy order (before the advanced evidence).
+
+## 2. Level 3 completion — annual + per-query framing
+The cost row now shows `× 12`/yr and `÷ queries-per-month`/query beside each monthly amount — LABELED
+presentation arithmetic over the two displayed structured amounts (`perQuery` exported so the report
+frames identically). R1: API $6,492,000/mo · $77,904,000/yr · $0.0325/query; best self-host
+$7,176,630/mo · $86,119,560/yr · $0.0359/query.
+
+## 3. Stage-F export — deterministic report in the EXACT hierarchy order
+`components/advisor/report.ts` `buildReport(narrated)` is a PURE template producing Markdown in the
+fixed order 1 recommendation → 2 why → 3 cost → 4 architecture → 5 confidence → 6 risks & exclusions →
+7 advanced evidence: the bounded hero line (`heroLine` — the SAME function the page renders) + basis +
+evidence chip; the narrated rationale verbatim as the why; the cost table (monthly/annual/per-query,
+both sides, labeled arithmetic); model · instance · precision · fleet with the `fleet.equation`
+verbatim and the operations assumptions; the exact confidence tokens + pricing provenance; the SAME
+`riskLines()` the on-page panel renders (page and export cannot diverge); and the full sweep audit
+(per-candidate gates/boxes/cost/state, rejections, input adjustments). No timestamps, no locale drift —
+byte-identical output for identical input (asserted). `ExportPanel` offers Copy / Download (.md)
+(client-side blob, static-export friendly) plus a collapsed preview of the EXACT report text.
+
+## Verification
+- **440/440** tests (12 new in `advisor4.test.tsx`: flag matrix incl. API-only reduction to
+  pinned-pricing+cross-model only, determinism, quota-line exactness, framing arithmetic, report order/
+  byte-identity/1:1 content mapping incl. the indicative case and availability wording, panel render),
+  `tsc --noEmit` clean, `build:static` clean, **375px mobile acceptance PASS**.
+- Live (fresh Chrome profile, ZERO console errors): R1 renders all 7 expected risk lines,
+  "$86,119,560/yr · $0.0359/query" framing, export preview showing the real report; applying
+  Cost-optimized adds the "obtain an AWS quote" risk live.
+- Isolation: frozen surfaces untouched (main `d749309`, benchmarks `4b2c848`, headless `faa9af7`, UI
+  pins `f02b51f`/`7fdee3d`/`63ebce6`); no merge/deploy/CI; `.claude/` excluded.
+
+## Open items for owner/UX review (UI4-D*)
+- **UI4-D1** Risk-line wording is fixed templates proposed here (esp. the N+1-off consequence line and
+  the ops-assumptions line) — confirm or adjust copy.
+- **UI4-D2** Export format is Markdown (single file, self-contained). Confirm Markdown-only or request
+  an additional format (CSV of the evidence table / PDF) in a later pass.
+- **UI4-D3** The report's §7 includes ALL evaluations and rejections (complete audit); confirm this
+  should stay complete rather than truncated for very large future catalogs.

@@ -24,6 +24,8 @@ import { RejectedOptions } from "@/components/advisor/RejectedOptions";
 import { TrustPanel } from "@/components/advisor/TrustPanel";
 import { AdjustmentsPanel } from "@/components/advisor/AdjustmentsPanel";
 import { ChangesPanel } from "@/components/advisor/ChangesPanel";
+import { RisksPanel } from "@/components/advisor/RisksPanel";
+import { ExportPanel } from "@/components/advisor/ExportPanel";
 import { PresetBar } from "@/components/advisor/PresetBar";
 import { changedPresetFields, initialProvenance, registerManualEdit, type PresetProvenance } from "@/components/advisor/presets";
 import { friendlyFieldErrors, type FieldError } from "@/components/advisor/copy";
@@ -201,10 +203,15 @@ export default function AdvisorPage() {
               <AdjustmentsPanel result={result} />
               <BestSelfHostCard result={result} />
               <AlternativeCards result={result} />
+              {/* Level 6 (10-result-hierarchy §6): risks & exclusions BEFORE the advanced evidence,
+                  visible in both modes. */}
+              <RisksPanel result={result} />
               {/* Owner D1: evidence & assumptions stay ACCESSIBLE (collapsed) in Simple mode;
                   rejected candidates remain Expert-only. */}
               {state.mode === "expert" && <RejectedOptions result={result} />}
               <TrustPanel result={result} />
+              {/* Stage-F: the deterministic export reproduces the exact hierarchy order. */}
+              <ExportPanel result={result} />
             </>
           )}
         </div>
