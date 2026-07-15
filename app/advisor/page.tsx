@@ -5,7 +5,12 @@
 // narrate() → render. Components never invent numbers, evidence, explanations or recommendations —
 // every displayed value maps to a structured field (docs/ux-v2/ui/REVIEW.md). Default inputs are the
 // R1 canonical reference workload, so the numbers shown are the approved reference-case output.
-import { useMemo, useState } from "react";
+//
+// UI HOLD-1 revisions: bounded hero + visible assumptions (P1-UI-1); API-only availability state,
+// distinct from technical infeasibility (P1-UI-2); friendly field-level validation with blur-commit
+// and last-valid-result preservation (P2-UI-1 / owner D6); "Evidence & assumptions" stays accessible
+// (collapsed) in Simple mode while rejected candidates remain Expert-only (owner D1).
+import { useMemo, useRef, useState } from "react";
 import { defaultInputs } from "@/lib/calc-engine";
 import { recommend, narrate } from "@/lib/recommendation";
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
@@ -17,6 +22,7 @@ import { BestSelfHostCard } from "@/components/advisor/BestSelfHostCard";
 import { RejectedOptions } from "@/components/advisor/RejectedOptions";
 import { TrustPanel } from "@/components/advisor/TrustPanel";
 import { AdjustmentsPanel } from "@/components/advisor/AdjustmentsPanel";
+import { friendlyFieldErrors, type FieldError } from "@/components/advisor/copy";
 
 const priceBook = pricesJson as unknown as PriceBook;
 
@@ -58,26 +64,47 @@ function buildWorkload(s: AdvisorState): CalcInputs {
   return w;
 }
 
+interface ComputeOutcome {
+  result: NarratedRecommendationResult | null;
+  errorGeneric: string | null;
+  fieldErrors: Record<string, FieldError>;
+}
+
 export default function AdvisorPage() {
   const [state, setState] = useState<AdvisorState>(DEFAULT_STATE);
+  // P2-UI-1: the last VALID result stays on screen while the customer edits through an invalid state.
+  const lastGood = useRef<NarratedRecommendationResult | null>(null);
 
-  // Deterministic: recommend() + narrate() are pure; validation failures surface honestly as a banner
-  // (the boundary validator's message, verbatim) — never a crash, never a silently "fixed" input.
-  const { result, error } = useMemo<{ result: NarratedRecommendationResult | null; error: string | null }>(() => {
+  // Deterministic: recommend() + narrate() are pure. Numeric inputs commit on blur (AdvisorInputs), so
+  // this recomputes per committed change, not per keystroke. Validation failures map to friendly
+  // field-level wording (never internal property paths) while the last valid result is preserved.
+  const { result, errorGeneric, fieldErrors } = useMemo<ComputeOutcome>(() => {
     try {
       const structured = recommend({
         workload: buildWorkload(state),
         optimizeFor: state.optimizeFor,
         experimentalProvenance: state.experimental,
       });
-      return { result: narrate(structured), error: null };
+      const narrated = narrate(structured);
+      lastGood.current = narrated;
+      return { result: narrated, errorGeneric: null, fieldErrors: {} };
     } catch (e) {
-      return { result: null, error: e instanceof Error ? e.message : String(e) };
+      const raw = e instanceof Error ? e.message : String(e);
+      const friendly = friendlyFieldErrors(raw);
+      return {
+        result: lastGood.current, // preserve the last valid result while editing
+        errorGeneric: friendly.generic,
+        fieldErrors: Object.fromEntries(friendly.fields.map((f) => [f.inputId, f])),
+      };
     }
   }, [state]);
 
+  const model = priceBook.models.find((m) => m.id === state.modelId);
+  const selfHostAvailable = !!model && model.kind === "llm" && model.selfHostable === true;
+  const availability = selfHostAvailable ? ("available" as const) : ("api-only" as const);
+
   // Self-contained light surface: the calculator globals are dark-themed; the advisor slice pins its
-  // own scheme so the Phase-0 light-mode wireframe rendering holds.
+  // own scheme so the Phase-0 light-mode wireframe rendering holds (owner D7: shared tokens later).
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900 [color-scheme:light]">
       <div className="mx-auto max-w-5xl p-4">
@@ -104,26 +131,32 @@ export default function AdvisorPage() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[280px_1fr]">
         <aside aria-label="Inputs" className="rounded-lg border border-slate-200 bg-white p-4">
-          <AdvisorInputs state={state} models={priceBook.models} onChange={setState} />
+          <AdvisorInputs
+            state={state}
+            defaults={DEFAULT_STATE}
+            models={priceBook.models}
+            selfHostAvailable={selfHostAvailable}
+            fieldErrors={fieldErrors}
+            onChange={setState}
+          />
         </aside>
 
-        <div className="space-y-4">
-          {error && (
+        <div className="min-w-0 space-y-4">
+          {errorGeneric && (
             <div role="alert" data-testid="input-error" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-              {error}
+              {errorGeneric}
+              {result && <span className="ml-1 text-red-600">Showing the last valid result below.</span>}
             </div>
           )}
           {result && (
             <>
-              <DecisionSummary result={result} />
+              <DecisionSummary result={result} availability={availability} />
               <AdjustmentsPanel result={result} />
-              <BestSelfHostCard result={result} />
-              {state.mode === "expert" && (
-                <>
-                  <RejectedOptions result={result} />
-                  <TrustPanel result={result} />
-                </>
-              )}
+              <BestSelfHostCard result={result} availability={availability} />
+              {/* Owner D1: evidence & assumptions stay ACCESSIBLE (collapsed) in Simple mode;
+                  rejected candidates remain Expert-only. */}
+              {state.mode === "expert" && <RejectedOptions result={result} />}
+              <TrustPanel result={result} />
             </>
           )}
         </div>

@@ -6,27 +6,31 @@
 // this renders the coverage explanation and NEVER promotes a GPU configuration.
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
 import { ConfidenceChip } from "./ConfidenceChip";
+import type { SelfHostAvailability } from "./DecisionSummary";
 
 function usd(v: number | null): string {
   if (v == null || !Number.isFinite(v)) return "unavailable";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 }
 
-export function BestSelfHostCard({ result }: { result: NarratedRecommendationResult }) {
+export function BestSelfHostCard({ result, availability }: { result: NarratedRecommendationResult; availability: SelfHostAvailability }) {
   const card = result.bestSelfHost;
   if (!card) {
-    // Honest empty state — sourced from decision.basis + the evaluations' evidence states; no GPU shown.
+    // Honest empty state — sourced from decision.basis + availability; no GPU shown. Weights/rights
+    // availability is a DISTINCT state, never "technical infeasibility" (P1-UI-2 / owner D4).
     return (
       <section aria-labelledby="bsh-heading" data-testid="best-self-host-empty" className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
         <h2 id="bsh-heading" className="text-base font-semibold text-slate-700">Self-host option</h2>
         <p className="mt-1 text-sm text-slate-600" data-testid="bsh-empty-reason">
-          {result.decision.basis === "no-modeled-candidate"
-            ? "No self-host configuration is currently modeled for this model — a catalog-coverage gap, not a technical limitation."
-            : result.decision.basis === "self-host-infeasible"
-              ? "No modeled self-host configuration is technically feasible for this workload."
-              : result.decision.basis === "sla"
-                ? "The modeled self-host configurations cannot meet the interactivity / TTFT SLA."
-                : "No self-host configuration has qualifying benchmark evidence, so none can be recommended."}
+          {availability === "api-only"
+            ? "This model is API-only; self-host weights are unavailable. Select an open-weight model to evaluate self-hosting."
+            : result.decision.basis === "no-modeled-candidate"
+              ? "No self-host configuration is currently modeled for this model — a catalog-coverage gap, not a technical limitation."
+              : result.decision.basis === "self-host-infeasible"
+                ? "No modeled self-host configuration is technically feasible for this workload."
+                : result.decision.basis === "sla"
+                  ? "The modeled self-host configurations cannot meet the interactivity / TTFT SLA."
+                  : "No self-host configuration has qualifying benchmark evidence, so none can be recommended."}
         </p>
       </section>
     );
@@ -35,10 +39,11 @@ export function BestSelfHostCard({ result }: { result: NarratedRecommendationRes
   const sf = ev?.servingFacts;
   return (
     <section aria-labelledby="bsh-heading" data-testid="best-self-host-card" className="rounded-lg border border-slate-300 bg-white p-4">
-      <h2 id="bsh-heading" className="text-base font-semibold text-slate-800">
-        Best self-host option
-        <span className="ml-2 text-xs font-normal text-slate-500">(secondary — the decision above is the recommendation)</span>
-      </h2>
+      {/* Annotation is a SIBLING of the heading so the accessible name stays clean (P2-UI-2). */}
+      <div className="flex flex-wrap items-baseline gap-2">
+        <h2 id="bsh-heading" className="text-base font-semibold text-slate-800">Best self-host option</h2>
+        <span className="text-xs font-normal text-slate-500">secondary — the decision above is the recommendation</span>
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {/* Level 4 — architecture: config label + candidate servingFacts (never workload GPU fields) */}
         <span className="font-medium text-slate-900" data-testid="bsh-config">{card.config.label}</span>

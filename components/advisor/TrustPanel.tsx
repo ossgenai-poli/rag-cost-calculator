@@ -11,8 +11,9 @@ export function TrustPanel({ result }: { result: NarratedRecommendationResult })
   return (
     <section aria-labelledby="trust-heading" data-testid="trust-panel" className="rounded-lg border border-slate-200 bg-white p-4">
       <details>
+        {/* Owner D1: collapsed-but-accessible in Simple mode too. */}
         <summary id="trust-heading" className="cursor-pointer text-base font-semibold text-slate-700">
-          Where did this come from?
+          Evidence &amp; assumptions — where did this come from?
         </summary>
 
         {/* Pricing provenance — pricing.{source,asOf,region,gpuPriceSource}. Never says "live" on fallback. */}

@@ -1,92 +1,93 @@
-# UI slice review — /advisor (first reviewable vertical slice)
+# UI slice review — /advisor (vertical slice, revision 2 after UI HOLD-1)
 
 **Branch:** `ux/v2-ui` (from the approved complete headless baseline `ux/v2-phase1 @ e938c5d`).
-**Scope:** customer input journey · Simple/Expert mode · decision summary · best-self-host + rejection
-states · trust/provenance panel · structured adjustments · deterministic narrative rendering.
-**Not in scope:** merge, deploy, replacing the calculator at `/`, alternatives cards, presets, exports.
+**Scope:** customer input journey · Simple/Expert mode · bounded decision summary · best-self-host +
+availability/rejection states · trust/provenance panel · structured adjustments · deterministic
+narrative rendering. **Not in scope:** merge, deploy, replacing the calculator at `/`, alternatives
+cards, presets, exports.
+
+## UI HOLD-1 fixes in this revision
+
+| Finding | Fix |
+|---|---|
+| **P1-UI-1** hero more authoritative than visible assumptions | Hero is now a BOUNDED conclusion per `decision.basis` ("Lowest modeled cost: API", "Directional cost result: undetermined", "API — no evidence-qualified self-host option", …). A prominent amber disclosure — "Different models are being compared; capability and quality are not normalized." — sits adjacent whenever `apiOption.modelId ≠ workload model`. Workload scale, the input-token formula (query + prompt + TopN×chunk), output tokens, both monthly costs, the **modeled difference** (absolute + % — labeled presentation arithmetic over the two structured amounts) and the evidence chip are all immediately visible in BOTH modes. Simple mode keeps the collapsed "Evidence & assumptions" disclosure (owner D1); rejected candidates stay Expert-only. |
+| **P1-UI-2** API-only misclassified as technical infeasibility | Availability (weights/rights) is a DISTINCT state derived from the price-book `selfHostable` fact: hero "API — this model is API-only (self-host unavailable)", card "This model is API-only; self-host weights are unavailable. Select an open-weight model to evaluate self-hosting.", dropdown grouped into "Open-weight (self-hostable)" / "API-only (self-host unavailable)" (owner D4), and self-host-specific controls (uptime, experimental check) disabled with a not-applicable note. A UI availability clarification renders above the narrated rationale. **Phase-2 item:** the frozen headless layer's `self-host-infeasible` basis/wording for API-only models should gain an availability-aware basis in the next approved headless revision. |
+| **P1-UI-3** mobile overflow (multi-adjustment state) | The adjustments table was replaced with WRAP-SAFE stacked rows (no `<table>`, `break-words`/`break-all`, wrapping value line). New acceptance test `scripts/verify-advisor-mobile.mjs`: at 375×812 it drives Top N=30/Top K=20/uptime=1000 (multiple adjustment rows) and asserts `document.documentElement.scrollWidth ≤ window.innerWidth` and zero console errors — **PASS** (scrollWidth 375 ≤ 375). The earlier review claim of "no horizontal scroll" was false for this state and is corrected by this fix + test. |
+| **P2-UI-1** raw contract errors customer-visible | Boundary-validator messages map through `components/advisor/copy.ts` to field-level customer wording ("Enter a number greater than 0.") with `aria-invalid` + `aria-describedby`; internal property paths never render. Numeric fields keep a local draft and COMMIT ON BLUR/Enter; the **last valid result stays on screen** while editing, with a "showing the last valid result" note (owner D6). |
+| **P2-UI-2** concatenated accessible heading names | Basis chip and the "secondary…" annotation are SIBLINGS of their headings; `<h2>` accessible names are now exactly "Lowest modeled cost: API" / "Best self-host option" (asserted in tests). |
+| **P2-UI-3** expert inputs lack decision support | Every expert field shows units, recommended default, one-line "why it matters" (shared copy contract `copy.ts` — owner D3), and an entered-vs-default provenance tag ("assumed (default)" / "customer-entered"). |
+| **P2-ARCH-1** | Recorded: the browser sha256 shim (test-verified parity) passes for this isolated slice, but Phase-2 should move pinned-artifact verification to build-time/server-side so the browser shim never becomes the permanent trust boundary. |
+
+Owner decisions D1–D7 are implemented as directed (D2: the Unbenchmarked chip is titled "no qualified
+evidence — not a confidence level"; D5: pinned reference pricing retained and provenance-labelled; D7:
+light scheme pinned for isolated review, shared theme tokens deferred to production).
 
 ## Local review
 
 ```
-cd <worktree>          # ux/v2-ui
-npm run dev            # then open http://localhost:3000/advisor  (the calculator at "/" is untouched)
-npx vitest run         # 364 = 347 approved baseline + 13 advisor component/a11y + 4 crypto-shim parity
-npx tsc --noEmit       # clean
+cd <worktree>                                # ux/v2-ui
+npm run dev                                  # open http://localhost:3000/advisor ("/" untouched)
+npx vitest run                               # 369 = 347 approved baseline + 18 advisor + 4 crypto-shim
+npx tsc --noEmit                             # clean
+node scripts/verify-advisor-mobile.mjs       # 375px multi-adjustment overflow acceptance (APP_URL env to point elsewhere)
 ```
 
-Walkthrough (default state = the R1 canonical reference workload; every number is approved output):
-1. **Simple mode** — decision-first: "Use the API · basis: lower-cost", narrated rationale (verbatim
-   `narrate()` output), $6,492,000/mo API vs $7,176,630/mo best self-host, caption. The GPU config
-   appears ONLY in the secondary "Best self-host option" card (Measured·scaled chip, serving facts,
-   fleet equation on expand).
-2. **Expert mode** — adds SLA/workload-shape inputs, "Rejected options (3)" (FP8 → Extrapolated,
-   H200/H100 → Heuristic, all `evidence-below-threshold` with the feasible/SLA/evidence booleans),
-   and the "Where did this come from?" panel (pricing provenance, per-config evidence chips, P99 TTFT
-   tail-statistic wording, planning-capacity disclaimer).
-3. **Experimental toggle** (Expert) — decision flips to `basis: evidence-gap`; every config demotes to
-   the **Unbenchmarked** chip; the self-host panel shows the honest empty state ("no qualifying
-   benchmark evidence"); the rationale carries the internal-evidence-metadata-limitation wording. No
-   GPU is ever promoted.
-4. **Model = MiniMax M3** — `no-modeled-candidate`: "catalog-coverage gap, not a technical limitation".
-   **Model = an "API only" entry** — `self-host-infeasible`. **TTFT 100ms** — B200 rejected
-   `sla-unmet-ttft-or-streaming` (evidence-gap overall with the pinned catalog).
-5. **Top N 9 / Top K 3, uptime 1000 (or 0)** — the amber "Inputs adjusted for calculation" table shows
-   entered→calculated (9→3, 1000→730, 0→730) with raw field paths preserved.
-6. Malformed input (e.g. volume 0) — a red banner with the boundary validator's message, verbatim;
-   never a crash or a silently repaired value.
-7. Responsive: single column at 375px; no horizontal scroll. Dev server compiles with no errors.
+Walkthrough (defaults = the R1 canonical reference workload; all numbers are approved output):
+1. **Simple** — bounded hero "Lowest modeled cost: API" + basis chip; cross-model disclosure; API
+   $6,492,000/mo vs self-host $7,176,630/mo; modeled difference +$684,630/mo (11% vs API); assumptions
+   row (200,000,000 questions/mo · 50+300+5×512 = 2,910 input tok · 500 output tok · Measured·scaled);
+   secondary best-self-host card; collapsed "Evidence & assumptions".
+2. **Expert** — SLA/workload inputs with units/defaults/why/provenance tags; "Rejected options (3)";
+   the trust panel expanded shows pricing provenance, per-config evidence chips, P99 tail-statistic
+   wording, planning disclaimer.
+3. **Experimental toggle** — basis `evidence-gap`, all chips Unbenchmarked, honest empty self-host
+   state, internal-limitation wording. No GPU promoted.
+4. **Model = Claude Opus 4.8 (API-only group)** — availability state everywhere; uptime/experimental
+   disabled. **Model = MiniMax M3** — coverage-gap wording. **TTFT 100ms** — B200 rejected
+   `sla-unmet-ttft-or-streaming`.
+5. **Top N 30 / Top K 20, uptime 1000 (or 0)** — stacked amber adjustment rows (9→…, 1000→730, 0→730)
+   with raw field paths; wrap-safe at 375px (see acceptance script).
+6. Invalid input (volume −1) — friendly field error + red banner "Please correct: Questions per
+   month." while the **last valid result remains rendered**.
 
 ## Every displayed value → its structured source field
 
 | UI element | Source (structured result) |
 |---|---|
-| Decision headline + basis chip | `decision.choice` / `decision.basis` |
+| Bounded hero | mapping table over `decision.choice`/`decision.basis` (+ price-book `selfHostable` for the API-only state) |
+| Basis chip | `decision.basis` |
+| Cross-model disclosure | rendered iff `apiOption.modelId !== effectiveWorkload.generation.llmModelId` |
+| Availability note/state | price-book `ModelPrice.selfHostable` (a catalog fact, not an inference) |
 | Rationale paragraph | `decision.rationale` (narrate(); verbatim) |
 | API cost + label | `apiOption.monthlyCost` / `apiOption.modelLabel` |
 | Best self-host cost + label | `bestSelfHost.costMonthly` / `selfHostModelLabel` |
-| Caption | `RECOMMENDATION_CAPTION` (narrated `caption`) |
-| Card config + chip | `bestSelfHost.config.label` / `bestSelfHost.confidence` (exact token) |
-| Instance / precision / GPU rate / pricing model / uptime / utilization | `evaluations[].servingFacts.*` (never workload GPU fields) |
-| Fleet count + binding dim | `evaluations[].fleet.boxes` / `.bindingDim` |
-| Fleet equation | `bestSelfHost.bindingConstraint` (narrate(); embeds `fleet.equation` verbatim) |
-| Trade-off line | `bestSelfHost.tradeoff` (narrate()) |
-| Empty self-host explanations | `decision.basis` branch (4 coded states; no invented text) |
-| Rejected rows: label / chip / code / message / gate booleans | `rejected[].config.label`, `evaluations[].effectiveConfidence`, `rejected[].code`, `rejected[].message`, `evaluations[].{technicallyFeasible,slaQualified,evidenceQualified}` |
-| Price book / as-of / region / GPU price source | `pricing.{source,asOf,region,gpuPriceSource}` ("live" only when `source==="live"`) |
-| Evidence chips per config + demotion note | `evaluations[].{engineConfidence,effectiveConfidence}` |
-| TTFT line | `evaluations[].ttftS` + `.ttftPercentile` (rendered only when a real percentile) |
-| Registry note | `evaluations[].registry.status` (internal limitation wording; never a customer-input error) |
-| Adjustments rows | `inputAdjustments[].{field,entered,calculated}` (labels are copy; raw path shown) |
-| Error banner | the thrown boundary-validation message, verbatim |
+| Modeled difference | labeled presentation arithmetic: `bestSelfHost.costMonthly − apiOption.monthlyCost` (+% vs API); "n/a" when either side is absent |
+| Assumptions row | `effectiveWorkload.traffic.queriesPerMonth`, `queryTokens`, `generation.promptOverhead`, `retrieval.topN`, `chunking.chunkSize`, `generation.outTokens` (input-token sum = the documented deterministic formula) |
+| Evidence chip | `bestSelfHost.confidence` (exact token) / "no qualified self-host evidence" when null |
+| Card facts / fleet / equation / trade-off | `evaluations[].servingFacts.*`, `.fleet.*`, `bestSelfHost.bindingConstraint` / `.tradeoff` (narrate(), verbatim) |
+| Empty self-host explanations | `decision.basis` branch + availability (coded states; no invented text) |
+| Rejected rows | `rejected[].{config.label,code,message}` + `evaluations[].{effectiveConfidence,technicallyFeasible,slaQualified,evidenceQualified}` |
+| Trust panel | `pricing.{source,asOf,region,gpuPriceSource}`, `evaluations[].{engineConfidence,effectiveConfidence,ttftS,ttftPercentile,registry.status}` |
+| Adjustment rows | `inputAdjustments[].{field,entered,calculated}` (labels from the shared copy contract; raw path shown) |
+| Field errors / banner | boundary-validator message → `copy.ts` customer wording (internal paths never rendered) |
 
-Components never call the engine or registry directly; the ONLY consumption path is
-`lib/recommendation/index.ts` (`recommend` → `narrate`). No number, evidence state, explanation or
-recommendation is authored in a component.
+Components consume ONLY `lib/recommendation/index.ts` (`recommend` → `narrate`); no number, evidence
+state, explanation or recommendation is authored in a component.
 
 ## Build-integration note (reviewed change outside `components/app`)
 
-The frozen registry's `hash.ts` imports `node:crypto`, which webpack cannot bundle for the browser.
-`next.config.mjs` now replaces it — **client bundles only** — with `lib/browser-shims/node-crypto.ts`,
-a pure-TS sha256 whose output is proven byte-identical to node:crypto in
-`lib/browser-shims/node-crypto.test.ts` (edge cases + the REAL pinned snapshot checksums, including the
-manifest's recorded InferenceX checksum) — so the registry's fail-closed checksum verification behaves
-identically in-browser. Server/SSR/tests keep real node:crypto. The frozen registry is untouched.
-`vitest.config.ts` gained JSX transform + the `@/` alias for the new `.tsx` component tests (no effect
-on the approved `.ts` suites — full baseline remains green).
+The frozen registry's `hash.ts` imports `node:crypto`; `next.config.mjs` replaces it — client bundles
+only — with `lib/browser-shims/node-crypto.ts`, proven byte-identical to node:crypto in tests
+(edge cases + the REAL pinned snapshot + manifest checksums). Server/SSR/tests keep real node:crypto;
+the frozen registry is untouched. **P2-ARCH-1 (Phase-2):** prefer build-time/server-side verification of
+pinned benchmark artifacts; the browser shim must not become the permanent trust boundary.
+`vitest.config.ts` gained the oxc JSX transform + `@/` alias for the `.tsx` component tests (approved
+`.ts` suites unaffected — full baseline green).
 
-## Open UX decisions for owner review
+## Remaining open items for owner/UX
 
-- **UI-D1** Simple mode hides Rejected + Trust panels (specialist material per wireframe); confidence
-  still travels with the card via the chip. Confirm or always-show-collapsed.
-- **UI-D2** `Unbenchmarked` chip (dark neutral) extends the Phase-0 5-level ladder for the Phase-1
-  registry demotion state. Confirm color/wording.
-- **UI-D3** Adjustment/copy labels exist in narrate() AND the UI panel (two copies of presentation
-  copy). Consolidate into one copy-deck module in a later slice?
-- **UI-D4** Model dropdown lists API-only models (honest `self-host-infeasible` outcome) — keep or
-  hide them from a self-host advisor?
-- **UI-D5** The slice pins the committed reference price book (deterministic, provenance-labelled
-  "fallback"). Wire the calculator's live-price loadPrices() path in a later slice?
-- **UI-D6** Numeric fields validate through the fail-closed boundary (a 0/blank momentarily shows the
-  red banner while typing). Debounce/soft-validate in a later slice?
-- **UI-D7** The advisor pins a light color scheme inside the dark-themed app shell. Confirm, or theme
-  to match the calculator.
+- Phase-2: availability-aware decision basis in the headless layer (see P1-UI-2 note above).
+- Phase-2: consolidate narrate()'s internal label map with the UI copy contract when the headless layer
+  next opens for approved changes (owner D3 is implemented UI-side).
+- Production theming via shared tokens (owner D7).
+- Live pricing wiring with explicit source/state (owner D5).
