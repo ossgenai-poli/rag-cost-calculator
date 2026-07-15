@@ -21,7 +21,7 @@ const priceBook = pricesJson as unknown as PriceBook;
 const DEFAULTS: AdvisorState = {
   modelId: "deepseek-v4-pro-oss", volume: 200_000_000, optimizeFor: "cost", mode: "simple",
   ttftTargetMs: 2000, interactivityTarget: 30, outTokens: 500, queryTokens: 50, promptOverhead: 300,
-  chunkSize: 512, topN: 5, topK: 20, uptimeHours: 730, utilTargetPct: 70, haEnabled: true, purchasingModel: "on-demand", experimental: false,
+  chunkSize: 512, topN: 5, topK: 20, uptimeHours: 730, utilTargetPct: 70, haEnabled: true, purchasingModel: "on-demand", experimental: false, ranges: {},
 };
 function workload(volume = 200_000_000, mutate?: (w: CalcInputs) => void): CalcInputs {
   const w = defaultInputs(priceBook);

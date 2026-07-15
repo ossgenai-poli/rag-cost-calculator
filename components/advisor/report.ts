@@ -7,6 +7,7 @@
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
 import { heroLine, perQuery } from "./DecisionSummary";
 import { riskLines, relevantEvaluation } from "./risks";
+import { RANGE_FIELD_LABELS, RANGE_FIELDS, type RangeComputation } from "./ranges";
 
 const usd = (v: number | null | undefined): string =>
   typeof v === "number" && Number.isFinite(v)
@@ -14,8 +15,15 @@ const usd = (v: number | null | undefined): string =>
     : "unavailable";
 const num = (v: number): string => new Intl.NumberFormat("en-US").format(v);
 
-/** Build the deterministic Markdown report. Pure function of the narrated result. */
-export function buildReport(r: NarratedRecommendationResult): string {
+export interface ReportExtras {
+  /** Active range recompute (doc 08) — adds the about-qualifier, the §3 band block and the §6 line. */
+  ranges?: RangeComputation | null;
+}
+
+/** Build the deterministic Markdown report. Pure function of the narrated result (+ the optional
+ *  range recompute, itself a pure derivation of real engine runs). */
+export function buildReport(r: NarratedRecommendationResult, extras?: ReportExtras): string {
+  const ranges = extras?.ranges ?? null;
   const ev = relevantEvaluation(r);
   const q = r.effectiveWorkload.traffic.queriesPerMonth;
   const apiCost = r.apiOption.monthlyCost;
@@ -34,6 +42,9 @@ export function buildReport(r: NarratedRecommendationResult): string {
   push("## 1. Recommendation");
   push(`**${heroLine(r)}** (basis: ${r.decision.basis})`);
   push(`Self-host capacity evidence: ${r.bestSelfHost ? r.bestSelfHost.confidence : "none qualified"}`);
+  if (ranges) {
+    push(`About, not exact — inputs include customer ranges (${ranges.fields.map((f) => RANGE_FIELD_LABELS[f]).join(", ")}); this report shows the base case, with the recomputed band in §3.`);
+  }
   push("");
 
   // 2. Why — the deterministic narrated rationale (template over named fields).
@@ -50,6 +61,23 @@ export function buildReport(r: NarratedRecommendationResult): string {
   if (apiCost != null && selfCost != null) {
     const d = selfCost - apiCost;
     push(`Modeled difference: ${d >= 0 ? "+" : "−"}${usd(Math.abs(d))}/mo vs API (presentation arithmetic).`);
+  }
+  if (ranges) {
+    const { band, largestEffect } = ranges;
+    push("");
+    push("Range view — combined envelope (every range input at its low / at its high; real engine recomputes, never percentage estimates):");
+    push(`- Input confidence: ${ranges.fields.length} of ${RANGE_FIELDS.length} range-capable inputs are ranges. Evidence confidence is a separate channel and is unaffected.`);
+    push(band.fleet ? `- Fleet: ${num(band.fleet.low)}–${num(band.fleet.high)} boxes (base ${num(band.fleet.base)})` : "- Fleet band unavailable — the base configuration is not modeled at the range bounds.");
+    push(band.selfHost ? `- Self-host: ${usd(band.selfHost.low)}–${usd(band.selfHost.high)}/mo (base ${usd(band.selfHost.base)})` : "- Self-host cost band unavailable at the range bounds.");
+    push(band.api ? `- API: ${usd(band.api.low)}–${usd(band.api.high)}/mo (base ${usd(band.api.base)})` : "- API cost band unavailable at the range bounds.");
+    push(
+      band.stable
+        ? `- The modeled decision (${band.decisionBase}) is unchanged at both ends of the combined range.`
+        : `- The modeled decision CHANGES within the range (low: ${band.decisionLow} · base: ${band.decisionBase} · high: ${band.decisionHigh}) — validate the real value before committing.`
+    );
+    if (largestEffect) {
+      push(`- Largest modeled range effect: ${RANGE_FIELD_LABELS[largestEffect.field]} (${num(largestEffect.bounds.low)}–${num(largestEffect.bounds.high)}) → fleet ${num(largestEffect.fleetLow)}–${num(largestEffect.fleetHigh)} boxes.`);
+    }
   }
   push("");
 
@@ -91,7 +119,8 @@ export function buildReport(r: NarratedRecommendationResult): string {
 
   // 6. Risks & exclusions — the SAME deterministic checklist the on-page panel renders.
   push("## 6. Risks & exclusions");
-  for (const risk of riskLines(r)) push(`- ${risk.text}`);
+  const rangeLabels = ranges ? ranges.fields.map((f) => RANGE_FIELD_LABELS[f]) : undefined;
+  for (const risk of riskLines(r, { rangeLabels })) push(`- ${risk.text}`);
   push("");
 
   // 7. Advanced evidence — the full sweep audit (collapsed on page; complete here). Rejected or

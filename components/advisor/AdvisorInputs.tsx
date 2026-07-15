@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import type { GpuPricingModel, ModelPrice } from "@/lib/types";
 import type { OptimizeFor } from "@/lib/recommendation";
 import { EXPERT_FIELD_HELP, type FieldError } from "./copy";
+import { RANGE_PRESETS, rangeBoundsValid, type RangeBounds, type RangeField } from "./ranges";
 
 export interface AdvisorState {
   modelId: string;
@@ -35,6 +36,10 @@ export interface AdvisorState {
   haEnabled: boolean; // N+1 serving-replica redundancy (NOT AZ/DR/compliance)
   purchasingModel: GpuPricingModel; // commitment model → indicative discount off on-demand
   experimental: boolean;
+  /** Iteration-5 (doc 08): optional low/high customer RANGES per range-capable input. The base value
+   *  stays in the plain field above and drives the headline; bands come from real engine recomputes
+   *  at these bounds (never percentage extrapolation). */
+  ranges: Partial<Record<RangeField, RangeBounds>>;
 }
 
 export const PURCHASING_OPTIONS: Array<{ value: GpuPricingModel; label: string }> = [
@@ -110,6 +115,114 @@ function Num({ id, label, value, defaultValue, helpKey, min, disabled, disabledN
   );
 }
 
+interface RangeControlProps {
+  field: RangeField;
+  base: number;
+  range: RangeBounds | undefined;
+  /** Commit a VALID pair, clear with null, or apply a preset (base + bounds together). */
+  onSet: (bounds: RangeBounds | null) => void;
+  onPreset: (base: number, bounds: RangeBounds) => void;
+}
+
+/** The "I'm not sure" affordance (doc 08): low/base/high where base stays in the main field and
+ *  drives the headline; low/high commit ONLY as a valid pair (low < high, finite) — invalid pairs
+ *  show an inline error and never reach the journey state. Typical presets fill a plausible
+ *  low/base/high so a missing fact never blocks. */
+function RangeControl({ field, base, range, onSet, onPreset }: RangeControlProps) {
+  const [open, setOpen] = useState(!!range);
+  const [lowDraft, setLowDraft] = useState<string>(range ? String(range.low) : "");
+  const [highDraft, setHighDraft] = useState<string>(range ? String(range.high) : "");
+  const [pairError, setPairError] = useState<string | null>(null);
+  useEffect(() => {
+    setOpen(!!range);
+    setLowDraft(range ? String(range.low) : "");
+    setHighDraft(range ? String(range.high) : "");
+  }, [range]);
+
+  const commitPair = (lowS: string, highS: string) => {
+    if (lowS.trim() === "" || highS.trim() === "") return; // wait for both bounds
+    const b = { low: Number(lowS), high: Number(highS) };
+    if (rangeBoundsValid(field, b)) {
+      setPairError(null);
+      onSet(b);
+    } else {
+      setPairError("Enter numbers with low less than high (at or above the field minimum).");
+    }
+  };
+  const clear = () => {
+    setOpen(false);
+    setLowDraft("");
+    setHighDraft("");
+    setPairError(null);
+    onSet(null);
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        data-testid={`range-toggle-${field}`}
+        onClick={() => setOpen(true)}
+        className="mt-0.5 text-xs text-sky-700 underline"
+      >
+        I’m not sure — use a range
+      </button>
+    );
+  }
+  return (
+    <div className="mt-1 rounded border border-slate-200 bg-slate-50 p-2" data-testid={`range-control-${field}`}>
+      <p className="text-xs text-slate-600">
+        Base <span className="font-mono">{new Intl.NumberFormat("en-US").format(base)}</span> drives the headline; the band is recomputed by running the engine at your bounds.
+      </p>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <label className="text-xs text-slate-600">
+          Low{" "}
+          <input
+            type="number"
+            data-testid={`range-low-${field}`}
+            value={lowDraft}
+            onChange={(e) => setLowDraft(e.target.value)}
+            onBlur={() => commitPair(lowDraft, highDraft)}
+            className="w-28 rounded border border-slate-300 px-1 py-0.5 text-xs"
+          />
+        </label>
+        <label className="text-xs text-slate-600">
+          High{" "}
+          <input
+            type="number"
+            data-testid={`range-high-${field}`}
+            value={highDraft}
+            onChange={(e) => setHighDraft(e.target.value)}
+            onBlur={() => commitPair(lowDraft, highDraft)}
+            className="w-28 rounded border border-slate-300 px-1 py-0.5 text-xs"
+          />
+        </label>
+        <button type="button" data-testid={`range-clear-${field}`} onClick={clear} className="text-xs text-slate-500 underline">
+          Use a single value
+        </button>
+      </div>
+      {pairError && (
+        <p role="alert" data-testid={`range-error-${field}`} className="mt-1 text-xs text-red-700">{pairError}</p>
+      )}
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-slate-500">Typical:</span>
+        {RANGE_PRESETS[field].map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            data-testid={`range-preset-${field}-${p.id}`}
+            title={`low ${p.low} · base ${p.base} · high ${p.high}`}
+            onClick={() => { setPairError(null); onPreset(p.base, { low: p.low, high: p.high }); }}
+            className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs text-slate-700 hover:bg-slate-100"
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export interface AdvisorInputsProps {
   state: AdvisorState;
   defaults: AdvisorState;
@@ -121,6 +234,16 @@ export interface AdvisorInputsProps {
 
 export function AdvisorInputs({ state, defaults, models, selfHostAvailable, fieldErrors, onChange }: AdvisorInputsProps) {
   const set = <K extends keyof AdvisorState>(k: K, v: AdvisorState[K]) => onChange({ ...state, [k]: v });
+  const setRange = (field: RangeField, bounds: RangeBounds | null) => {
+    const ranges = { ...state.ranges };
+    if (bounds) ranges[field] = bounds;
+    else delete ranges[field];
+    onChange({ ...state, ranges });
+  };
+  // A typical preset fills low/BASE/high together (doc 08: a missing fact falls back to a labeled
+  // preset, never a hidden default) — the base lands in the plain field, labeled by provenance.
+  const setRangePreset = (field: RangeField, base: number, bounds: RangeBounds) =>
+    onChange({ ...state, [field]: base, ranges: { ...state.ranges, [field]: bounds } });
   const llms = models.filter((m) => m.kind === "llm");
   const openWeight = llms.filter((m) => m.selfHostable);
   const apiOnly = llms.filter((m) => !m.selfHostable);
@@ -153,7 +276,10 @@ export function AdvisorInputs({ state, defaults, models, selfHostAvailable, fiel
           </p>
         )}
       </div>
-      <Num id="adv-volume" label="Questions per month" value={state.volume} min={1} error={err("adv-volume")} onCommit={(v) => set("volume", v)} />
+      <div>
+        <Num id="adv-volume" label="Questions per month" value={state.volume} min={1} error={err("adv-volume")} onCommit={(v) => set("volume", v)} />
+        <RangeControl field="volume" base={state.volume} range={state.ranges.volume} onSet={(b) => setRange("volume", b)} onPreset={(base, b) => setRangePreset("volume", base, b)} />
+      </div>
       <div>
         <label htmlFor="adv-optimize" className="block text-xs font-medium text-slate-600">Optimize for</label>
         <select
@@ -178,9 +304,15 @@ export function AdvisorInputs({ state, defaults, models, selfHostAvailable, fiel
             <Num id="adv-query" label="User query tokens" helpKey="queryTokens" value={state.queryTokens} defaultValue={defaults.queryTokens} min={0} error={err("adv-query")} onCommit={(v) => set("queryTokens", v)} />
             <Num id="adv-prompt" label="Prompt overhead" helpKey="promptOverhead" value={state.promptOverhead} defaultValue={defaults.promptOverhead} min={0} error={err("adv-prompt")} onCommit={(v) => set("promptOverhead", v)} />
             <Num id="adv-chunk" label="Chunk size" helpKey="chunkSize" value={state.chunkSize} defaultValue={defaults.chunkSize} min={1} error={err("adv-chunk")} onCommit={(v) => set("chunkSize", v)} />
-            <Num id="adv-topn" label="Context chunks sent (Top N)" helpKey="topN" value={state.topN} defaultValue={defaults.topN} min={0} error={err("adv-topn")} onCommit={(v) => set("topN", v)} />
+            <div>
+              <Num id="adv-topn" label="Context chunks sent (Top N)" helpKey="topN" value={state.topN} defaultValue={defaults.topN} min={0} error={err("adv-topn")} onCommit={(v) => set("topN", v)} />
+              <RangeControl field="topN" base={state.topN} range={state.ranges.topN} onSet={(b) => setRange("topN", b)} onPreset={(base, b) => setRangePreset("topN", base, b)} />
+            </div>
             <Num id="adv-topk" label="Chunks retrieved (Top K)" helpKey="topK" value={state.topK} defaultValue={defaults.topK} min={1} error={err("adv-topk")} onCommit={(v) => set("topK", v)} />
-            <Num id="adv-out" label="Output tokens per answer" helpKey="outTokens" value={state.outTokens} defaultValue={defaults.outTokens} min={0} error={err("adv-out")} onCommit={(v) => set("outTokens", v)} />
+            <div>
+              <Num id="adv-out" label="Output tokens per answer" helpKey="outTokens" value={state.outTokens} defaultValue={defaults.outTokens} min={0} error={err("adv-out")} onCommit={(v) => set("outTokens", v)} />
+              <RangeControl field="outTokens" base={state.outTokens} range={state.ranges.outTokens} onSet={(b) => setRange("outTokens", b)} onPreset={(base, b) => setRangePreset("outTokens", base, b)} />
+            </div>
             <Num id="adv-uptime" label="GPU fleet uptime" helpKey="uptimeHours" value={state.uptimeHours} defaultValue={defaults.uptimeHours} min={0} disabled={!selfHostAvailable} disabledNote={selfHostDisabledNote} error={err("adv-uptime")} onCommit={(v) => set("uptimeHours", v)} />
           </div>
 

@@ -5,10 +5,10 @@
 // (the exported report consumes the SAME lines, so page and export cannot diverge). Sits between the
 // trust-adjacent panels and the advanced evidence, per the fixed hierarchy order.
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
-import { riskLines } from "./risks";
+import { riskLines, type RiskOptions } from "./risks";
 
-export function RisksPanel({ result }: { result: NarratedRecommendationResult }) {
-  const lines = riskLines(result);
+export function RisksPanel({ result, riskOptions }: { result: NarratedRecommendationResult; riskOptions?: RiskOptions }) {
+  const lines = riskLines(result, riskOptions);
   if (lines.length === 0) return null;
   return (
     <section aria-labelledby="risks-heading" data-testid="risks-panel" className="rounded-lg border border-slate-200 bg-white p-4">

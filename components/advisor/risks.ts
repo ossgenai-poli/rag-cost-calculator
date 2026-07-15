@@ -30,8 +30,13 @@ const EVIDENCE_RISK: Record<string, string> = {
   unbenchmarked: "no qualified benchmark evidence backs this configuration.",
 };
 
+export interface RiskOptions {
+  /** Labels of inputs the customer supplied as RANGES (doc 08) — adds the input-uncertainty line. */
+  rangeLabels?: string[];
+}
+
 /** Assemble the active risk/exclusion lines. Pure and deterministic; order is fixed. */
-export function riskLines(r: NarratedRecommendationResult): RiskLine[] {
+export function riskLines(r: NarratedRecommendationResult, opts?: RiskOptions): RiskLine[] {
   const lines: RiskLine[] = [];
   const ev = relevantEvaluation(r);
   const gen = r.effectiveWorkload.generation;
@@ -81,6 +86,12 @@ export function riskLines(r: NarratedRecommendationResult): RiskLine[] {
     });
   }
 
+  if (opts?.rangeLabels && opts.rangeLabels.length > 0) {
+    lines.push({
+      key: "input-ranges",
+      text: `Customer ranges, not firm values: ${opts.rangeLabels.join(", ")}. Results are shown at the base case; the band comes from re-running the engine at the bounds — validate the real values before committing.`,
+    });
+  }
   if (r.pricing.source !== "live") {
     lines.push({
       key: "pinned-pricing",

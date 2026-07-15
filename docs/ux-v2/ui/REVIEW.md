@@ -396,3 +396,67 @@ mobile acceptance PASS**, fresh-profile live probe ZERO console errors — verif
 capacity evidence" token, diagnostic marks with exactly one comparison-input row, corrected ops
 wording, and the denied-clipboard alert path. Isolation unchanged (headless untouched at `faa9af7`;
 all frozen pins intact).
+
+---
+
+# Iteration 5 — unknown & range handling (docs/ux-v2/08-unknown-range-handling.md)
+
+**Branch:** `ux/v2-ui-5` (from the IMMUTABLE approved iteration-4 baseline `ux/v2-ui-4 @ 88d0dc7`;
+headless consumed unchanged at the approved `ux/v2-phase1 @ faa9af7`). Doc 08 was the last unbuilt
+Phase-0 experience piece. No headless changes.
+
+## 1. The "I'm not sure" journey-state contract
+`AdvisorState.ranges: Partial<Record<"volume" | "outTokens" | "topN", {low, high}>>` — the base value
+stays in the plain field and drives the headline; bounds commit ONLY as a validated pair (finite,
+low < high, at/above the field minimum — an invalid pair shows an inline error and never reaches
+state). The affordance renders on Questions/month (Simple + Expert) and Output tokens / Top N
+(Expert). Typical presets fill low/BASE/high together so a missing fact never blocks: outTokens
+~150/500/1,200 and topN 3/4/8 are the doc's own values; the volume tiers (Pilot = the doc's example
+row 200k/500k/1.2M; Department ×10; Org-wide 80M/200M/480M around the R1 base) are PROPOSED planning
+values for owner review (**UI5-D1**).
+
+## 2. Bands are REAL engine recomputes (never percentage estimates)
+`components/advisor/ranges.ts` `computeRanges(state, ranges, base, buildWorkload)` — pure and
+deterministic, parameterized on the page's OWN `buildWorkload` so bound runs can never drift from the
+headline: the combined envelope is ONE controlled recompute with every range input at its low and one
+at its high; the fleet/self-host bands track the BASE result's relevant candidate (fail-closed null
+when it isn't modeled at a bound — e.g. API-only keeps only the API band); decision stability is
+DERIVED from the structured decisions at low/base/high. "Largest modeled range effect" (P2-5, ≥2
+ranges) re-runs the engine at each input's OWN bounds (others at base) and serializes
+`{input, bounds, effect}` — a controlled sensitivity recompute, never causation inferred from an
+uncontrolled delta. Tests assert every band value EQUALS an independent recommend() run at the bound.
+
+## 3. Presentation — base + band, two separate confidence channels
+`RangeBandPanel` (directly under the decision summary): the about-qualifier, "Evidence confidence:
+{ladder token} · Input confidence: {k} of 3 range-capable inputs are ranges", fleet/self-host/API
+bands "low–high (base …)", decision stability ("unchanged at both ends" vs the amber "CHANGES within
+your range … validate before committing"), and the largest-effect line. The decision summary carries a
+sibling "≈ about — inputs include ranges; base case shown" chip (heading accessible name unchanged).
+`risks.ts` gains the `input-ranges` line while ranges are active; the export gains the §1
+about-qualifier, a §3 "Range view — combined envelope" block with the SAME band values, and the §6
+line — still byte-deterministic (asserted).
+
+## Verification
+- **459/459** tests (13 new in `advisor5.test.tsx`: band-equals-independent-run identity, combined
+  envelope identity, largest-effect selection against independent per-input recomputes, single-range/
+  no-range degenerates, determinism, API-only fail-closed bands, documented preset values, pair
+  validation, affordance render, panel/chip/risks/export wording + byte-identity), `tsc --noEmit`
+  clean, `build:static` clean, **375px mobile acceptance PASS**.
+- Live (fresh Chrome profile, ZERO console errors): org-wide volume range → real bands
+  **Fleet 36–206 boxes (base 87)** · Self-host $2,969,640–$16,992,940/mo (base $7,176,630) · API
+  $2,596,800–$15,580,800/mo (base $6,492,000) · "The modeled decision (api) is unchanged at both ends
+  of the combined range." · risk line · about-chip; invalid pair (500/100) → inline error, no band, no
+  state change.
+- Isolation: frozen surfaces untouched (main `d749309`, benchmarks `4b2c848`, headless `faa9af7`, UI
+  pins `f02b51f`/`7fdee3d`/`63ebce6`/`88d0dc7`); no merge/deploy/CI; `.claude/` excluded.
+
+## Open items for owner/UX review (UI5-D*)
+- **UI5-D1** Volume preset tiers (Pilot 200k/500k/1.2M · Department 2M/5M/12M · Org-wide
+  80M/200M/480M) — Pilot is the doc's example row verbatim; the other two are proposed. Confirm or
+  adjust.
+- **UI5-D2** Peak-to-average (doc 08 row: steady/spiky/very-spiky 1.2/2/3×) is NOT included: the
+  canonical advisor workload pins `peakFactor = 1`, so introducing it changes the journey-state
+  contract — deferred for explicit owner direction.
+- **UI5-D3** The doc's schematic shows "Inputs: 3 of 7 are ranges"; only 3 fields are range-capable in
+  this iteration, so the channel reads "of 3 range-capable inputs". Confirm the phrasing or direct
+  which further fields should become range-capable.

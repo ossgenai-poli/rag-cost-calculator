@@ -26,6 +26,8 @@ import { AdjustmentsPanel } from "@/components/advisor/AdjustmentsPanel";
 import { ChangesPanel } from "@/components/advisor/ChangesPanel";
 import { RisksPanel } from "@/components/advisor/RisksPanel";
 import { ExportPanel } from "@/components/advisor/ExportPanel";
+import { RangeBandPanel } from "@/components/advisor/RangeBandPanel";
+import { computeRanges, RANGE_FIELD_LABELS, type RangeComputation } from "@/components/advisor/ranges";
 import { PresetBar } from "@/components/advisor/PresetBar";
 import { changedPresetFields, initialProvenance, registerManualEdit, type PresetProvenance } from "@/components/advisor/presets";
 import { friendlyFieldErrors, type FieldError } from "@/components/advisor/copy";
@@ -52,6 +54,7 @@ export const DEFAULT_STATE: AdvisorState = {
   haEnabled: true,
   purchasingModel: "on-demand",
   experimental: false,
+  ranges: {}, // doc 08: no ranges by default — the base case IS the R1 canonical output
 };
 
 /** Build the engine workload from the journey state — the SAME defaultInputs() base the calculator
@@ -131,6 +134,19 @@ export default function AdvisorPage() {
   }, [state]);
   const { result, diff, errorGeneric, fieldErrors } = outcome;
 
+  // Doc 08 — range bands are REAL engine recomputes at the customer's bounds, derived from the same
+  // committed state + the same buildWorkload as the headline. Bounds are validated at the control
+  // before they reach state; an unexpected recompute failure fails closed to "no band" (never a guess).
+  const rangeComputation = useMemo<RangeComputation | null>(() => {
+    if (!outcome.structured) return null;
+    try {
+      return computeRanges(state, state.ranges, outcome.structured, buildWorkload);
+    } catch {
+      return null;
+    }
+  }, [outcome, state]);
+  const rangeLabels = rangeComputation ? rangeComputation.fields.map((f) => RANGE_FIELD_LABELS[f]) : undefined;
+
   useEffect(() => {
     if (outcome.structured && outcome.result) {
       prevForDiff.current = outcome.structured;
@@ -198,20 +214,22 @@ export default function AdvisorPage() {
           )}
           {result && (
             <>
-              <DecisionSummary result={result} />
+              <DecisionSummary result={result} rangesActive={!!rangeComputation} />
+              {/* Doc 08 — base + band, two separate confidence channels, largest modeled range effect. */}
+              <RangeBandPanel result={result} computation={rangeComputation} />
               <ChangesPanel diff={diff} />
               <AdjustmentsPanel result={result} />
               <BestSelfHostCard result={result} />
               <AlternativeCards result={result} />
               {/* Level 6 (10-result-hierarchy §6): risks & exclusions BEFORE the advanced evidence,
                   visible in both modes. */}
-              <RisksPanel result={result} />
+              <RisksPanel result={result} riskOptions={{ rangeLabels }} />
               {/* Owner D1: evidence & assumptions stay ACCESSIBLE (collapsed) in Simple mode;
                   rejected candidates remain Expert-only. */}
               {state.mode === "expert" && <RejectedOptions result={result} />}
               <TrustPanel result={result} />
               {/* Stage-F: the deterministic export reproduces the exact hierarchy order. */}
-              <ExportPanel result={result} />
+              <ExportPanel result={result} ranges={rangeComputation} />
             </>
           )}
         </div>

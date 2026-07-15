@@ -51,7 +51,7 @@ const CHOICE_STYLE: Record<string, string> = {
   undetermined: "border-amber-400 bg-amber-50",
 };
 
-export function DecisionSummary({ result }: { result: NarratedRecommendationResult }) {
+export function DecisionSummary({ result, rangesActive }: { result: NarratedRecommendationResult; rangesActive?: boolean }) {
   const { decision, apiOption, bestSelfHost, effectiveWorkload: w } = result;
   const apiCost = apiOption.monthlyCost;
   const selfCost = bestSelfHost?.costMonthly ?? null;
@@ -77,6 +77,13 @@ export function DecisionSummary({ result }: { result: NarratedRecommendationResu
         <span className="rounded bg-white/70 border border-slate-300 px-2 py-0.5 text-xs text-slate-600" data-testid="decision-basis" aria-label={`Decision basis: ${decision.basis}`}>
           basis: {decision.basis}
         </span>
+        {/* Doc 08: when any material fact is a range, the headline reads as "about" — the chip is a
+            SIBLING of the heading (clean accessible name), and the band panel carries the recompute. */}
+        {rangesActive && (
+          <span className="rounded border border-sky-400 bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-900" data-testid="range-chip">
+            ≈ about — inputs include ranges; base case shown
+          </span>
+        )}
       </div>
 
       {/* P1-UI-1 — prominent cross-model disclosure, adjacent to the hero. */}
