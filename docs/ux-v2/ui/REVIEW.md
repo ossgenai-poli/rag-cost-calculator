@@ -177,3 +177,10 @@ Live clean-browser probe after remediation: apply → accurate header → chip+U
 preset→preset (0 conflicts) → manual edit → "Modified from …" + Undo removed. Zero console errors.
 Totals: **385/385**, tsc clean, 375px mobile acceptance PASS. (Dev note: `.next` cache corruption
 recurred once more under HMR churn; `rm -rf .next` + restart resolves it — clean-profile probes green.)
+
+## Iteration-2 HOLD-2 remediation (summary presentation only)
+
+| Finding | Fix |
+|---|---|
+| **P2-UI2-3** canonical summary truncated the cost impact | `summarizeChanges` now RESERVES slots by category (decision · aggregated SLA/evidence consequence · best-self-host · relevant-candidate fleet · relevant-candidate cost · evidence/other) — never "append all and slice". Identical multi-candidate SLA failures aggregate into ONE slot ("Both modeled p6-b200.48xlarge configurations now fail the selected SLA…"); only the most decision-relevant candidate's fleet and cost rows take slots (others stay in the audit). Canonical live/test output: decision → evidence-gap with meaning · aggregated SLA line · best-self-host removed · Fleet 87 → 131 · **Self-host cost $7,176,630 → $10,806,190/mo** · evidence state measured-scaled → extrapolated — ≤6 items, "View all 23 technical changes" audit intact. |
+| **P2-UI2-4** valid diffs could render an empty summary | A non-identical diff can never yield an empty list: a workload-assumptions-only diff (e.g. TTFT 5000→4500 with no modeled outcome change) renders the deterministic sentence "Workload assumptions changed; the modeled decision, qualification, fleet, and cost did not change." (derived from effective-workload-changed present + no outcome codes); any other outcome-less diff renders "No material modeled outcome changed." Test proves the fallback invents no decision/fleet/cost text and the raw change stays under "View all 1 technical changes". |
