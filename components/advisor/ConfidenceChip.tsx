@@ -1,8 +1,9 @@
 "use client";
 
 // Confidence ladder chip (docs/ux-v2/09-trust-provenance.md). Renders the EXACT structured
-// effective-confidence token — never a re-worded category. `unbenchmarked` (the Phase-1 registry
-// demotion floor) extends the Phase-0 ladder with a neutral dark chip (open UX decision UI-D2).
+// effective-confidence token — never a re-worded category. Per owner decision D2, `unbenchmarked` is
+// presented as a NEUTRAL "no qualified evidence" state (registry demotion floor), not a sixth rung of
+// the confidence ladder.
 import type { EffectiveConfidence } from "@/lib/recommendation";
 
 const CHIP: Record<EffectiveConfidence, { label: string; cls: string }> = {
@@ -21,7 +22,7 @@ export function ConfidenceChip({ confidence }: { confidence: EffectiveConfidence
       data-testid="confidence-chip"
       data-confidence={confidence}
       className={`inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${c.cls}`}
-      title={`Evidence state: ${confidence}`}
+      title={confidence === "unbenchmarked" ? "No qualified evidence (neutral state — not a confidence level)" : `Evidence state: ${confidence}`}
     >
       {c.label}
     </span>
