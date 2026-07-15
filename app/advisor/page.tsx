@@ -28,7 +28,7 @@ import { RisksPanel } from "@/components/advisor/RisksPanel";
 import { ExportPanel } from "@/components/advisor/ExportPanel";
 import { RangeBandPanel } from "@/components/advisor/RangeBandPanel";
 import { computeRanges, rangeTripletValid, rangeDisclosures, RANGE_FIELDS, RANGE_FIELD_LABELS, type RangeComputation } from "@/components/advisor/ranges";
-import { resolveFocus } from "@/components/advisor/focus";
+import { resolveDisplayedFocus } from "@/components/advisor/focus";
 import { PresetBar } from "@/components/advisor/PresetBar";
 import { advisorStatesEqual, changedPresetFields, initialProvenance, invalidateUndo, registerManualEdit, type PresetProvenance } from "@/components/advisor/presets";
 import { friendlyFieldErrors, type FieldError } from "@/components/advisor/copy";
@@ -112,6 +112,10 @@ export default function AdvisorPage() {
   // P2-UI-1: the last VALID result stays on screen while the customer edits through an invalid state.
   // Refs are READ inside the memo and COMMITTED in an effect (StrictMode-safe: the memo may run twice).
   const lastGood = useRef<NarratedRecommendationResult | null>(null);
+  // P1-UI6-1 (repro B): the STRUCTURED twin of lastGood — the focus must resolve against the exact
+  // result being displayed, so while the narrated last-good is on screen the selection resolves
+  // against its structured counterpart (never silently reverting to the ranked best).
+  const lastGoodStructured = useRef<StructuredRecommendationResult | null>(null);
   const prevForDiff = useRef<StructuredRecommendationResult | null>(null);
 
   // Deterministic: recommend() + narrate() + diffRecommendations() are pure. Numeric inputs commit on
@@ -147,10 +151,11 @@ export default function AdvisorPage() {
   // (low ≤ base ≤ high, field minima, whole numbers for counts) reach the recompute — a committed
   // range whose base was later edited outside it is PRESERVED in state but gated out here (the control
   // shows the inline error). An unexpected recompute failure fails closed to "no band", never a guess.
-  // doc 06 — the customer's selection resolved FAIL-CLOSED against the current structured result:
-  // only the eligible card set is selectable; an invalidated selection suspends (preserved in state,
-  // visibly flagged, ranked best shown) — never silently kept or silently dropped.
-  const focus = outcome.structured ? resolveFocus(outcome.structured, state.selectedCandidateId) : null;
+  // doc 06 — the customer's selection resolved FAIL-CLOSED against the DISPLAYED structured result
+  // (the current one, or the last-good twin while an invalid input shows the last-valid result —
+  // P1-UI6-1 repro B): only the eligible card set is selectable; an invalidated selection suspends
+  // (preserved in state, visibly flagged) — never silently kept, dropped or reverted.
+  const focus = resolveDisplayedFocus(outcome.structured, lastGoodStructured.current, state.selectedCandidateId);
   const focusId = focus?.active ? focus.selectedId : null;
   const selectCandidate = (id: string | null) => handleInputsChange({ ...state, selectedCandidateId: id });
 
@@ -175,6 +180,7 @@ export default function AdvisorPage() {
     if (outcome.structured && outcome.result) {
       prevForDiff.current = outcome.structured;
       lastGood.current = outcome.result;
+      lastGoodStructured.current = outcome.structured;
     }
   }, [outcome]);
 

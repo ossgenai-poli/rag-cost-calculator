@@ -37,6 +37,19 @@ export function selectableIds(r: AnyResult): string[] {
   return ids;
 }
 
+/** P1-UI6-1 (repro B): the focus must be resolved against the EXACT result being displayed. While the
+ *  customer edits through an invalid input state the page shows the LAST-GOOD result — so the focus
+ *  resolves against that same last-good structured result, never against a null current one (which
+ *  would silently revert the displayed selection to the ranked best). */
+export function resolveDisplayedFocus(
+  currentStructured: StructuredRecommendationResult | null,
+  lastGoodStructured: StructuredRecommendationResult | null,
+  selectedId: string | null
+): FocusResolution | null {
+  const displayed = currentStructured ?? lastGoodStructured;
+  return displayed ? resolveFocus(displayed, selectedId) : null;
+}
+
 /** Resolve the current focus. Pure and fail-closed: an unknown, rejected or no-longer-eligible
  *  selection suspends (falls back to the ranked best with an explicit notice), never silently sticks. */
 export function resolveFocus(r: AnyResult, selectedId: string | null): FocusResolution {

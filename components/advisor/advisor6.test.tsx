@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { recommend, narrate, diffRecommendations } from "../../lib/recommendation";
 import type { NarratedRecommendationResult } from "../../lib/recommendation";
-import { resolveFocus, selectableIds } from "./focus";
+import { resolveDisplayedFocus, resolveFocus, selectableIds } from "./focus";
 import { relevantEvaluation, riskLines } from "./risks";
 import { computeRanges } from "./ranges";
 import { buildReport } from "./report";
@@ -29,12 +29,16 @@ function twoEligible(): NarratedRecommendationResult {
   const n = nDefault();
   const best = n.evaluations.find((e) => e.config.id === B200)!;
   const altId = "deepseek-v4-pro-oss·synthetic-alt·w4kv16";
+  // the alternative carries DIFFERENT evidence tokens (measured vs the best's measured-scaled) so the
+  // role-qualified §5 lines can be asserted with genuinely differing confidences (P1-UI6-2).
   const alt = {
     ...best,
     config: { ...best.config, id: altId, instanceType: "synthetic-alt.48xlarge", label: "synthetic-alt · INT4" },
     fleet: { ...best.fleet, boxes: 120, equation: "synthetic equation → 120 boxes" },
     cost: { ...best.cost, selfHostMonthly: 9_000_000 },
     servingFacts: { ...best.servingFacts, instanceType: "synthetic-alt.48xlarge", gpuSku: "B200" },
+    engineConfidence: "measured" as const,
+    effectiveConfidence: "measured" as const,
   };
   return {
     ...n,
@@ -47,6 +51,26 @@ function twoEligible(): NarratedRecommendationResult {
   };
 }
 const ALT_ID = "deepseek-v4-pro-oss·synthetic-alt·w4kv16";
+const ALT2_ID = "deepseek-v4-pro-oss·synthetic-alt2·w4kv16";
+
+/** THREE-eligible fixture (best + two alternatives) for accessible-name uniqueness (P2-A11Y-UI6-1). */
+function threeEligible(): NarratedRecommendationResult {
+  const n = twoEligible();
+  const alt = n.evaluations.find((e) => e.config.id === ALT_ID)!;
+  const alt2 = {
+    ...alt,
+    config: { ...alt.config, id: ALT2_ID, instanceType: "synthetic-alt2.48xlarge", label: "synthetic-alt2 · INT4" },
+    cost: { ...alt.cost, selfHostMonthly: 9_500_000 },
+  };
+  return {
+    ...n,
+    evaluations: [...n.evaluations, alt2],
+    alternatives: [
+      ...n.alternatives,
+      { ...n.alternatives[0], kind: "highest-confidence" as const, config: alt2.config, costMonthly: 9_500_000 },
+    ],
+  };
+}
 
 describe("doc 06 selection — fail-closed focus resolution", () => {
   it("no selection → the ranked best; only the card set is selectable", () => {
@@ -178,5 +202,69 @@ describe("UI2-D3 — the complete technical audit, grouped result-level first th
     // nothing dropped: every code chip renders as often as it appears
     const codes = html.match(/change-values/g) ?? [];
     expect(codes.length).toBe(diff.changes.length);
+  });
+});
+
+describe("iteration-6 HOLD — P1-UI6-1: a preserved selection is ALWAYS visibly represented", () => {
+  it("repro A: every candidate demoted (experimental provenance) → suspended WITHOUT fallback, disclosed in the empty state", () => {
+    const n = narrate(recommend({ workload: buildWorkload(DEFAULT_STATE), optimizeFor: "cost", experimentalProvenance: true }));
+    expect(n.bestSelfHost).toBeNull(); // pinned registry demotes everything to unbenchmarked
+    const f = resolveFocus(n, B200);
+    expect(f).toMatchObject({ suspended: true, active: false, selectedId: B200 });
+    expect(f.evaluation).toBeNull(); // no fallback best exists
+    const html = renderToStaticMarkup(<BestSelfHostCard result={n} focus={f} onSelect={() => {}} />);
+    expect(html).toContain('data-testid="best-self-host-empty"'); // the honest empty state renders…
+    expect(html).toContain('data-testid="selection-suspended-note"'); // …AND the preserved selection is disclosed
+    expect(html).toContain("no qualified self-host option is currently available under these inputs");
+    expect(html).toContain("the saved selection will resume if it re-qualifies");
+    expect(html).not.toContain("showing the recommended best"); // the no-fallback wording, not the fallback one
+  });
+  it("suspended WITH a fallback keeps the distinct 'showing the recommended best' wording", () => {
+    const n = nDefault();
+    const heuristic = n.evaluations.find((e) => !e.recommendationEligible)!.config.id;
+    const html = renderToStaticMarkup(<BestSelfHostCard result={n} focus={resolveFocus(n, heuristic)} onSelect={() => {}} />);
+    expect(html).toContain("showing the recommended best");
+    expect(html).toContain("Your selection is preserved and resumes if it re-qualifies");
+  });
+  it("repro B: while an invalid input shows the last-good result, the focus resolves against THAT result", () => {
+    const lastGood = twoEligible();
+    // current structured result is null (public validation failed) → the displayed result is last-good,
+    // and the selection stays ACTIVE against it instead of silently reverting to the ranked best.
+    const f = resolveDisplayedFocus(null, lastGood, ALT_ID);
+    expect(f).toMatchObject({ active: true, suspended: false, isEngineBest: false });
+    expect(f!.evaluation!.config.id).toBe(ALT_ID);
+    // with a current result present, the current one wins (it IS the displayed result)
+    const current = nDefault();
+    expect(resolveDisplayedFocus(current, lastGood, ALT_ID)).toMatchObject({ suspended: true }); // ALT not in current
+    // nothing displayed at all → no focus
+    expect(resolveDisplayedFocus(null, null, ALT_ID)).toBeNull();
+  });
+});
+
+describe("iteration-6 HOLD — P1-UI6-2: §5 confidence is role-qualified per configuration", () => {
+  it("differing confidences: ranked best (measured-scaled) and selected alternative (measured) each carry their OWN exact tokens", () => {
+    const n = twoEligible();
+    const md = buildReport(n, { focus: resolveFocus(n, ALT_ID) });
+    expect(md).toContain("Optimization-ranked best evidence state: measured-scaled (engine: measured-scaled).");
+    expect(md).toContain("Customer-selected configuration evidence state: measured (engine: measured).");
+    // §1–§3 stay anchored to the decision/comparator (UI6-D2)
+    expect(md).toContain("**Lowest modeled cost: API** (basis: lower-cost)");
+    expect(md).toContain("Self-host capacity evidence: measured-scaled"); // approved §1 token unchanged
+    // no focus → only the ranked-best role line
+    const plain = buildReport(n);
+    expect(plain).toContain("Optimization-ranked best evidence state: measured-scaled");
+    expect(plain).not.toContain("Customer-selected configuration evidence state");
+  });
+});
+
+describe("iteration-6 HOLD — P2-A11Y-UI6-1: unique accessible names on selection controls", () => {
+  it("two alternatives expose distinct aria-labels naming the configuration each selects", () => {
+    const n = threeEligible();
+    const html = renderToStaticMarkup(<AlternativeCards result={n} focus={resolveFocus(n, null)} onSelect={() => {}} />);
+    expect(html).toContain('aria-label="Use synthetic-alt · INT4"');
+    expect(html).toContain('aria-label="Use synthetic-alt2 · INT4"');
+    const labels = [...html.matchAll(/aria-label="(Use [^"]+)"/g)].map((m) => m[1]);
+    expect(labels).toHaveLength(2);
+    expect(new Set(labels).size).toBe(2); // unique accessible names
   });
 });

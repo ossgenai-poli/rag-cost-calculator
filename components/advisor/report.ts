@@ -127,7 +127,14 @@ export function buildReport(r: NarratedRecommendationResult, extras?: ReportExtr
 
   // 5. Confidence — the exact ladder token + pricing provenance.
   push("## 5. Confidence");
-  push(ev ? `Self-host capacity evidence state: ${ev.effectiveConfidence} (engine: ${ev.engineConfidence}).` : "No qualified self-host evidence.");
+  // P1-UI6-2 / UI6-D2: the evidence state is ROLE-QUALIFIED so ranked-best confidence can never be
+  // read as applying to a customer-selected configuration. Both lines use the corresponding
+  // evaluation's exact tokens.
+  push(ev ? `Optimization-ranked best evidence state: ${ev.effectiveConfidence} (engine: ${ev.engineConfidence}).` : "No qualified self-host evidence.");
+  if (selectedNonBest) {
+    const fe = focus!.evaluation!;
+    push(`Customer-selected configuration evidence state: ${fe.effectiveConfidence} (engine: ${fe.engineConfidence}).`);
+  }
   push(`Pricing provenance: ${r.pricing.source} price book, as of ${r.pricing.asOf} (${r.pricing.region}); GPU price source: ${r.pricing.gpuPriceSource}.`);
   push("");
 

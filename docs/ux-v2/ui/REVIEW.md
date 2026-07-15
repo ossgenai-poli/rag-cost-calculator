@@ -551,3 +551,27 @@ row count equals `diff.changes.length`). The slot-reserved impact summary above 
   is NOT built — confirm deferral or scope it.
 - **UI6-D2** Selection is intentionally NOT exported into the report's §1–§3 (decision/cost lead) —
   only §4's appended block and the §6 quota line follow the focus. Confirm this boundary.
+
+## Iteration-6 HOLD remediation (suspension visibility · last-good focus · role-qualified confidence · a11y)
+
+| Finding | Fix |
+|---|---|
+| **P1-UI6-1 (repro A)** suspension invisible with no fallback best | The empty-state branch of the self-host card now ALSO renders the suspension disclosure, with wording distinguished from the fallback case: "Your selected configuration ({id}) is preserved, but no qualified self-host option is currently available under these inputs — the saved selection will resume if it re-qualifies." (fallback case keeps "…showing the recommended best. Your selection is preserved and resumes if it re-qualifies."). Acceptance test uses the REAL demotion path (experimental provenance → every candidate unbenchmarked → `bestSelfHost: null`) and asserts the empty state and the note render together with the no-fallback wording. |
+| **P1-UI6-1 (repro B)** focus silently reverted while showing the last-good result | The page keeps a STRUCTURED twin of the last-good result (`lastGoodStructured`, committed in the same effect as the narrated one) and resolves the focus through the new shared `resolveDisplayedFocus(current, lastGood, selectedId)` — the focus always resolves against the EXACT result being displayed. Acceptance tests: a null current result with a last-good containing the selected alternative keeps the selection ACTIVE (never reverting to the ranked best); a present current result wins; nothing displayed → no focus. |
+| **P1-UI6-2** exported confidence attributable to the wrong configuration | §5 is role-qualified: "Optimization-ranked best evidence state: {effectiveConfidence} (engine: {engineConfidence})." plus, when a non-best focus is active, "Customer-selected configuration evidence state: …" — each line from the corresponding evaluation's exact tokens. §1–§3 unchanged (asserted: the approved §1 "Self-host capacity evidence" token and decision/cost lead are untouched; no focus → single role line). Differing-confidence acceptance test: ranked best measured-scaled vs selected alternative measured, both asserted verbatim. |
+| **P2-A11Y-UI6-1** identical accessible names | Each "Use this" button carries `aria-label="Use {configuration label}"`. Test renders TWO alternatives and asserts two distinct accessible names. |
+
+Owner decisions recorded: **UI6-D1** side-by-side Compare deferred until the real catalog produces ≥2
+qualified alternatives (Δ-vs-best + focus detail sufficient); **UI6-D2** report §1–§3 stay anchored to
+the actual decision/comparator, with §4 appending the focus, §6 following its quota facts, and §5 now
+role-qualified as directed.
+
+### Verification (this revision)
+**485/485** tests (5 new HOLD acceptance tests), `tsc --noEmit` clean, `build:static` clean, **375px
+mobile acceptance PASS**, fresh-profile live probe ZERO console errors — verified live: the §5
+role-qualified line in the real export preview (single role line without a focus; §1 token unchanged)
+and the real experimental-provenance demotion path rendering the honest empty state. The
+suspended-selection and multi-alternative paths cannot be reached through UI clicks under the
+single-eligible pinned catalog, so they are covered by the fixture-based acceptance tests above (the
+same real-demotion + synthetic-fixture pattern the iteration-6 review exercised). Isolation unchanged
+(headless `faa9af7`; all frozen pins intact; no merge/deploy/CI; `.claude/` excluded).

@@ -68,6 +68,7 @@ export function AlternativeCards({ result, focus, onSelect }: AlternativeCardsPr
                 <button
                   type="button"
                   data-testid={`alt-use-${card.kind}`}
+                  aria-label={`Use ${card.config.label}`}
                   onClick={() => onSelect(card.config.id)}
                   className="mt-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-100"
                 >

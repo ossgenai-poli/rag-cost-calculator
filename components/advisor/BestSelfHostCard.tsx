@@ -25,7 +25,9 @@ export function BestSelfHostCard({ result, focus, onSelect }: BestSelfHostCardPr
   if (!card) {
     // Honest empty state — keyed off the STRUCTURED decision.basis; no GPU shown. Availability
     // (`self-host-unavailable`, a reason-coded catalog fact — P1-UI-4) is a DISTINCT state from
-    // technical infeasibility.
+    // technical infeasibility. P1-UI6-1 (repro A): a PRESERVED selection is still disclosed here —
+    // suspended WITHOUT a fallback best, so the wording states that no option currently qualifies
+    // and that the saved selection resumes if it re-qualifies.
     return (
       <section aria-labelledby="bsh-heading" data-testid="best-self-host-empty" className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
         <h2 id="bsh-heading" className="text-base font-semibold text-slate-700">Self-host option</h2>
@@ -40,6 +42,11 @@ export function BestSelfHostCard({ result, focus, onSelect }: BestSelfHostCardPr
                   ? "The modeled self-host configurations cannot meet the interactivity / TTFT SLA."
                   : "No self-host configuration has qualifying benchmark evidence, so none can be recommended."}
         </p>
+        {focus?.suspended && (
+          <p role="alert" data-testid="selection-suspended-note" className="mt-2 rounded border border-amber-400 bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
+            Your selected configuration ({focus.selectedId}) is preserved, but no qualified self-host option is currently available under these inputs — the saved selection will resume if it re-qualifies.
+          </p>
+        )}
       </section>
     );
   }

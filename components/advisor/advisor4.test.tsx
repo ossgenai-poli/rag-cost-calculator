@@ -98,7 +98,8 @@ describe("Stage-F export — deterministic report in the EXACT hierarchy order",
     const b200 = r.evaluations.find((e) => e.config.id === "deepseek-v4-pro-oss·p6-b200.48xlarge·w4kv16")!;
     expect(md).toContain(b200.fleet.equation); // the RELEVANT candidate's fleet equation, verbatim
     expect(md).toContain("87 boxes (prefill-bound)");
-    expect(md).toContain("Self-host capacity evidence state: measured-scaled (engine: measured-scaled).");
+    expect(md).toContain("Optimization-ranked best evidence state: measured-scaled (engine: measured-scaled).");
+    expect(md).not.toContain("Customer-selected configuration evidence state"); // no focus → single role line
     for (const l of riskLines(r)) expect(md).toContain(`- ${l.text}`); // §6 = the SAME shared lines
     expect(md).toContain(
       "| deepseek-v4-pro-oss·p6-b200.48xlarge·w4kv16 | yes | yes | yes | yes | yes (self-host comparison input) | 87 | $7,176,630 | measured-scaled |"
