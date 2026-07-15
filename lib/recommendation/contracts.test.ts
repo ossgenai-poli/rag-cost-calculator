@@ -123,6 +123,7 @@ describe("P1-4 — engine evidence classification requires a traceable, allowed 
   const capBase = (o: Partial<CapacityResult>): CapacityResult => ({
     source: "extrapolated", benchmarkAvailable: true, prefillEstimated: false, prefillIslScale: 2.84,
     precisionUsed: "fp4", precisionRequested: "fp4",
+    extrapolationReasons: ["input length 2910 not close to benchmarked ISL 1024"], // permitted sequence-length transform
     benchmarkProvenance: { source: "InferenceX", sourceUrl: "u", methodologyUrl: "m", asOf: "2026-07-14", runId: "1", runUrl: "r", commit: "c", date: "d", image: "i", specMethod: "none", disagg: false, topology: "t" },
     ...o,
   } as CapacityResult);
@@ -140,6 +141,15 @@ describe("P1-4 — engine evidence classification requires a traceable, allowed 
   });
   it("precision substitution (fp4 used for fp8) → extrapolated", () => {
     expect(engineConfidenceFrom(capBase({ precisionRequested: "fp8" }))).toBe("extrapolated");
+  });
+  it("HOLD-2 P1-1: a partial/non-whole topology reason → extrapolated, even with traceable provenance + ISL scale", () => {
+    expect(engineConfidenceFrom(capBase({ extrapolationReasons: ["benchmark used 4 of 8 GPUs per box (partial box)"] }))).toBe("extrapolated");
+    expect(engineConfidenceFrom(capBase({ extrapolationReasons: ["benchmark topology (64 GPUs) does not map to whole 8-GPU boxes"] }))).toBe("extrapolated");
+    // mixed: a permitted sequence reason PLUS a disallowed topology reason → still extrapolated (EVERY reason must be permitted).
+    expect(engineConfidenceFrom(capBase({ extrapolationReasons: ["input length 2910 not close to benchmarked ISL 1024", "benchmark used 4 of 8 GPUs per box (partial box)"] }))).toBe("extrapolated");
+  });
+  it("HOLD-2 P1-1: untraceable-provenance reason → extrapolated", () => {
+    expect(engineConfidenceFrom(capBase({ extrapolationReasons: ["benchmark provenance is not traceable to a specific run"] }))).toBe("extrapolated");
   });
   it("heuristic / proxy stay themselves", () => {
     expect(engineConfidenceFrom(capBase({ source: "heuristic" }))).toBe("heuristic");

@@ -34,11 +34,18 @@ const ENGINE_CODE_TO_REASON: Record<string, ReasonCode> = {
   "manual-cap": "fleet-exceeds-practical-limit",
 };
 
+// The ONLY permitted extrapolation for `measured-scaled` is a sequence-length (ISL/OSL) transformation
+// (HOLD-2 P1-1). The frozen engine phrases these as "… not close to benchmarked ISL/OSL …". EVERY other
+// reason — precision substitution, partial/non-whole box topology, untraceable provenance — is disallowed.
+const SEQUENCE_SCALE_REASON = /\bnot close to benchmarked (isl|osl)\b/i;
+
 /**
- * capacity.source → engine evidence state, from STRUCTURED fields only (P1-4). `measured-scaled` requires
- * a TRACEABLE, same-precision, ISL-scaled measurement: real benchmark provenance, a real measured prefill
- * (not estimated), a defined ISL scale, and requested precision == used precision. Anything else
- * (partial topology, untraceable provenance, precision/other substitution) stays `extrapolated`.
+ * capacity.source → engine evidence state, from STRUCTURED fields only (P1-4/HOLD-2 P1-1). `measured-scaled`
+ * requires a TRACEABLE, same-precision measurement whose ONLY extrapolation is sequence-length scaling:
+ * real benchmark provenance, a real measured prefill (not estimated), a defined ISL scale, precision
+ * used == requested, AND every `extrapolationReasons` entry is a permitted sequence-length reason.
+ * Anything else (partial topology, untraceable provenance, precision/model substitution) stays
+ * `extrapolated` and fails evidence qualification.
  */
 export function engineConfidenceFrom(cap: CapacityResult): EngineConfidence {
   switch (cap.source) {
@@ -53,7 +60,9 @@ export function engineConfidenceFrom(cap: CapacityResult): EngineConfidence {
       const islScaled = cap.prefillIslScale != null && Number.isFinite(cap.prefillIslScale);
       const precisionKnownAndMatched =
         cap.precisionUsed != null && cap.precisionRequested != null && cap.precisionUsed === cap.precisionRequested;
-      return traceable && islScaled && precisionKnownAndMatched ? "measured-scaled" : "extrapolated";
+      const reasons = Array.isArray(cap.extrapolationReasons) ? cap.extrapolationReasons : [];
+      const onlySequenceScaling = reasons.length > 0 && reasons.every((r) => SEQUENCE_SCALE_REASON.test(String(r)));
+      return traceable && islScaled && precisionKnownAndMatched && onlySequenceScaling ? "measured-scaled" : "extrapolated";
     }
   }
 }
@@ -172,22 +181,83 @@ function toCard(kind: Card["kind"], e: CandidateEvaluation, bestCost: number | n
 const byId = (a: { config: CandidateConfig }, b: { config: CandidateConfig }) =>
   a.config.id < b.config.id ? -1 : a.config.id > b.config.id ? 1 : 0;
 
-/** Fail-closed boundary validation of the public request (P1-3). */
-function validateRequest(req: RecommendationRequest): void {
+const REFRESH_CADENCES = new Set(["one-time", "weekly", "monthly"]);
+const INDEXING_ALGOS = new Set(["hnsw", "ivf_pq", "ivf_fp16"]);
+const GEN_MODES = new Set(["api", "self-hosted"]);
+
+/** Fail-closed boundary validation of the COMPLETE public request (P1-3/HOLD-2 P1-4). Validates the
+ *  request enums, nested workload enums, and model ids against the trusted price book BEFORE any
+ *  candidate is loaded or evaluated. ragMode "B" (managed Bedrock KB) is explicitly UNSUPPORTED by the
+ *  self-host recommendation sweep in Phase 1 (calculate() forces API mode for it), so it fails closed. */
+function validateRequest(req: RecommendationRequest, priceBook: PriceBook): void {
   if (!req || typeof req !== "object") throw new Error("recommend: request object required");
   if (!OPTIMIZE_FOR.has(req.optimizeFor)) throw new Error(`recommend: invalid optimizeFor "${String(req.optimizeFor)}"`);
   if (req.experimentalProvenance != null && typeof req.experimentalProvenance !== "boolean") throw new Error("recommend: experimentalProvenance must be a boolean");
-  if (!req.workload || typeof req.workload !== "object" || !req.workload.generation || typeof req.workload.generation.llmModelId !== "string") {
-    throw new Error("recommend: a workload with generation.llmModelId is required");
+  const w = req.workload;
+  if (!w || typeof w !== "object" || !w.generation || !w.corpus || !w.chunking || !w.retrieval || !w.vectorStore || !w.traffic) {
+    throw new Error("recommend: a complete workload (corpus/chunking/retrieval/vectorStore/generation/traffic) is required");
+  }
+  if (w.ragMode !== "A" && w.ragMode !== "B") throw new Error(`recommend: invalid ragMode "${String(w.ragMode)}"`);
+  if (w.ragMode === "B") throw new Error("recommend: ragMode 'B' (managed Bedrock KB) is not supported by the self-host recommendation sweep (Phase 1)");
+  if (!REFRESH_CADENCES.has(w.corpus.refreshCadence)) throw new Error(`recommend: invalid corpus.refreshCadence "${String(w.corpus.refreshCadence)}"`);
+  if (!INDEXING_ALGOS.has(w.vectorStore.indexingAlgo)) throw new Error(`recommend: invalid vectorStore.indexingAlgo "${String(w.vectorStore.indexingAlgo)}"`);
+  if (!GEN_MODES.has(w.generation.mode)) throw new Error(`recommend: invalid generation.mode "${String(w.generation.mode)}"`);
+  if (typeof w.generation.llmModelId !== "string" || !priceBook.models.some((m) => m.id === w.generation.llmModelId && m.kind === "llm")) {
+    throw new Error(`recommend: unknown llm model "${String(w.generation.llmModelId)}"`);
+  }
+  const compId = w.generation.apiComparisonModelId;
+  if (compId != null && !priceBook.models.some((m) => m.id === compId)) {
+    throw new Error(`recommend: unknown apiComparisonModelId "${String(compId)}"`);
   }
 }
 
-/** Reconcile the entered-vs-calculated adjustments the customer should see (P1-6). GPU-independent. */
-function inputAdjustmentsFor(workload: CalcInputs): InputAdjustment[] {
-  const adj: InputAdjustment[] = inputClampNotes(workload).map((n) => ({ field: n.field, entered: n.entered, calculated: n.calculated }));
-  const uptime = workload.generation.gpuUptimeHoursPerMonth;
-  if (Number.isFinite(uptime) && uptime > UPTIME_CAP_HOURS) adj.push({ field: "gpuUptimeHoursPerMonth", entered: uptime, calculated: UPTIME_CAP_HOURS });
-  return adj;
+/**
+ * Patch the workload's model/API prices from the TRUSTED price book (HOLD-2 P1-2) so caller-supplied
+ * raw price fields can never move the recommendation while provenance says fallback. The customer's model
+ * CHOICE (llmModelId / apiComparisonModelId) is honored; only the PRICES are taken from the trusted book.
+ * Preconditions (validated): both ids are known.
+ */
+function resolveTrustedPrices(workload: CalcInputs, priceBook: PriceBook): CalcInputs {
+  const llm = priceBook.models.find((m) => m.id === workload.generation.llmModelId && m.kind === "llm")!;
+  const compId = workload.generation.apiComparisonModelId;
+  const comp = compId != null ? priceBook.models.find((m) => m.id === compId)! : llm;
+  return {
+    ...workload,
+    generation: {
+      ...workload.generation,
+      llmInPricePer1K: llm.inPricePer1K,
+      llmOutPricePer1K: llm.outPricePer1K,
+      apiComparisonModelId: comp.id,
+      apiComparisonInPricePer1K: comp.inPricePer1K,
+      apiComparisonOutPricePer1K: comp.outPricePer1K,
+    },
+  };
+}
+
+/**
+ * Materialize the CALCULATED/effective workload (HOLD-2 P1-3): the normalized inputs PLUS the engine's
+ * internal adjustments the sizing actually used — uptime capped at 730h, and topN clamped to ≤ topK.
+ * Returns the effective workload and the structured adjustments; every adjustment agrees with the
+ * effective workload by construction.
+ */
+function buildEffectiveWorkload(workload: CalcInputs): { effective: CalcInputs; adjustments: InputAdjustment[] } {
+  const norm = normalizeInputs(workload);
+  const adjustments: InputAdjustment[] = inputClampNotes(workload).map((n) => ({ field: n.field, entered: n.entered, calculated: n.calculated }));
+
+  const enteredUptime = norm.generation.gpuUptimeHoursPerMonth;
+  const cappedUptime = enteredUptime > 0 ? Math.min(enteredUptime, UPTIME_CAP_HOURS) : UPTIME_CAP_HOURS;
+  if (Number.isFinite(enteredUptime) && enteredUptime > UPTIME_CAP_HOURS) adjustments.push({ field: "gpuUptimeHoursPerMonth", entered: enteredUptime, calculated: UPTIME_CAP_HOURS });
+
+  const enteredTopN = norm.retrieval.topN;
+  const effTopN = Math.min(enteredTopN, norm.retrieval.topK);
+  if (enteredTopN > norm.retrieval.topK) adjustments.push({ field: "retrieval.topN", entered: enteredTopN, calculated: effTopN });
+
+  const effective: CalcInputs = {
+    ...norm,
+    generation: { ...norm.generation, gpuUptimeHoursPerMonth: cappedUptime },
+    retrieval: { ...norm.retrieval, topN: effTopN },
+  };
+  return { effective, adjustments };
 }
 
 /**
@@ -196,10 +266,13 @@ function inputAdjustmentsFor(workload: CalcInputs): InputAdjustment[] {
  * pricing, ranks, and derives the top-level decision. STRUCTURED result only. No caller injection exists.
  */
 export function recommend(req: RecommendationRequest): StructuredRecommendationResult {
-  validateRequest(req);
   const priceBook = loadPriceBook();
+  validateRequest(req, priceBook);
+  // Patch model/API PRICES from the trusted price book (P1-2) — caller-supplied raw price fields can
+  // never move the recommendation while provenance says fallback.
+  const workload = resolveTrustedPrices(req.workload, priceBook);
   const mode: "control" | "experimental" = req.experimentalProvenance ? "experimental" : "control";
-  const modelId = req.workload.generation.llmModelId;
+  const modelId = workload.generation.llmModelId;
   const model = priceBook.models.find((m) => m.id === modelId);
   const modelSelfHostable = !!model && model.kind === "llm" && model.selfHostable === true;
 
@@ -207,23 +280,22 @@ export function recommend(req: RecommendationRequest): StructuredRecommendationR
   const candidates = loadCandidateCatalog().filter((c) => c.llmModelId === modelId);
 
   // Evaluate each candidate EXACTLY ONCE.
-  const runs = candidates.map((c) => runCandidate(c, req.workload, priceBook, mode));
+  const runs = candidates.map((c) => runCandidate(c, workload, priceBook, mode));
   const evaluations = runs.map((r) => r.evaluation);
 
   // Reconcile the effective workload ONCE and assert consistency across candidates (P1-6).
   const shareKey = (i: CalcInputs) => JSON.stringify([i.traffic.queriesPerMonth, i.generation.outTokens, i.generation.promptOverhead, i.generation.maxContextLen, i.generation.maxConcurrentSeqs, i.queryTokens]);
   const shared = new Set(runs.map((r) => shareKey(r.effectiveInputs)));
   if (shared.size > 1) throw new Error("recommend: normalized workload inputs diverge across candidates");
-  // GPU-INDEPENDENT normalized workload (deterministic regardless of catalog order) — the per-candidate
-  // GPU/precision are audited via `evaluations`, not here.
-  const effectiveWorkload = normalizeInputs(req.workload);
-  const inputAdjustments = inputAdjustmentsFor(req.workload);
+  // The CALCULATED workload the engine actually used (uptime≤730, topN≤topK — HOLD-2 P1-3), with every
+  // adjustment reconciled. GPU-independent → deterministic regardless of catalog order.
+  const { effective: effectiveWorkload, adjustments: inputAdjustments } = buildEffectiveWorkload(workload);
 
   // API cost is model+workload-dependent (GPU-independent) → assert identical across candidates (P2-1).
   const apiValues = new Set(evaluations.map((e) => e.cost.apiMonthly).filter((v): v is number => v != null).map((v) => Math.round(v)));
   if (apiValues.size > 1) throw new Error("recommend: API cost diverges across exact-model candidates");
   const apiMonthly = evaluations.find((e) => e.cost.apiMonthly != null)?.cost.apiMonthly
-    ?? (candidates.length === 0 ? apiMonthlyForWorkload(req.workload, priceBook) : null);
+    ?? (candidates.length === 0 ? apiMonthlyForWorkload(workload, priceBook) : null);
   const apiOption: ApiOption = {
     modelId,
     monthlyCost: apiMonthly,

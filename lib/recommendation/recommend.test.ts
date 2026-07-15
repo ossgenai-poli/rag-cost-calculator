@@ -231,6 +231,64 @@ describe("sweep — gate separation, comparison, determinism, injection, single-
   });
 });
 
+describe("HOLD-2 — trusted pricing, effective workload, complete validation", () => {
+  it("P1-2: hidden workload price fields cannot change the result or provenance", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const normal = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    const w = dsv4Workload();
+    w.generation.apiComparisonInPricePer1K = 999; // tamper
+    w.generation.apiComparisonOutPricePer1K = 999;
+    w.generation.llmInPricePer1K = 999;
+    w.generation.llmOutPricePer1K = 999;
+    const tampered = recommend({ workload: w, optimizeFor: "cost" });
+    expect(tampered.decision).toEqual({ choice: "api", basis: "lower-cost" }); // NOT flipped to self-host
+    expect(Math.round(tampered.apiOption.monthlyCost!)).toBe(6_492_000); // trusted price, not 999-inflated
+    expect(tampered.pricing.source).toBe("fallback");
+    expect(JSON.stringify(tampered.evaluations[0].cost)).toBe(JSON.stringify(normal.evaluations[0].cost));
+  });
+
+  it("P1-3: effectiveWorkload reflects the engine's internal adjustments and agrees with every adjustment", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuUptimeHoursPerMonth = 1000; // capped to 730
+    w.retrieval.topK = 3;
+    w.retrieval.topN = 9; // clamped to 3
+    const r = recommend({ workload: w, optimizeFor: "cost" });
+    expect(r.effectiveWorkload.generation.gpuUptimeHoursPerMonth).toBe(730);
+    expect(r.effectiveWorkload.retrieval.topN).toBe(3);
+    expect(r.inputAdjustments).toContainEqual({ field: "gpuUptimeHoursPerMonth", entered: 1000, calculated: 730 });
+    expect(r.inputAdjustments).toContainEqual({ field: "retrieval.topN", entered: 9, calculated: 3 });
+    // every adjustment agrees with the effective workload
+    const path = (o: any, p: string) => p.split(".").reduce((x, k) => x?.[k], o);
+    const map: Record<string, string> = { gpuUptimeHoursPerMonth: "generation.gpuUptimeHoursPerMonth", "retrieval.topN": "retrieval.topN" };
+    for (const a of r.inputAdjustments) {
+      if (map[a.field]) expect(path(r.effectiveWorkload, map[a.field])).toBe(a.calculated);
+    }
+  });
+
+  it("P1-4: invalid nested enums are rejected at the boundary", () => {
+    const w1 = dsv4Workload(); (w1.corpus as any).refreshCadence = "bogus";
+    expect(() => recommend({ workload: w1, optimizeFor: "cost" })).toThrow(/refreshCadence/);
+    const w2 = dsv4Workload(); (w2.vectorStore as any).indexingAlgo = "bogus";
+    expect(() => recommend({ workload: w2, optimizeFor: "cost" })).toThrow(/indexingAlgo/);
+  });
+
+  it("P1-4: an unknown llm model is rejected (never a fabricated priced API option)", () => {
+    const w = dsv4Workload(); w.generation.llmModelId = "not-a-real-model";
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/unknown llm model/);
+  });
+
+  it("P1-4: an unknown apiComparisonModelId is rejected", () => {
+    const w = dsv4Workload(); w.generation.apiComparisonModelId = "not-a-real-model";
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/unknown apiComparisonModelId/);
+  });
+
+  it("P1-4: ragMode 'B' (managed KB) fails closed — no contradictory self-host output", () => {
+    const w = dsv4Workload(); w.ragMode = "B";
+    expect(() => recommend({ workload: w, optimizeFor: "cost" })).toThrow(/ragMode 'B'.*not supported/);
+  });
+});
+
 describe("catalog validation fails closed", () => {
   const good = PINNED_CANDIDATES[0];
   const clone = (o: CandidateConfig): CandidateConfig => JSON.parse(JSON.stringify(o));

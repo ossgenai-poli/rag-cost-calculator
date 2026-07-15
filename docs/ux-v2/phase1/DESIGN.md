@@ -311,3 +311,15 @@ each is captured here with its reproduction and resolution, and covered by tests
 
 **After HOLD-1:** recommendation tests 58, full suite 282, tsc clean; engine + registry byte-identical to
 `4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.
+
+### 10.1 Sweep review — HOLD-2 (findings, reproductions, fixes)
+
+| # | Finding (repro) | Fix |
+|---|---|---|
+| **P1-1** | An `extrapolated` result with traceable provenance, `prefillEstimated=false`, a finite `prefillIslScale`, matching precision, but a **partial-topology** `extrapolationReasons` entry was still classified `measured-scaled`. | `engineConfidenceFrom` now additionally requires that **every** `extrapolationReasons` entry is a permitted **sequence-length** reason (`/not close to benchmarked ISL\|OSL/`). Any topology / precision / untraceable-provenance reason (or a mix) → `extrapolated`. R1's ISL/OSL scaling preserved. Negatives added for partial-box, non-whole-box, untraceable, and mixed reasons. |
+| **P1-2** | Setting `apiComparisonInPricePer1K/OutPricePer1K=999` in the workload flipped the decision to `self-host/lower-cost` (API=$681M) while `pricing.source` stayed `fallback`. `runCandidate` trusted the workload's duplicated price fields. | `recommend()` now resolves `llmModelId`/`apiComparisonModelId` against the trusted price book and **patches their prices** (`resolveTrustedPrices`) before `calculate()`; unknown ids are rejected. The customer's model CHOICE is honored; the PRICES are the trusted book's. Tamper test: hidden price fields cannot change the result or provenance. |
+| **P1-3** | `effectiveWorkload` showed entered values, not computed ones — `gpuUptimeHoursPerMonth=1000` stayed 1000; `topN=9,topK=3` stayed `topN=9` with no adjustment. | `buildEffectiveWorkload()` materializes the CALCULATED workload with the engine's internal adjustments — uptime capped at 730h and `topN=min(topN,topK)` — and emits a structured adjustment for each. Test asserts `effectiveWorkload` agrees with every adjustment. |
+| **P1-4** | `corpus.refreshCadence`/`vectorStore.indexingAlgo="bogus"` accepted; unknown `llmModelId` returned a fabricated priced API option; `ragMode="B"` produced a contradictory self-host card (calculate() forces API mode for managed KB). | The complete public contract is validated at the boundary BEFORE loading candidates: request enums, nested workload enums (refreshCadence, indexingAlgo, generation.mode, ragMode), and model ids (llm + apiComparison) against the trusted book. **ragMode "B" fails closed as unsupported** by the self-host sweep in Phase 1 (documented). Reproductions added for each. |
+
+**After HOLD-2:** recommendation tests 66, full suite 290, tsc clean; engine + registry byte-identical to
+`4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.
