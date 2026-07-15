@@ -339,3 +339,34 @@ describe("P1-UI3-1 — qualified narration when non-reference pricing influences
     }
   });
 });
+
+describe("P1-PRICE-INT-1 — tampered pricing assumption → neutral narration (no dollar winner, no rate claims)", () => {
+  it("EXACT repro: discount 95 + modeled $1 (qualification unchanged) → comparison-details-unavailable", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuPricingModel = "savings-1yr";
+    const s = recommend({ workload: w, optimizeFor: "cost" });
+    const tampered = {
+      ...s,
+      evaluations: s.evaluations.map((e) =>
+        e.config.id === s.decision.costComparator!.selfHostCandidateId
+          ? { ...e, pricingAssumption: { ...e.pricingAssumption, assumedDiscountPct: 95, modeledEffectiveHourly: 1 } }
+          : e
+      ),
+    } as typeof s;
+    const n = narrate(tampered);
+    expect(n.decision.rationale).toContain("comparison details unavailable");
+    expect(n.decision.rationale).not.toContain("95%");
+    expect(n.decision.rationale).not.toContain("$1.00");
+    expect(n.decision.rationale).not.toContain("Under these assumptions");
+    expect(n.decision.rationale).not.toMatch(/\$5,023,641|\$6,492,000\/month/); // no dollar winner asserted
+  });
+  it("the untampered savings narration is preserved byte-for-byte around the validator", () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuPricingModel = "savings-1yr";
+    const n = narrate(recommend({ workload: w, optimizeFor: "cost" }));
+    expect(n.decision.rationale).toContain("Under these assumptions, modeled self-host cost is lower");
+    expect(n.decision.rationale).toContain("a 30% one-year Savings Plan discount off the on-demand rate ($113.00/GPU-hour → $79.10/GPU-hour modeled planning rate) — an indicative planning factor, not an AWS quote");
+  });
+});

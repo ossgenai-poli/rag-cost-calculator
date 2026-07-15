@@ -15,6 +15,7 @@ vi.mock("../calc-engine", async (importOriginal) => {
 
 import { recommend, evaluateCandidate } from "./recommend";
 import { deriveDecision, costComparatorValid } from "./decision";
+import { pricingAssumptionValid } from "./pricing";
 import { loadCandidateCatalog, validateCandidateCatalog, PINNED_CANDIDATES } from "./candidate-catalog";
 import { defaultInputs, calculate } from "../calc-engine";
 import type { CalcInputs, PriceBook } from "../types";
@@ -494,5 +495,51 @@ describe("P1-UI3-1 — structured pricing qualification (assumption preserved fr
     expect(deriveDecision(r.evaluations, r.apiOption, { modelSelfHostable: true })).toEqual(r.decision);
     expect(costComparatorValid(r.decision, r.apiOption, r.evaluations)).toBe(true);
     expect(costComparatorValid(tampered, r.apiOption, r.evaluations)).toBe(false);
+  });
+});
+
+describe("P1-PRICE-INT-1 — complete pricing-assumption integrity (fail-closed before narration)", () => {
+  const savingsResult = () => {
+    mockedCatalog.mockReturnValue([C.b200Int4]);
+    const w = dsv4Workload();
+    w.generation.gpuPricingModel = "savings-1yr";
+    return recommend({ workload: w, optimizeFor: "cost" });
+  };
+  const withTamperedPa = (r: ReturnType<typeof recommend>, patch: Partial<(typeof r.evaluations)[0]["pricingAssumption"]>) =>
+    r.evaluations.map((e) =>
+      e.config.id === r.decision.costComparator!.selfHostCandidateId
+        ? { ...e, pricingAssumption: { ...e.pricingAssumption, ...patch } }
+        : e
+    );
+
+  it("the valid engine-built assumption passes (build and check share ONE derivation)", () => {
+    const r = savingsResult();
+    expect(costComparatorValid(r.decision, r.apiOption, r.evaluations)).toBe(true);
+    expect(pricingAssumptionValid(r.evaluations[0])).toBe(true);
+  });
+
+  it("EXACT repro: tampered discount 95% + $1 modeled rate (qualification unchanged) → invalid", () => {
+    const r = savingsResult();
+    const evals = withTamperedPa(r, { assumedDiscountPct: 95, modeledEffectiveHourly: 1 });
+    expect(costComparatorValid(r.decision, r.apiOption, evals)).toBe(false);
+  });
+
+  it("every tampered field fails closed: discount %, base rate, modeled rate, purchasing model, qualification, pricingEstimated, assumptionSource", () => {
+    const r = savingsResult();
+    const tampers: Array<Partial<(typeof r.evaluations)[0]["pricingAssumption"]>> = [
+      { assumedDiscountPct: 95 },
+      { onDemandBaseHourly: 50 },
+      { modeledEffectiveHourly: 1 },
+      { purchasingModel: "reserved-3yr" },
+      { qualification: "indicative-spot" },
+      { pricingEstimated: false },
+      { assumptionSource: "gpu-commitment-discount:reserved-1yr" },
+      { assumedDiscountPct: Number.NaN },
+      { modeledEffectiveHourly: -1 },
+    ];
+    for (const patch of tampers) {
+      const evals = withTamperedPa(r, patch);
+      expect(costComparatorValid(r.decision, r.apiOption, evals), JSON.stringify(patch)).toBe(false);
+    }
   });
 });

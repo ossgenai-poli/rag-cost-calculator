@@ -2,6 +2,7 @@
 // per-candidate evaluations plus the structured API option. `optimizeFor` does NOT enter here (it only
 // ranks self-host candidates; the top-level choice is eligibility + a trustworthy cost comparison).
 import type { ApiOption, CandidateEvaluation, Decision } from "./schema";
+import { pricingAssumptionValid } from "./pricing";
 
 /** Deterministic cost → config-id ordering used EVERYWHERE a cheapest candidate is picked or verified. */
 function byCostThenId(a: CandidateEvaluation, b: CandidateEvaluation): number {
@@ -40,6 +41,11 @@ export function costComparatorValid(decision: Decision, api: ApiOption, evals: C
   // P1-UI3-1: the persisted qualification must EXACTLY match the candidate's structured pricing
   // assumption — a missing assumption or a mismatch means the qualification cannot be trusted → fail closed.
   if (!cand.pricingAssumption || cand.pricingAssumption.qualification !== cmp.pricingQualification) return false;
+  // P1-PRICE-INT-1: the ENTIRE pricing assumption must reconcile with the engine-derived expectation
+  // from the candidate's own servingFacts (discount %, base rate, modeled planning rate, purchasing
+  // model, qualification, estimated state, source id) before any dollar winner or discount/rate claim
+  // is narrated. Any failed invariant → neutral wording, no repair.
+  if (!pricingAssumptionValid(cand)) return false;
   const cheapest = [...comparableCandidates(evals)].sort(byCostThenId)[0];
   if (!cheapest || cheapest.config.id !== cand.config.id) return false;
   if (decision.choice === "api") return cmp.apiMonthly <= cmp.selfHostMonthly;

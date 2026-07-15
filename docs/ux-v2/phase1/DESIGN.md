@@ -518,3 +518,21 @@ Tests: on-demand reference invariance (byte-identical narration, `reference` com
 `indicative-commitment` with the engine's 30% factor and the honest decision flip, spot →
 `indicative-spot` (65%), tampered comparator qualification → validator fails closed, purchasing-model
 change → `pricing-changed` + `comparator-changed` diff events. Suite: 359/359 in this worktree.
+
+### 10.12 Pricing-assumption integrity (re-review P1-PRICE-INT-1, reviewer-authorized)
+
+The re-review showed the comparator integrity check verified only the QUALIFICATION while the
+assumption's internal fields (discount %, base rate, modeled planning rate, source) could be tampered
+and still be narrated as customer-facing fact. Fix: `lib/recommendation/pricing.ts` holds the ONE
+canonical derivation `expectedPricingAssumption(servingFacts)` — recommend() now BUILDS the assumption
+through it and the new shared `pricingAssumptionValid(evaluation)` CHECKS a presented assumption
+against it (deep field-by-field reconciliation: finiteness/nonnegativity, purchasingModel ==
+servingFacts.gpuPricingModel, base == servingFacts.gpuPricePerHr, discount == engine
+GPU_COMMITMENT_DISCOUNT, modeled rate == engine effectiveGpuHourly, qualification/pricingEstimated/
+assumptionSource match the derivation). Build and check share one code path, so they cannot drift; the
+engine's factors remain imported, never duplicated. `costComparatorValid()` requires
+`pricingAssumptionValid(candidate)` before any dollar winner or discount/rate claim is narrated — any
+failed invariant fails closed to the neutral comparison-details-unavailable wording. Tamper tests cover
+discount %, base rate, modeled rate, purchasing model, qualification, pricingEstimated,
+assumptionSource, NaN and negative values, plus the exact 95%/$1 repro end-to-end through narrate();
+the valid on-demand and commitment narrations are asserted unchanged. Suite: 364/364.

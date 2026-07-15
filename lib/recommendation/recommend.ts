@@ -9,16 +9,17 @@ import type { CalcInputs, CalcResult, CapacityResult, CrossoverResult, PriceBook
 import { calculate, normalizeInputs, inputClampNotes } from "../calc-engine";
 import { applyGpuSelection } from "../ui-logic";
 import { explainFleetSizing } from "../fleet-explain";
-// The engine's OWN purchasing planning factors (P1-UI3-1) — imported, never duplicated here.
-import { GPU_COMMITMENT_DISCOUNT, effectiveGpuHourly } from "../self-host";
 import { resolveOperatingPoint } from "../benchmark-registry";
 
 import type {
   ApiOption, Card, CandidateConfig, CandidateEvaluation, EffectiveConfidence, EffectiveWorkload,
   EngineConfidence, InputAdjustment, OptimizeFor, PricingAssumption, PricingProvenance,
-  PricingQualification, ReasonCode, RecommendationRequest, RegistryEvidence, Rejection, ServingFacts,
+  ReasonCode, RecommendationRequest, RegistryEvidence, Rejection, ServingFacts,
   StructuredRecommendationResult, Verdict,
 } from "./schema";
+// The ONE canonical pricing-assumption derivation (P1-PRICE-INT-1) — shared with the integrity
+// validator; the engine's planning factors are imported there, never duplicated.
+import { expectedPricingAssumption } from "./pricing";
 import { loadCandidateCatalog } from "./candidate-catalog";
 import { loadPriceBook } from "./price-book";
 import { validateRecommendationRequest } from "./validate";
@@ -161,35 +162,14 @@ function runCandidate(candidate: CandidateConfig, workload: CalcInputs, priceBoo
     utilTarget: ei.utilTarget,
   };
 
-  // The structured pricing assumption behind this candidate's self-host cost (P1-UI3-1). PRESERVES the
-  // engine's planning factors (GPU_COMMITMENT_DISCOUNT / effectiveGpuHourly — imported, not duplicated)
-  // and the engine's PRICING-018 estimated state (non-live book price OR non-on-demand purchasing —
-  // composed from the SAME two engine facts lib/crossover.ts composes it from). Only the trusted
-  // on-demand book rate is an unqualified `reference`; commitment/Spot factors are INDICATIVE and a
-  // manual $/hr edit is an `override` (crossover already reports it as such via gpuPriceSource).
-  const purchasing = ei.gpuPricingModel;
-  const qualification: PricingQualification =
-    cx.gpuPriceSource === "override"
-      ? "override"
-      : purchasing === "spot"
-        ? "indicative-spot"
-        : purchasing !== "on-demand"
-          ? "indicative-commitment"
-          : "reference";
-  const pricingAssumption: PricingAssumption = {
-    qualification,
-    purchasingModel: purchasing,
-    onDemandBaseHourly: ei.gpuPricePerHr,
-    assumedDiscountPct: Math.round((GPU_COMMITMENT_DISCOUNT[purchasing] ?? 0) * 100),
-    modeledEffectiveHourly: effectiveGpuHourly(ei.gpuPricePerHr, purchasing),
-    pricingEstimated: cx.gpuPriceSource !== "live" || purchasing !== "on-demand",
-    assumptionSource:
-      qualification === "override"
-        ? "user-override"
-        : purchasing === "on-demand"
-          ? "price-book:on-demand"
-          : `gpu-commitment-discount:${purchasing}`,
-  };
+  // The structured pricing assumption behind this candidate's self-host cost (P1-UI3-1). Built through
+  // the ONE canonical derivation in pricing.ts (P1-PRICE-INT-1) — the same code path the comparator
+  // integrity validator checks against, so the built assumption and the validated expectation cannot
+  // drift. The engine's planning factors (GPU_COMMITMENT_DISCOUNT / effectiveGpuHourly) and its
+  // PRICING-018 estimated state live inside that derivation; nothing is duplicated here. Only the
+  // trusted on-demand book rate is an unqualified `reference`; commitment/Spot factors are INDICATIVE
+  // and a manual $/hr edit is an `override` (crossover reports it via gpuPriceSource).
+  const pricingAssumption: PricingAssumption = expectedPricingAssumption(servingFacts);
 
   const eq = explainFleetSizing(cx);
   const evaluation: CandidateEvaluation = {
