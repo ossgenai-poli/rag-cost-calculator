@@ -33,6 +33,9 @@ const EVIDENCE_RISK: Record<string, string> = {
 export interface RiskOptions {
   /** Labels of inputs the customer supplied as RANGES (doc 08) — adds the input-uncertainty line. */
   rangeLabels?: string[];
+  /** Bound-scenario disclosures from rangeDisclosures() (P1-UI5-3): engine reconciliations at the
+   *  bounds + tracked-candidate eligibility — carried into risks verbatim. */
+  rangeNotes?: string[];
 }
 
 /** Assemble the active risk/exclusion lines. Pure and deterministic; order is fixed. */
@@ -87,10 +90,14 @@ export function riskLines(r: NarratedRecommendationResult, opts?: RiskOptions): 
   }
 
   if (opts?.rangeLabels && opts.rangeLabels.length > 0) {
+    // P1-UI5-2: the risk line states exactly which scenarios were evaluated — never range stability.
     lines.push({
       key: "input-ranges",
-      text: `Customer ranges, not firm values: ${opts.rangeLabels.join(", ")}. Results are shown at the base case; the band comes from re-running the engine at the bounds — validate the real values before committing.`,
+      text: `Customer ranges, not firm values: ${opts.rangeLabels.join(", ")}. Results are shown at the base case; the band comes from re-running the engine at the all-low, base and all-high scenarios only — intermediate values and combinations were not exhaustively evaluated. Validate the real values before committing.`,
     });
+    for (const [i, note] of (opts.rangeNotes ?? []).entries()) {
+      lines.push({ key: `range-note-${i}`, text: note });
+    }
   }
   if (r.pricing.source !== "live") {
     lines.push({

@@ -7,7 +7,7 @@
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
 import { heroLine, perQuery } from "./DecisionSummary";
 import { riskLines, relevantEvaluation } from "./risks";
-import { RANGE_FIELD_LABELS, RANGE_FIELDS, type RangeComputation } from "./ranges";
+import { decisionScenarioSentence, rangeDisclosures, RANGE_FIELD_LABELS, RANGE_FIELDS, type RangeComputation } from "./ranges";
 
 const usd = (v: number | null | undefined): string =>
   typeof v === "number" && Number.isFinite(v)
@@ -66,18 +66,17 @@ export function buildReport(r: NarratedRecommendationResult, extras?: ReportExtr
     const { band, largestEffect } = ranges;
     push("");
     push("Range view — combined envelope (every range input at its low / at its high; real engine recomputes, never percentage estimates):");
-    push(`- Input confidence: ${ranges.fields.length} of ${RANGE_FIELDS.length} range-capable inputs are ranges. Evidence confidence is a separate channel and is unaffected.`);
-    push(band.fleet ? `- Fleet: ${num(band.fleet.low)}–${num(band.fleet.high)} boxes (base ${num(band.fleet.base)})` : "- Fleet band unavailable — the base configuration is not modeled at the range bounds.");
-    push(band.selfHost ? `- Self-host: ${usd(band.selfHost.low)}–${usd(band.selfHost.high)}/mo (base ${usd(band.selfHost.base)})` : "- Self-host cost band unavailable at the range bounds.");
+    push(`- Range coverage: ${ranges.fields.length} of ${RANGE_FIELDS.length} supported uncertainty inputs ${ranges.fields.length === 1 ? "uses" : "use"} a range. Evidence confidence is a separate channel and is unaffected.`);
+    push(band.fleet ? `- Fleet: ${num(band.fleet.low)}–${num(band.fleet.high)} boxes (base ${num(band.fleet.base)})` : "- Fleet band unavailable at the range bounds (see the disclosures below).");
+    push(band.selfHost ? `- Self-host: ${usd(band.selfHost.low)}–${usd(band.selfHost.high)}/mo (base ${usd(band.selfHost.base)})` : "- Self-host cost band unavailable at the range bounds (see the disclosures below).");
     push(band.api ? `- API: ${usd(band.api.low)}–${usd(band.api.high)}/mo (base ${usd(band.api.base)})` : "- API cost band unavailable at the range bounds.");
-    push(
-      band.stable
-        ? `- The modeled decision (${band.decisionBase}) is unchanged at both ends of the combined range.`
-        : `- The modeled decision CHANGES within the range (low: ${band.decisionLow} · base: ${band.decisionBase} · high: ${band.decisionHigh}) — validate the real value before committing.`
-    );
+    // P1-UI5-2: the shared scenario sentence — never a range-stability claim.
+    push(`- ${decisionScenarioSentence(band)}`);
     if (largestEffect) {
       push(`- Largest modeled range effect: ${RANGE_FIELD_LABELS[largestEffect.field]} (${num(largestEffect.bounds.low)}–${num(largestEffect.bounds.high)}) → fleet ${num(largestEffect.fleetLow)}–${num(largestEffect.fleetHigh)} boxes.`);
     }
+    // P1-UI5-3: bound-scenario disclosures (engine reconciliations + tracked eligibility), verbatim.
+    for (const note of rangeDisclosures(ranges)) push(`- ${note}`);
   }
   push("");
 
@@ -120,7 +119,8 @@ export function buildReport(r: NarratedRecommendationResult, extras?: ReportExtr
   // 6. Risks & exclusions — the SAME deterministic checklist the on-page panel renders.
   push("## 6. Risks & exclusions");
   const rangeLabels = ranges ? ranges.fields.map((f) => RANGE_FIELD_LABELS[f]) : undefined;
-  for (const risk of riskLines(r, { rangeLabels })) push(`- ${risk.text}`);
+  const rangeNotes = ranges ? rangeDisclosures(ranges) : undefined;
+  for (const risk of riskLines(r, { rangeLabels, rangeNotes })) push(`- ${risk.text}`);
   push("");
 
   // 7. Advanced evidence — the full sweep audit (collapsed on page; complete here). Rejected or

@@ -35,6 +35,7 @@ export const EXPERT_FIELD_HELP: Record<string, FieldHelp> = {
   outTokens: { unit: "tokens", recommended: "default 500", why: "Answer length; drives decode throughput demand." },
   uptimeHours: { unit: "h/mo", recommended: "default 730 (always-on)", why: "Billing hours for the self-host fleet; capped at 730 and disclosed." },
   utilTargetPct: { unit: "%", recommended: "default 70 (balanced)", why: "Peak-load headroom the fleet is sized against; lower % = more GPUs, more headroom." },
+  peakFactor: { unit: "× average", recommended: "default 1 (flat)", why: "Peak-to-average traffic ratio; the fleet is provisioned for PEAK load, so this scales instances directly." },
 };
 
 /** Friendly, field-level validation wording (P2-UI-1). Keyed by the boundary validator's property
@@ -57,6 +58,7 @@ export const FIELD_ERROR_COPY: Array<{ pathToken: string; error: FieldError }> =
   { pathToken: "gpuUptimeHoursPerMonth", error: { inputId: "adv-uptime", label: "GPU fleet uptime", message: "Enter 0 or more hours (0 uses the always-on default)." } },
   { pathToken: "generation.utilTarget", error: { inputId: "adv-util", label: "Utilization target", message: "Enter a percentage between 1 and 100." } },
   { pathToken: "generation.gpuPricingModel", error: { inputId: "adv-purchasing", label: "Purchasing model", message: "Choose one of the listed purchasing models." } },
+  { pathToken: "traffic.peakFactor", error: { inputId: "adv-peak", label: "Peak-to-average ratio", message: "Enter a ratio of at least 1 (1 = flat traffic)." } },
 ];
 
 /** Map a boundary-validator error message to friendly field errors (unknown → a generic message). */

@@ -185,6 +185,35 @@ export function applyPresetWithProvenance(
   };
 }
 
+/** Full journey-state equality (every scalar field + ranges by value). Used by the page to decide
+ *  whether a committed onChange actually changed anything (P1-UI5-4): ANY real manual change after an
+ *  apply — including adding, changing or clearing a range, or any non-preset field — makes the
+ *  full-state Undo snapshot unsafe (Undo may never discard a later edit). A no-op commit (e.g. blur
+ *  without change) must NOT invalidate Undo. */
+export function advisorStatesEqual(a: AdvisorState, b: AdvisorState): boolean {
+  for (const k of Object.keys({ ...a, ...b }) as Array<keyof AdvisorState>) {
+    if (k === "ranges") continue;
+    if (a[k] !== b[k]) return false;
+  }
+  const fields = new Set([...Object.keys(a.ranges), ...Object.keys(b.ranges)] as Array<keyof AdvisorState["ranges"]>);
+  for (const f of fields) {
+    const ra = a.ranges[f];
+    const rb = b.ranges[f];
+    if (!ra || !rb) {
+      if (!!ra !== !!rb) return false;
+      continue;
+    }
+    if (ra.low !== rb.low || ra.high !== rb.high) return false;
+  }
+  return true;
+}
+
+/** P1-UI5-4: drop the Undo snapshot (a later manual edit made it unsafe) without touching origins or
+ *  the active chips — non-preset edits never mark a family "Modified". */
+export function invalidateUndo(prov: PresetProvenance): PresetProvenance {
+  return prov.undo ? { ...prov, undo: null } : prov;
+}
+
 /** Safe single Undo of the LAST apply (available only while no manual edit followed it). */
 export function undoPreset(prov: PresetProvenance): { state: AdvisorState; provenance: PresetProvenance; revertedLabel: string } | null {
   if (!prov.undo) return null;

@@ -460,3 +460,28 @@ line — still byte-deterministic (asserted).
 - **UI5-D3** The doc's schematic shows "Inputs: 3 of 7 are ranges"; only 3 fields are range-capable in
   this iteration, so the channel reads "of 3 range-capable inputs". Confirm the phrasing or direct
   which further fields should become range-capable.
+
+## Iteration-5 HOLD remediation (triplet integrity · scenario honesty · bound disclosures · undo safety)
+
+| Finding | Fix |
+|---|---|
+| **P1-UI5-1** low/base/high not validated as one triplet | ONE shared `rangeTripletValid(field, base, bounds)` contract: finite, field minima, low < high AND low ≤ base ≤ high, WHOLE NUMBERS for count fields (volume/outTokens/topN; peakFactor is a ratio ≥ 1). Enforced at commit AND re-checked whenever an active range's base changes: the committed triplet is PRESERVED with an inline error ("…the band is paused until the range or the base is adjusted") while the page gates it out — an invalid triplet never reaches computeRanges (which now THROWS defensively) or the export. The exact 200,000,000-base / 500–1,000 repro is a test and was re-run live (inline error, no band). Tests cover base below/above/equal-to boundaries, base edited after a preset, and fractional counts. |
+| **P1-UI5-2** three samples mislabeled as range stability | `stable` renamed **`sampledPointsAgree`**; ONE shared `decisionScenarioSentence()` renders on the panel, in risks and in the export: "The decision is api at the three evaluated scenarios: all-low, base and all-high. Intermediate values and combinations were not exhaustively evaluated." / "The decision differs among the evaluated scenarios (…)". The exact Top-N 0/5/10 repro is a test — including independent runs proving Top N 7/8 → self-host inside the "agreeing" range — with `not.toMatch(/stable|unchanged at both ends|across (the|your) range/i)` across panel AND export. |
+| **P1-UI5-3** reconciled bounds undisclosed | `RangeComputation` now carries `boundAdjustments` (each bound scenario's engine `inputAdjustments` not already disclosed by the base result) and `trackedEligibility`. Shared `rangeDisclosures()` renders on the panel, in risks and in the export: "High scenario: Context chunks sent to the model entered as 30; calculated as 20 by engine reconciliation — the band reflects the calculated value." A bound where the tracked candidate is NOT recommendation-eligible never presents a qualified band: fleet/cost bands fail closed to null with the explicit disclosure ("…the bound amounts remain diagnostic audit output, never a qualified comparison"). Acceptance tests: Top N 30 > Top K 20, and outTokens 20,000 (context overflow → ineligible high bound). |
+| **P1-UI5-4** preset Undo silently deleted a later range | `advisorStatesEqual()` + `invalidateUndo()`: ANY real committed change after an apply — adding/changing/clearing a range, or any non-preset field — drops the full-state Undo snapshot (Undo may never discard a later edit); non-preset edits still never mark a family "Modified", and a NO-OP commit preserves Undo. Live-verified: apply Cost-optimized → add the Org-wide range → Undo gone, chip unmodified. |
+| **P2-UI5-1** partial/fractional bounds | An incomplete pair states itself on blur ("Enter both low and high, or use a single value."); fractional count bounds are rejected by the triplet contract (integer rule). |
+
+Owner decisions applied: **UI5-D1** volume tiers labeled as illustrative planning presets with visible
+numbers ("Department — illustrative (2M / 5M / 12M)"); **UI5-D2** peak-to-average added as the FOURTH
+range-capable input — a real engine input (`traffic.peakFactor`, expert field `adv-peak`, default 1
+preserves R1 exactly; asserted) with the documented illustrative triplet "Steady → very spiky —
+illustrative assumption (1.2 / 2 / 3)"; no headless change. **UI5-D3** the count channel is now
+"Range coverage: {k} of 4 supported uncertainty inputs use(s) a range" — never called input
+confidence; no further fields added.
+
+### Verification (this revision)
+**469/469** tests (10 new HOLD acceptance tests), `tsc --noEmit` clean, `build:static` clean, **375px
+mobile acceptance PASS**, fresh-profile live probe ZERO console errors — re-run live: the 500/1,000
+triplet repro (inline error, no band), the sampled-scenario wording, Range coverage phrasing,
+apply-profile → add-range → Undo gone, and the peak-factor affordance. Isolation unchanged (headless
+`faa9af7`; all frozen pins intact; no merge/deploy/CI; `.claude/` excluded).

@@ -27,9 +27,9 @@ import { ChangesPanel } from "@/components/advisor/ChangesPanel";
 import { RisksPanel } from "@/components/advisor/RisksPanel";
 import { ExportPanel } from "@/components/advisor/ExportPanel";
 import { RangeBandPanel } from "@/components/advisor/RangeBandPanel";
-import { computeRanges, RANGE_FIELD_LABELS, type RangeComputation } from "@/components/advisor/ranges";
+import { computeRanges, rangeTripletValid, rangeDisclosures, RANGE_FIELDS, RANGE_FIELD_LABELS, type RangeComputation } from "@/components/advisor/ranges";
 import { PresetBar } from "@/components/advisor/PresetBar";
-import { changedPresetFields, initialProvenance, registerManualEdit, type PresetProvenance } from "@/components/advisor/presets";
+import { advisorStatesEqual, changedPresetFields, initialProvenance, invalidateUndo, registerManualEdit, type PresetProvenance } from "@/components/advisor/presets";
 import { friendlyFieldErrors, type FieldError } from "@/components/advisor/copy";
 
 const priceBook = pricesJson as unknown as PriceBook;
@@ -54,6 +54,7 @@ export const DEFAULT_STATE: AdvisorState = {
   haEnabled: true,
   purchasingModel: "on-demand",
   experimental: false,
+  peakFactor: 1, // UI5-D2: real engine input; default 1 (flat) preserves the R1 canonical output
   ranges: {}, // doc 08: no ranges by default — the base case IS the R1 canonical output
 };
 
@@ -77,7 +78,7 @@ export function buildWorkload(s: AdvisorState): CalcInputs {
   w.retrieval.topN = s.topN;
   w.retrieval.topK = s.topK;
   w.traffic.queriesPerMonth = s.volume;
-  w.traffic.peakFactor = 1;
+  w.traffic.peakFactor = s.peakFactor; // UI5-D2: journey-state field (default 1 = the prior pinned value)
   w.queryTokens = s.queryTokens;
   return w;
 }
@@ -96,9 +97,14 @@ export default function AdvisorPage() {
   const [presetProv, setPresetProv] = useState<PresetProvenance>(initialProvenance());
 
   // Committed input changes from the form: any change to a preset-managed field is a MANUAL edit —
-  // origins flip to manual, an active chip becomes "Modified from …", and Undo is invalidated.
+  // origins flip to manual and an active chip becomes "Modified from …". P1-UI5-4: ANY real committed
+  // change (including adding/changing/clearing a range or a non-preset field) makes the full-state
+  // Undo snapshot unsafe — Undo may never discard a later edit. A no-op commit preserves Undo.
   const handleInputsChange = (next: AdvisorState) => {
-    setPresetProv((prov) => registerManualEdit(prov, changedPresetFields(state, next)));
+    setPresetProv((prov) => {
+      const p = registerManualEdit(prov, changedPresetFields(state, next));
+      return advisorStatesEqual(state, next) ? p : invalidateUndo(p);
+    });
     setState(next);
   };
   // P2-UI-1: the last VALID result stays on screen while the customer edits through an invalid state.
@@ -135,17 +141,25 @@ export default function AdvisorPage() {
   const { result, diff, errorGeneric, fieldErrors } = outcome;
 
   // Doc 08 — range bands are REAL engine recomputes at the customer's bounds, derived from the same
-  // committed state + the same buildWorkload as the headline. Bounds are validated at the control
-  // before they reach state; an unexpected recompute failure fails closed to "no band" (never a guess).
+  // committed state + the same buildWorkload as the headline. P1-UI5-1: only VALID TRIPLETS
+  // (low ≤ base ≤ high, field minima, whole numbers for counts) reach the recompute — a committed
+  // range whose base was later edited outside it is PRESERVED in state but gated out here (the control
+  // shows the inline error). An unexpected recompute failure fails closed to "no band", never a guess.
   const rangeComputation = useMemo<RangeComputation | null>(() => {
     if (!outcome.structured) return null;
+    const valid: AdvisorState["ranges"] = {};
+    for (const f of RANGE_FIELDS) {
+      const b = state.ranges[f];
+      if (b && rangeTripletValid(f, state[f], b)) valid[f] = b;
+    }
     try {
-      return computeRanges(state, state.ranges, outcome.structured, buildWorkload);
+      return computeRanges(state, valid, outcome.structured, buildWorkload);
     } catch {
       return null;
     }
   }, [outcome, state]);
   const rangeLabels = rangeComputation ? rangeComputation.fields.map((f) => RANGE_FIELD_LABELS[f]) : undefined;
+  const rangeNotes = rangeComputation ? rangeDisclosures(rangeComputation) : undefined;
 
   useEffect(() => {
     if (outcome.structured && outcome.result) {
@@ -223,7 +237,7 @@ export default function AdvisorPage() {
               <AlternativeCards result={result} />
               {/* Level 6 (10-result-hierarchy §6): risks & exclusions BEFORE the advanced evidence,
                   visible in both modes. */}
-              <RisksPanel result={result} riskOptions={{ rangeLabels }} />
+              <RisksPanel result={result} riskOptions={{ rangeLabels, rangeNotes }} />
               {/* Owner D1: evidence & assumptions stay ACCESSIBLE (collapsed) in Simple mode;
                   rejected candidates remain Expert-only. */}
               {state.mode === "expert" && <RejectedOptions result={result} />}

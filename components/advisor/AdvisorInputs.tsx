@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import type { GpuPricingModel, ModelPrice } from "@/lib/types";
 import type { OptimizeFor } from "@/lib/recommendation";
 import { EXPERT_FIELD_HELP, type FieldError } from "./copy";
-import { RANGE_PRESETS, rangeBoundsValid, type RangeBounds, type RangeField } from "./ranges";
+import { RANGE_PRESETS, rangeTripletValid, type RangeBounds, type RangeField } from "./ranges";
 
 export interface AdvisorState {
   modelId: string;
@@ -36,9 +36,13 @@ export interface AdvisorState {
   haEnabled: boolean; // N+1 serving-replica redundancy (NOT AZ/DR/compliance)
   purchasingModel: GpuPricingModel; // commitment model → indicative discount off on-demand
   experimental: boolean;
+  /** UI5-D2 (owner-authorized journey-state expansion): peak-to-average traffic ratio — a REAL engine
+   *  input (traffic.peakFactor; the fleet is provisioned for peak load). Default 1 preserves the R1
+   *  canonical output exactly. */
+  peakFactor: number;
   /** Iteration-5 (doc 08): optional low/high customer RANGES per range-capable input. The base value
-   *  stays in the plain field above and drives the headline; bands come from real engine recomputes
-   *  at these bounds (never percentage extrapolation). */
+   *  stays in the plain field above and drives the headline; a range is valid ONLY as a full triplet
+   *  (low ≤ base ≤ high — P1-UI5-1); bands come from real engine recomputes at these bounds. */
   ranges: Partial<Record<RangeField, RangeBounds>>;
 }
 
@@ -125,9 +129,12 @@ interface RangeControlProps {
 }
 
 /** The "I'm not sure" affordance (doc 08): low/base/high where base stays in the main field and
- *  drives the headline; low/high commit ONLY as a valid pair (low < high, finite) — invalid pairs
- *  show an inline error and never reach the journey state. Typical presets fill a plausible
- *  low/base/high so a missing fact never blocks. */
+ *  drives the headline. P1-UI5-1: bounds commit ONLY as a valid TRIPLET against the current base
+ *  (finite, field minimum, whole numbers for count fields, low < high AND low ≤ base ≤ high) — an
+ *  invalid triplet shows an inline error and never reaches the journey state. P2-UI5-1: an incomplete
+ *  pair states itself after blur. If the BASE is later edited outside a committed range, the committed
+ *  triplet is preserved in state but flagged invalid here (and the page gates it out of the
+ *  recompute/export). Typical presets fill a plausible low/base/high so a missing fact never blocks. */
 function RangeControl({ field, base, range, onSet, onPreset }: RangeControlProps) {
   const [open, setOpen] = useState(!!range);
   const [lowDraft, setLowDraft] = useState<string>(range ? String(range.low) : "");
@@ -139,14 +146,30 @@ function RangeControl({ field, base, range, onSet, onPreset }: RangeControlProps
     setHighDraft(range ? String(range.high) : "");
   }, [range]);
 
+  // P1-UI5-1: re-validate the COMMITTED triplet whenever the base changes (the range stays committed —
+  // the last valid triplet is preserved — but it is flagged and gated out of the recompute).
+  const committedTripletInvalid = !!range && !rangeTripletValid(field, base, range);
+  const wholeNumbers = field !== "peakFactor";
+
   const commitPair = (lowS: string, highS: string) => {
-    if (lowS.trim() === "" || highS.trim() === "") return; // wait for both bounds
+    const lowEmpty = lowS.trim() === "";
+    const highEmpty = highS.trim() === "";
+    if (lowEmpty && highEmpty) return; // nothing entered yet
+    if (lowEmpty !== highEmpty) {
+      // P2-UI5-1: an incomplete pair states itself instead of silently doing nothing.
+      setPairError("Enter both low and high, or use a single value.");
+      return;
+    }
     const b = { low: Number(lowS), high: Number(highS) };
-    if (rangeBoundsValid(field, b)) {
+    if (rangeTripletValid(field, base, b)) {
       setPairError(null);
       onSet(b);
     } else {
-      setPairError("Enter numbers with low less than high (at or above the field minimum).");
+      setPairError(
+        wholeNumbers
+          ? "Enter whole numbers with low ≤ base ≤ high (at or above the field minimum) — the base value must lie inside the range."
+          : "Enter numbers with low ≤ base ≤ high (minimum 1) — the base value must lie inside the range."
+      );
     }
   };
   const clear = () => {
@@ -203,6 +226,11 @@ function RangeControl({ field, base, range, onSet, onPreset }: RangeControlProps
       </div>
       {pairError && (
         <p role="alert" data-testid={`range-error-${field}`} className="mt-1 text-xs text-red-700">{pairError}</p>
+      )}
+      {committedTripletInvalid && (
+        <p role="alert" data-testid={`range-triplet-error-${field}`} className="mt-1 text-xs text-red-700">
+          Your base value {new Intl.NumberFormat("en-US").format(base)} is outside the committed range ({new Intl.NumberFormat("en-US").format(range!.low)}–{new Intl.NumberFormat("en-US").format(range!.high)}) — the band is paused until the range or the base is adjusted.
+        </p>
       )}
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
         <span className="text-xs text-slate-500">Typical:</span>
@@ -314,6 +342,12 @@ export function AdvisorInputs({ state, defaults, models, selfHostAvailable, fiel
               <RangeControl field="outTokens" base={state.outTokens} range={state.ranges.outTokens} onSet={(b) => setRange("outTokens", b)} onPreset={(base, b) => setRangePreset("outTokens", base, b)} />
             </div>
             <Num id="adv-uptime" label="GPU fleet uptime" helpKey="uptimeHours" value={state.uptimeHours} defaultValue={defaults.uptimeHours} min={0} disabled={!selfHostAvailable} disabledNote={selfHostDisabledNote} error={err("adv-uptime")} onCommit={(v) => set("uptimeHours", v)} />
+            {/* UI5-D2: peak-to-average is a REAL engine input (traffic.peakFactor); the presets are
+                illustrative planning assumptions, never universal traffic classifications. */}
+            <div>
+              <Num id="adv-peak" label="Peak-to-average ratio" helpKey="peakFactor" value={state.peakFactor} defaultValue={defaults.peakFactor} min={1} error={err("adv-peak")} onCommit={(v) => set("peakFactor", v)} />
+              <RangeControl field="peakFactor" base={state.peakFactor} range={state.ranges.peakFactor} onSet={(b) => setRange("peakFactor", b)} onPreset={(base, b) => setRangePreset("peakFactor", base, b)} />
+            </div>
           </div>
 
           {/* Iteration-3 journey-state contract: operations & purchasing are REAL engine inputs. */}
