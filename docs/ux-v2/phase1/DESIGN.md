@@ -345,3 +345,27 @@ each is captured here with its reproduction and resolution, and covered by tests
 
 **After HOLD-4:** recommendation tests 81, full suite 305, tsc clean; engine + registry byte-identical to
 `4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.
+
+### 10.4 Narrative slice (implemented — for focused narrative QA)
+
+`narrate(structured) → NarratedRecommendationResult` is a **pure, deterministic** template over the
+structured result (no engine/registry call, no Date/random). Binding requirements → coverage:
+
+| Requirement | How it is honored |
+|---|---|
+| Lead with API-vs-self-host decision | `decision.rationale` always opens with `Recommendation: …` by `decision.basis`. |
+| Name both models when they differ | rationale appends `(compared models: <api> via API vs self-hosting <self>)` when `apiOption.modelId !== effectiveWorkload.generation.llmModelId`. |
+| bestSelfHost never the overall rec when `api` | rationale leads with the API option; the card is only ever the "best self-host option". Test asserts no `Recommendation: self-host` when `choice==="api"`. |
+| Every basis covered deterministically | `lower-cost / evidence-gap / no-modeled-candidate / self-host-infeasible / sla / comparison-unavailable` each have an explicit branch. |
+| Candidate facts only from `servingFacts` | card `tradeoff`/`bindingConstraint` read `servingFacts` (instance, precision, GPU price, pricing model); never a stale CalcInputs. |
+| Workload facts only from `effectiveWorkload`; disclosures from `inputAdjustments` | self-host model id from `effectiveWorkload.generation.llmModelId`; adjustments rendered from `inputAdjustments`. |
+| Exact confidence tokens | the `confidence` token is emitted verbatim (`measured` … `unbenchmarked`). |
+| Registry invalid-request = internal limitation | experimental-mode note: "internal evidence-metadata limitation … not a problem with the request". |
+| Pricing provenance; never "live" on fallback | pricing disclosure from `pricing.{source,asOf,region,gpuPriceSource}`; "live" only when `source==="live"`. |
+| No unsupported percentile | TTFT clause only when `ttftPercentile ∈ {p50,p90,p95,p99}`. |
+| Fleet sizing from `fleet.equation` | `bindingConstraint` embeds `fleet.equation` verbatim; no math reconstructed. |
+| Pricing wording guard | `servingFacts.gpuPricePerHr` rendered as "on-demand base rate" + purchasing model — never a discounted "effective rate". |
+
+**After the narrative slice:** recommendation tests 92 (incl. 11 narrate), full suite 316, tsc clean;
+engine + registry byte-identical to `4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`;
+main frozen at `d749309`. change-diff / UI / merge / deploy remain HELD pending narrative QA.

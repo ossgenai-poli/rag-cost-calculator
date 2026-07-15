@@ -5,4 +5,5 @@
 // ============================================================================
 export * from "./schema";
 export { recommend } from "./recommend";
-// narrate(), diffRecommendations() are added in subsequent Phase-1 slices.
+export { narrate } from "./narrate";
+// diffRecommendations() is added in a subsequent Phase-1 slice.
