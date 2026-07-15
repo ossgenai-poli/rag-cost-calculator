@@ -304,3 +304,14 @@ with an explicit planning-scenario description (UI3-D2 owner position).
   Self-host" + both disclosure lines + "$4,157,496/mo"; change summary "a modeled cost comparison
   decided it"; ha-posture → Claude Fable 5 → chip "— inactive for API-only model", banner/Undo/ops row
   suppressed → switch back → all restored; preview description rendered.
+
+### Re-review addendum — P1-PRICE-INT-1 (headless pricing-assumption integrity)
+Fixed on the headless branch (`ux/v2-phase1 @ faa9af7`, DESIGN §10.12): `pricing.ts` holds the ONE
+canonical `expectedPricingAssumption(servingFacts)` derivation — recommend() builds through it and the
+shared `pricingAssumptionValid()` checks presented assumptions against it field-by-field (finiteness,
+purchasing model / base rate vs servingFacts, discount vs engine GPU_COMMITMENT_DISCOUNT, modeled rate
+vs engine effectiveGpuHourly, qualification / pricingEstimated / assumptionSource vs the derivation).
+`costComparatorValid()` requires it before any dollar winner or discount/rate claim is narrated; the
+exact 95%/$1 tamper repro now fails closed to neutral wording end-to-end through narrate(). No UI
+changes — this branch is rebased onto the fix. Gates re-run: headless 364/364; UI **428/428**, tsc,
+build:static, 375px mobile PASS, fresh-profile live probe zero console errors.
