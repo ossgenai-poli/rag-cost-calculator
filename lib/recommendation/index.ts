@@ -4,4 +4,5 @@
 // benchmark registry (via its safe index only). See docs/ux-v2/phase1/DESIGN.md.
 // ============================================================================
 export * from "./schema";
-// recommend(), narrate(), diffRecommendations() are added in subsequent Phase-1 slices.
+export { recommend } from "./recommend";
+// narrate(), diffRecommendations() are added in subsequent Phase-1 slices.
