@@ -11,15 +11,18 @@ approved sweep + narrative. UI, merge and deploy remain **HELD** until change-di
 
 1. **`lib/recommendation/change-diff.ts`** — `diffRecommendations(prev, next) → RecommendationDiff`.
    Pure, deterministic, reason-coded diff of two **structured** results (never narrative prose); no input
-   mutation; null-safe; identical inputs → empty diff. See [DESIGN.md](DESIGN.md) §10.7 for the
-   requirement→coverage table and test list.
+   mutation; null-safe. **The exported `ChangeCode` union is the ONE binding contract** (DESIGN §6).
+   `identical` = canonical equality of the COMPLETE results; coverage of every schema field is enforced
+   by compile-time `satisfies Record<keyof …, ChangeCode>` maps + a coarse per-field fallback, and by a
+   guard test that mutates EVERY leaf path of real control/experimental results (DESIGN §10.7–§10.8).
+   `candidate-added/removed` carry the full deep-copied evaluation snapshot.
 2. Previously approved (context): sweep §3–§4 + §10–§10.3, narrative §5 + §10.4–§10.6.
 
 ## Run
 
 ```
-npx vitest run lib/recommendation      # 111 (81 sweep/contracts + 21 narrate/comparator + 9 change-diff)
-npx vitest run                         # 335 (frozen 184 + registry 40 + recommendation 111)
+npx vitest run lib/recommendation      # 119 (81 sweep/contracts + 21 narrate/comparator + 17 change-diff)
+npx vitest run                         # 343 (frozen 184 + registry 40 + recommendation 119)
 npx tsc --noEmit                       # clean
 ```
 

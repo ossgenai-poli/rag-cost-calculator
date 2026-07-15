@@ -230,12 +230,22 @@ unit-tested against the R1–R5 reference numbers.
 
 ## 6. Change-diff (`lib/recommendation/change-diff.ts`) — deterministic, reason-coded
 
-`diffRecommendations(prev, next)` returns an ordered list of coded changes: **`decision-changed`**
-(top-level `api ↔ self-host ↔ undetermined`, with the new `basis`), `best-self-host-changed` (config id),
-`fleet-changed` (Δ boxes), `cost-changed` (Δ $), `confidence-changed` (on `effectiveConfidence`, e.g.
-`measured-scaled → unbenchmarked`), `verdict-changed` (api-wins ↔ self-host-efficient), `gate-flip` (a
-candidate that entered or left `rejected`, with the reason code). Pure function of the two results; no
-time, no randomness.
+`diffRecommendations(prev, next)` returns an ordered list of coded changes over the **structured**
+results. **The binding contract is the exported `ChangeCode` union in `change-diff.ts`** (mirrored in
+§10.7–§10.8 and QA-HANDOFF — one source of truth):
+
+> `mode-changed · decision-changed · comparator-changed · api-model-changed · api-option-changed ·
+> model-label-changed · best-self-host-changed · alternatives-changed · rejection-details-changed ·
+> control-comparison-changed · effective-workload-changed · adjustments-changed · pricing-changed ·
+> candidate-added · candidate-removed · candidate-config-changed · gate-changed · rejection-changed ·
+> confidence-changed · provenance-changed · fleet-changed · fleet-equation-changed · latency-changed ·
+> serving-facts-changed · cost-changed`
+
+Verdict changes surface as `cost-changed` (`cost.verdict`); gate entry/exit surfaces as `gate-changed` +
+`rejection-changed`/`rejection-details-changed` (the earlier draft names `verdict-changed`/`gate-flip`
+are superseded). Coverage of **every** schema field is enforced by compile-time
+`satisfies Record<keyof …, ChangeCode>` maps plus a coarse per-field fallback (§10.8); `identical` is the
+canonical equality of the complete results. Pure function of the two results; no time, no randomness.
 
 ---
 
@@ -418,3 +428,16 @@ decision+comparator flip with exact before/after amounts · determinism + deep-f
 335, tsc clean; engine + registry byte-identical to `4b2c848`; approved sweep (`7c16584`) and narrative
 (`7c8b97a`) behavior unchanged; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main
 frozen at `d749309`. UI / merge / deploy remain HELD pending change-diff QA.
+
+### 10.8 Change-diff review — HOLD-1 (findings, reproductions, fixes)
+
+| # | Finding (repro) | Fix |
+|---|---|---|
+| **P1-DIFF-1** | The diff observed only selected fields and defined `identical` as `changes.length===0` — TTFT target 2,000→3,000ms (recorded in `effectiveWorkload`) returned `identical:true`, as did independent changes to `effectiveWorkload`, `controlComparison`, `selfHostModelLabel`, `apiOption.priceState/comparisonQualified/modelLabel`, `alternatives`, `rejected`, same-id `bestSelfHost`/`config` fields, `servingFacts`, `ttftS/ttftPercentile`, `fleet.equation`, rejection messages, and `registry.reasons/transformations/provenance/differsFromControl`. | **Complete coverage, doubly guarded.** (1) Compile-time: `satisfies Record<keyof …, ChangeCode>` coverage maps for `StructuredRecommendationResult`, `CandidateEvaluation`, `Decision`, `ApiOption`, `PricingProvenance`, `FleetReconciliation`, `CostComparison`, `RegistryEvidence` — a new schema field without a reason code fails typecheck. (2) Runtime: every field is compared by canonical (sorted-key) equality; when a field differs and its fine-grained handler emits nothing, a coarse change with the field's mapped code and full deep-copied before/after is emitted — a JSON-unequal field can never pass silently. New codes: `api-option-changed`, `model-label-changed`, `effective-workload-changed`, `control-comparison-changed`, `alternatives-changed`, `candidate-config-changed`, `serving-facts-changed`, `latency-changed`, `provenance-changed`, `fleet-equation-changed`, `rejection-details-changed`. **`identical` is now the canonical equality of the COMPLETE results.** Guard test: every primitive leaf path of a real control AND experimental result is mutated individually — each must yield `identical:false` and ≥1 coded change. |
+| **P2-DIFF-1** | `candidate-added/removed` carried only the id — not self-contained. | Added/removed events now carry the **full deep-copied `CandidateEvaluation` snapshot** on the populated side (before=null/after=evaluation and vice versa), with `candidateId` retained separately. Test asserts the snapshot (config/confidence/fleet) and that it is a copy, not an alias. |
+| **P3-DIFF-1** | DESIGN §6 still documented `verdict-changed`/`gate-flip`, diverging from the implementation. | §6 now points at the exported `ChangeCode` union as the ONE binding contract (mirrored here and in QA-HANDOFF); verdict changes surface as `cost-changed`(`cost.verdict`), gate entry/exit as `gate-changed` + `rejection(-details)-changed`. |
+
+**After change-diff HOLD-1:** recommendation tests 119 (81 sweep + 21 narrate + 17 diff), full suite 343,
+tsc clean; engine + registry byte-identical to `4b2c848`; approved sweep (`7c16584`) and narrative
+(`7c8b97a`) behavior unchanged; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main
+frozen at `d749309`. UI / merge / deploy remain HELD.
