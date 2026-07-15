@@ -191,12 +191,12 @@ describe("sweep — gate separation, comparison, determinism, injection, single-
     expect(r.decision).toEqual({ choice: "api", basis: "no-modeled-candidate" });
   });
 
-  it("P1-2: a non-self-hostable (API-only) model → api/self-host-infeasible", () => {
+  it("P1-UI-4: a non-self-hostable (API-only) model → api/self-host-unavailable (reason-coded)", () => {
     mockedCatalog.mockReturnValue([...PINNED_CANDIDATES]);
     const w = dsv4Workload();
     w.generation.llmModelId = "claude-opus-4-8"; // API-only (selfHostable falsy)
     const r = recommend({ workload: w, optimizeFor: "cost" });
-    expect(r.decision).toEqual({ choice: "api", basis: "self-host-infeasible" });
+    expect(r.decision).toEqual({ choice: "api", basis: "self-host-unavailable", availability: { reason: "api-only" } });
   });
 
   it("P1-3: an invalid optimizeFor is rejected at the public boundary", () => {

@@ -50,13 +50,20 @@ export interface DecideOptions {
   modelSelfHostable: boolean;
 }
 
-/** Precedence (first match wins): no-modeled-candidate → self-host-infeasible → sla → evidence-gap →
- *  comparison-unavailable → lower-cost. Overlapping conditions never produce a nondeterministic basis. */
+/** Precedence (first match wins): self-host-unavailable → no-modeled-candidate → self-host-infeasible
+ *  → sla → evidence-gap → comparison-unavailable → lower-cost. Overlapping conditions never produce a
+ *  nondeterministic basis. */
 export function deriveDecision(evals: CandidateEvaluation[], api: ApiOption, opts: DecideOptions): Decision {
-  // Zero candidates: a self-hostable model with no pinned candidate is a COVERAGE gap (P1-2), not
-  // infeasibility; a non-self-hostable model genuinely cannot self-host.
+  // P1-UI-4: availability is a trusted MODEL-CATALOG fact (weights/rights), decided BEFORE any
+  // technical candidate feasibility. A non-self-hostable (API-only) model is "self-host-unavailable" —
+  // NEVER "self-host-infeasible", which is reserved for genuine capacity/memory/topology failures.
+  if (!opts.modelSelfHostable) {
+    return { choice: "api", basis: "self-host-unavailable", availability: { reason: "api-only" } };
+  }
+
+  // Zero candidates for a self-hostable model: a COVERAGE gap (P1-2), not infeasibility.
   if (evals.length === 0) {
-    return { choice: "api", basis: opts.modelSelfHostable ? "no-modeled-candidate" : "self-host-infeasible" };
+    return { choice: "api", basis: "no-modeled-candidate" };
   }
 
   const feasible = evals.filter((e) => e.technicallyFeasible);

@@ -110,6 +110,25 @@ describe("narrate — decision leads; both models named; bestSelfHost never the 
     expect(n.decision.rationale).not.toMatch(/infeasible/);
   });
 
+  it("P1-UI-4: API-only model → availability wording; NEVER 'technically (in)feasible'", () => {
+    mockedCatalog.mockReturnValue([...PINNED_CANDIDATES]);
+    const w = dsv4Workload(); w.generation.llmModelId = "claude-opus-4-8";
+    const n = narrate(recommend({ workload: w, optimizeFor: "cost" }));
+    expect(n.decision).toMatchObject({ choice: "api", basis: "self-host-unavailable", availability: { reason: "api-only" } });
+    expect(n.decision.rationale).toContain("This model is available through the API only; self-host weights are not available, so no self-host cost comparison was performed.");
+    expect(n.decision.rationale).not.toMatch(/technically\s+(in)?feasible/i);
+  });
+
+  it("P1-UI-4: genuine infeasibility keeps its own wording (states not conflated)", () => {
+    // Structured fixture: self-hostable model, basis self-host-infeasible → the technical wording.
+    mockedCatalog.mockReturnValue([...PINNED_CANDIDATES]);
+    const s = recommend({ workload: dsv4Workload(), optimizeFor: "cost" });
+    const shaped = { ...s, decision: { choice: "api" as const, basis: "self-host-infeasible" as const } };
+    const n = narrate(shaped);
+    expect(n.decision.rationale).toContain("is technically feasible for this workload");
+    expect(n.decision.rationale).not.toContain("available through the API only");
+  });
+
   it("no-modeled-candidate: coverage gap, not 'cannot self-host'", () => {
     mockedCatalog.mockReturnValue([...PINNED_CANDIDATES]);
     const w = dsv4Workload(); w.generation.llmModelId = "minimax-m3-oss";

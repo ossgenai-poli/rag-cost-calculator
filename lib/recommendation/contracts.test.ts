@@ -186,12 +186,25 @@ describe("P1-5 — deriveDecision requires comparisonQualified on BOTH sides", (
   });
 });
 
-describe("P1-2 — zero candidates: coverage gap vs genuine infeasibility", () => {
+describe("P1-2/P1-UI-4 — availability vs coverage gap vs genuine infeasibility (never conflated)", () => {
   it("self-hostable model, no candidate → no-modeled-candidate", () => {
     expect(deriveDecision([], apiFix(), { modelSelfHostable: true })).toEqual({ choice: "api", basis: "no-modeled-candidate" });
   });
-  it("non-self-hostable model, no candidate → self-host-infeasible", () => {
-    expect(deriveDecision([], apiFix(), { modelSelfHostable: false })).toEqual({ choice: "api", basis: "self-host-infeasible" });
+  it("non-self-hostable (API-only) model → self-host-unavailable with a reason code — NEVER infeasible", () => {
+    const d = deriveDecision([], apiFix(), { modelSelfHostable: false });
+    expect(d).toEqual({ choice: "api", basis: "self-host-unavailable", availability: { reason: "api-only" } });
+  });
+  it("availability is decided BEFORE technical feasibility (even with candidates present)", () => {
+    // Contradictory fixture: candidates exist but the catalog says the model is not self-hostable —
+    // the trusted availability fact wins, and the basis is unavailable, not any feasibility state.
+    const d = deriveDecision([evalFix({ technicallyFeasible: false })], apiFix(), { modelSelfHostable: false });
+    expect(d.basis).toBe("self-host-unavailable");
+    expect(d.availability).toEqual({ reason: "api-only" });
+  });
+  it("genuine technical failure (self-hostable, candidates all infeasible) STAYS self-host-infeasible", () => {
+    const d = deriveDecision([evalFix({ technicallyFeasible: false })], apiFix(), { modelSelfHostable: true });
+    expect(d).toEqual({ choice: "api", basis: "self-host-infeasible" });
+    expect(d.availability).toBeUndefined();
   });
 });
 

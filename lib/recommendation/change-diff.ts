@@ -114,6 +114,7 @@ const DECISION_FIELD_CODES = {
   choice: "decision-changed",
   basis: "decision-changed",
   costComparator: "comparator-changed",
+  availability: "decision-changed", // reason-coded availability outcome (P1-UI-4)
 } as const satisfies Record<keyof Decision, ChangeCode>;
 
 const API_OPTION_FIELD_CODES = {

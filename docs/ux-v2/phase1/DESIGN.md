@@ -459,3 +459,25 @@ payload pair is canonically different and no case returns `identical:false` with
 tsc clean; engine + registry byte-identical to `4b2c848`; approved sweep (`7c16584`) and narrative
 (`7c8b97a`) behavior unchanged; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main
 frozen at `d749309`. UI / merge / deploy remain HELD.
+
+### 10.10 Narrow headless revision — availability semantics (UI HOLD-2 P1-UI-4, reviewer-authorized)
+
+The UI review exposed a semantic contradiction the presentation layer could not honestly resolve: an
+API-only model produced `basis="self-host-infeasible"` and the narrated "technically feasible" wording,
+while availability (weights/rights) is a catalog fact, not GPU feasibility.
+
+- **`DecisionBasis` gains `self-host-unavailable`**, decided FIRST in the precedence (before any
+  technical candidate feasibility), from the trusted model-catalog `selfHostable` fact; the decision
+  carries `availability: { reason: "api-only" | "weights-unavailable" }`.
+- **`self-host-infeasible` is now reserved** for genuine capacity/memory/topology feasibility failures
+  (self-hostable model, candidates present, none technically feasible).
+- **narrate()**: "This model is available through the API only; self-host weights are not available, so
+  no self-host cost comparison was performed." — never "technically (in)feasible" for this state.
+- **change-diff**: `Decision.availability` added to the compile-time coverage map (decision-changed).
+- Tests: contract (availability decided before feasibility, even with contradictory candidates; genuine
+  infeasibility unchanged and `availability` absent), sweep (API-only → reason-coded basis), narrative
+  (required wording; `technically (in)feasible` never used for availability; infeasible wording intact).
+
+**After this revision:** recommendation tests 127, full suite 351, tsc clean; engine + registry
+byte-identical to `4b2c848`; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen
+at `d749309`.

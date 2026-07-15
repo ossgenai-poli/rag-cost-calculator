@@ -76,11 +76,16 @@ export type Verdict = "api-wins" | "self-host-efficient" | "infeasible" | "undet
 
 export type DecisionChoice = "api" | "self-host" | "undetermined";
 
-/** Deterministic precedence (first match wins):
- *  no-modeled-candidate → self-host-infeasible → sla → evidence-gap → comparison-unavailable → lower-cost. */
+/** Reason-coded availability outcome (UI HOLD-2 P1-UI-4): why self-hosting is UNAVAILABLE — a
+ *  weights/rights/catalog fact from the trusted model catalog, NEVER a GPU technical-feasibility claim. */
+export type AvailabilityReason = "api-only" | "weights-unavailable";
+
+/** Deterministic precedence (first match wins): self-host-unavailable → no-modeled-candidate →
+ *  self-host-infeasible → sla → evidence-gap → comparison-unavailable → lower-cost. */
 export type DecisionBasis =
+  | "self-host-unavailable" // the model is NOT self-hostable (trusted catalog fact, e.g. API-only) — decided BEFORE any technical feasibility (P1-UI-4)
   | "no-modeled-candidate" // the model IS self-hostable, but the pinned catalog models no candidate for it (coverage gap, not infeasibility) — P1-2
-  | "self-host-infeasible" // genuinely non-self-hostable, OR candidates exist but none is technically feasible
+  | "self-host-infeasible" // candidates exist but none is technically feasible (genuine capacity/memory/topology failure)
   | "sla" // feasible exist but none satisfy the SLA
   | "evidence-gap" // SLA-qualified exist but none are evidence-qualified
   | "comparison-unavailable" // evidence-qualified exists but a trustworthy cost comparison is unavailable
@@ -102,6 +107,9 @@ export interface Decision {
   basis: DecisionBasis;
   /** Present ONLY when basis === "lower-cost" — the comparator the decision was actually derived from. */
   costComparator?: CostComparator;
+  /** Present ONLY when basis === "self-host-unavailable" — the reason-coded availability outcome
+   *  (trusted model-catalog fact; distinct from technical feasibility) — P1-UI-4. */
+  availability?: { reason: AvailabilityReason };
 }
 
 /** The API delivery option, represented structurally (rev-2 #3) — not just a rationale string. */

@@ -103,6 +103,10 @@ function decisionRationale(r: StructuredRecommendationResult): string {
 
   let lead: string;
   switch (r.decision.basis) {
+    case "self-host-unavailable":
+      // P1-UI-4: an availability (weights/rights) outcome — NEVER phrased as technical infeasibility.
+      lead = `Recommendation: use ${apiPhrase}. This model is available through the API only; self-host weights are not available, so no self-host cost comparison was performed.`;
+      break;
     case "self-host-infeasible":
       lead = `Recommendation: use ${apiPhrase}. No modeled self-host configuration for ${selfLabel} is technically feasible for this workload.`;
       break;
