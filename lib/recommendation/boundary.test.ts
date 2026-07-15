@@ -27,8 +27,10 @@ const prodFiles = ["lib", "components", "app"]
   .flatMap((d) => walk(join(root, d)))
   .filter((f) => !f.includes(registryDir));
 
-// A deep import is `benchmark-registry/<segment>` where <segment> is anything but `index`.
-const DEEP_IMPORT = /benchmark-registry\/(?!index['"])[A-Za-z0-9_.-]+/;
+// A deep import is a QUOTED module specifier `…benchmark-registry/<segment>` where <segment> is anything
+// but `index`. Anchoring on the surrounding quotes means prose/comments mentioning a path never trip it —
+// only real `import … from "…"` / `import("…")` specifiers do.
+const DEEP_IMPORT = /["'][^"']*\bbenchmark-registry\/(?!index["'])[^"']+["']/;
 
 describe("Phase-1 boundary — registry consumed only via its safe index", () => {
   it("scanned real production files", () => {

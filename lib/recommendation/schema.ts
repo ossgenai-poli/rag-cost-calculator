@@ -1,34 +1,36 @@
 // ============================================================================
 // recommendation/schema — contracts for the Phase-1 headless recommendation
-// layer (concern E). EXPERIMENTAL, additive. This layer COMPOSES the frozen
-// rc-qa-11 engine (feasibility/sizing/cost + capacity.source evidence) and the
-// approved benchmark registry (additive provenance only); it changes neither.
-// See docs/ux-v2/phase1/DESIGN.md.
+// layer (concern E). EXPERIMENTAL, additive. Composes the frozen rc-qa-11 engine
+// (feasibility/sizing/cost + capacity.source evidence) and the approved benchmark
+// registry (additive provenance only); changes neither. See docs/ux-v2/phase1/DESIGN.md.
 //
-// Revised per the Phase-1 foundation review:
-//  (1) API-vs-self-host is the TOP-LEVEL decision; the best self-host config is a
-//      separate `bestSelfHost`, never the "overall recommendation" when API wins.
-//  (2) technical feasibility, SLA, evidence and recommendation-eligibility are
-//      DISTINCT fields — missing evidence is never technical infeasibility.
-//  (3) engine / registry / effective confidence are represented separately, and
-//      `effectiveConfidence` includes `unbenchmarked` (experimental demotion floor).
-//  (4) the candidate catalog is pinned internally — callers supply only workload +
-//      preference, never arbitrary evidence-bearing candidates.
-//  (5) ranking is a complete deterministic total order (see DESIGN §5).
-//  (6) evaluations carry the STRUCTURED fields the narrative consumes.
+// rev-2 (final contract cleanup):
+//  1. deterministic decision precedence + `comparison-unavailable` basis; `customer-preference`
+//     removed from the top-level derivation.
+//  2. missing price is NOT technical infeasibility — `priceQualified`/`comparisonQualified` are
+//     separate; costs are `number | null` (no $0 sentinel).
+//  3. `optimizeFor` ranks self-host candidates ONLY; the API option is represented STRUCTURALLY
+//     (`apiOption`); the sweep varies only infra/precision of the workload's EXACT model.
+//  4. registry provenance uses the registry's EXPORTED safe types (via the registry's public index).
+//  5. `recommend()` returns STRUCTURED facts only; `narrate()` renders prose (separate result types).
 // ============================================================================
 import type { CalcInputs } from "../types";
+// Safe registry types — imported through the registry's public index ONLY (never a deep path).
+import type { SelectionResult, ConfidenceCategory, Reason, Transformation, ProvenanceView } from "../benchmark-registry";
 
-/** Customer optimization preference (Stage A). Orders the survivors of the hard gates. */
+/** Customer optimization preference (Stage A). Orders the EVIDENCE-QUALIFIED SELF-HOST candidates only —
+ *  it never flips the top-level API/self-host decision (there are no comparable API latency/confidence
+ *  metrics in Phase 1; see DESIGN §4.2). */
 export type OptimizeFor = "cost" | "latency" | "confidence" | "predictability";
 
-/** One point in the sweep — a PINNED supported-catalog record (not caller-supplied). Must resolve to an
- *  EXACT model (never a model-class) and a reviewed AWS instance (owner Q6). */
+/** One point in the sweep — a PINNED, curated supported-catalog record (not caller-supplied). Resolves to
+ *  an EXACT model + a reviewed AWS instance + its curated accelerator SKU (owner Q6). */
 export interface CandidateConfig {
   /** Stable, deterministic canonical id: `${llmModelId}·${instanceType}·w${weightBits}kv${kvBits}`. */
   id: string;
   llmModelId: string;
   instanceType: string;
+  gpuSku: string; // curated reviewed accelerator (e.g. "B200") — used to build the registry request
   weightBits: number; // 4 | 8 | 16
   kvBits: number; // 8 | 16
   label: string; // human label, e.g. "p6-b200 · INT4"
@@ -42,7 +44,7 @@ export type EngineConfidence = "measured" | "measured-scaled" | "extrapolated" |
  *  the pinned registry produces today (approval note: preserve `unbenchmarked`, never infer). */
 export type EffectiveConfidence = EngineConfidence | "unbenchmarked";
 
-/** Deterministic rank (higher = stronger evidence). Used by reconciliation and ranking (DESIGN §3, §5). */
+/** Deterministic rank (higher = stronger). Used by reconciliation (§3.1) and ranking (§4.1). */
 export const CONFIDENCE_RANK: Record<EffectiveConfidence, number> = {
   measured: 5,
   "measured-scaled": 4,
@@ -53,8 +55,8 @@ export const CONFIDENCE_RANK: Record<EffectiveConfidence, number> = {
 };
 
 /** Structured rejection reason — the union from 17-quality-gate.md plus the evidence-gate code.
- *  Every rejection carries exactly one PRIMARY code (testable). Missing evidence is
- *  `evidence-below-threshold`, NEVER a technical-infeasibility code. */
+ *  Missing evidence is `evidence-below-threshold`, NEVER a technical-infeasibility code. Missing PRICE is
+ *  not a rejection reason at all (it affects the decision, not eligibility — rev-2 #2). */
 export type ReasonCode =
   | "model-does-not-fit-serving-group"
   | "node-count-exceeds-topology"
@@ -63,103 +65,115 @@ export type ReasonCode =
   | "context-window-overflow"
   | "evidence-topology-mismatch"
   | "fleet-exceeds-practical-limit"
-  | "no-usable-price"
-  | "research-only-or-unavailable"
   | "evidence-below-threshold"; // proxy/heuristic/substituted/unbenchmarked → never a primary recommendation
 
-export type Verdict = "api-wins" | "self-host-efficient" | "infeasible";
+/** Per-candidate self-host-vs-API verdict. `undetermined` when a price is missing on either side. */
+export type Verdict = "api-wins" | "self-host-efficient" | "infeasible" | "undetermined";
 
 // ---------------------------------------------------------------------------
-// (1) Top-level API-vs-self-host decision
+// (1) Top-level API-vs-self-host decision — deterministic precedence (DESIGN §4.2)
 // ---------------------------------------------------------------------------
 
 export type DecisionChoice = "api" | "self-host" | "undetermined";
 
-/** Why the decision went the way it did. `evidence-gap` = API chosen because NO self-host option is
- *  evidence-qualified; `self-host-infeasible` = no self-host option is even technically feasible;
- *  `sla` = the only self-host options miss the SLA; `lower-cost` = a trustworthy cost comparison;
- *  `customer-preference` = the optimization axis overrode a marginal cost delta. */
-export type DecisionBasis = "lower-cost" | "evidence-gap" | "self-host-infeasible" | "sla" | "customer-preference";
+/** Deterministic precedence (first match wins):
+ *  self-host-infeasible → sla → evidence-gap → comparison-unavailable → lower-cost. */
+export type DecisionBasis =
+  | "self-host-infeasible" // no technically feasible self-host candidate
+  | "sla" // feasible exist but none satisfy the SLA
+  | "evidence-gap" // SLA-qualified exist but none are evidence-qualified
+  | "comparison-unavailable" // evidence-qualified exists but a trustworthy cost comparison is unavailable
+  | "lower-cost"; // a trustworthy cost comparison decided it
 
+/** Structured facts only — NO prose (narrate() adds the rationale). */
 export interface Decision {
   choice: DecisionChoice;
   basis: DecisionBasis;
-  /** Deterministic template string assembled by the narrative generator from structured fields. */
-  rationale: string;
+}
+
+/** The API delivery option, represented structurally (rev-2 #3) — not just a rationale string. */
+export interface ApiOption {
+  modelId: string;
+  monthlyCost: number | null; // null ⇒ no usable API price (never a $0 sentinel)
+  priceState: "priced" | "no-price";
+  comparisonQualified: boolean; // an API price exists to compare a self-host option against
 }
 
 // ---------------------------------------------------------------------------
-// (3) / (6) Structured per-candidate evidence + gate results
+// (4) Registry provenance — the registry's EXPORTED safe types
 // ---------------------------------------------------------------------------
 
-/** Additive registry provenance (experimental mode ONLY). NEVER promotes — it can only demote the
- *  effective confidence (approval note). Reason codes / transformations / headline are preserved for
- *  the narrative generator. */
+/** Additive registry provenance (experimental mode ONLY). NEVER promotes; can only demote the effective
+ *  confidence (approval note). Uses the registry's exported contracts verbatim so the trust panel and the
+ *  narrative keep full fidelity (status, category, reasons, transformations, provenance identifiers). */
 export interface RegistryEvidence {
-  status: "selected" | "unbenchmarked" | "invalid-request";
-  /** The registry's ConfidenceCategory, or "unbenchmarked". */
-  confidence: string;
+  status: SelectionResult["status"];
+  confidence: ConfidenceCategory | "unbenchmarked";
   differsFromControl: boolean;
-  reasons: Array<{ code: string; dimension: string; message: string }>;
-  transformations?: Array<Record<string, unknown>>;
-  headline?: string;
+  reasons: Reason[];
+  transformations?: Transformation[];
+  provenance?: ProvenanceView;
 }
 
-/** The reconciled fleet-sizing equation (fleet-explain precedent) — rendered verbatim by the narrative. */
+// ---------------------------------------------------------------------------
+// (2)/(6) Structured per-candidate evaluation
+// ---------------------------------------------------------------------------
+
+/** The reconciled fleet-sizing equation (fleet-explain precedent) — rendered verbatim by narrate(). */
 export interface FleetReconciliation {
   boxes: number;
   bindingDim: "prefill" | "decode";
   equation: string;
 }
 
+/** Self-host vs API cost — both nullable (rev-2 #2), no $0 sentinel. */
 export interface CostComparison {
-  selfHostMonthly: number;
-  apiMonthly: number;
+  selfHostMonthly: number | null;
+  apiMonthly: number | null;
   verdict: Verdict;
 }
 
-/** Per-candidate evaluation — the full audit record for one point in the sweep, and the structured
- *  input to the narrative generator (no prose is reverse-engineered). */
+/** Per-candidate evaluation — the full audit record and the STRUCTURED input to narrate(). */
 export interface CandidateEvaluation {
   config: CandidateConfig;
 
-  // (2) DISTINCT gate results — never conflate "can't run" with "not enough evidence".
-  technicallyFeasible: boolean; // engine crossover.feasible + context window + topology + usable price
-  slaQualified: boolean; // P99 TTFT + streaming target + N+1 (capacity.*)
+  // (2) DISTINCT gate results — technical feasibility EXCLUDES price (rev-2 #2).
+  technicallyFeasible: boolean; // model fit + topology + context + runtime/precision + practical fleet limit
+  slaQualified: boolean; // P99 TTFT + streaming target + N+1
   evidenceQualified: boolean; // effectiveConfidence ∈ {measured, measured-scaled} on a real applicable benchmark
+  priceQualified: boolean; // a usable self-host price exists
+  comparisonQualified: boolean; // priceQualified AND an API price exists to compare against
   recommendationEligible: boolean; // technicallyFeasible && slaQualified && evidenceQualified
 
   // (3) SEPARATE confidence representations.
-  engineConfidence: EngineConfidence; // from frozen capacity.source
-  registry?: RegistryEvidence; // present only in experimental mode
+  engineConfidence: EngineConfidence; // frozen capacity.source
+  registry?: RegistryEvidence; // experimental mode only
   effectiveConfidence: EffectiveConfidence; // reconciliation of engine + registry (control: = engine)
 
   // (6) structured explanation inputs.
   fleet: FleetReconciliation;
   cost: CostComparison;
-  ttftS: number | null; // capacity.ttftS
-  ttftPercentile: string | null; // capacity.ttftPercentile
+  ttftS: number | null;
+  ttftPercentile: string | null;
 
   /** Empty ⇒ recommendation-eligible. The FIRST failing gate sets the primary code (index 0). */
   rejections: Array<{ code: ReasonCode; message: string }>;
 }
 
 // ---------------------------------------------------------------------------
-// Presentation
+// (5) Presentation — STRUCTURED (recommend) vs NARRATED (narrate)
 // ---------------------------------------------------------------------------
 
-/** `best-self-host` = the best evidence-qualified self-host config (NOT the overall recommendation).
- *  Alternatives differ on exactly one axis. */
+/** `best-self-host` = the best evidence-qualified self-host config (NOT the overall recommendation). */
 export type CardKind = "best-self-host" | "lowest-cost" | "highest-confidence" | "lowest-latency";
 
+/** Structured card — NO prose. */
 export interface Card {
   kind: CardKind;
   config: CandidateConfig;
-  costMonthly: number;
-  costDeltaVsBest: number; // 0 for the best-self-host card
+  costMonthly: number | null;
+  costDeltaVsBest: number | null; // 0 for the best-self-host card; null when either side has no price
   confidence: EffectiveConfidence;
-  bindingConstraint: string; // plain-terms (narrative generator)
-  tradeoff: string; // one line (narrative generator)
 }
 
 export interface Rejection {
@@ -174,31 +188,51 @@ export interface ControlComparison {
   cause: "new-data" | "selection-rule" | "none";
 }
 
-/** The full recommendation output. `bestSelfHost === null` is an HONEST empty state — no
- *  evidence-qualified self-host config exists (never a fabricated primary). The OVERALL choice lives in
- *  `decision`, separate from the best self-host config. */
-export interface RecommendationResult {
-  caption: string; // "Recommended among currently modeled and evidence-qualified AWS configurations."
-  decision: Decision; // (1) TOP-LEVEL api / self-host / undetermined
-  bestSelfHost: Card | null; // (1) best EVIDENCE-QUALIFIED self-host config, or null
-  alternatives: Card[]; // lowest-cost / highest-confidence / lowest-latency — only when a DISTINCT candidate id
-  rejected: Rejection[]; // every excluded candidate, reason-coded
-  evaluations: CandidateEvaluation[]; // full sweep (audit)
+/** STRUCTURED recommendation output from recommend() — facts only, no prose (rev-2 #5).
+ *  `bestSelfHost === null` is an HONEST empty state. The overall answer is `decision`. */
+export interface StructuredRecommendationResult {
+  decision: Decision;
+  apiOption: ApiOption;
+  bestSelfHost: Card | null;
+  alternatives: Card[]; // lowest-cost / highest-confidence / lowest-latency — only a DISTINCT candidate id
+  rejected: Rejection[];
+  evaluations: CandidateEvaluation[];
   mode: "control" | "experimental";
   controlComparison?: ControlComparison;
 }
 
-/** (4) The request carries ONLY the workload + preference. The curated candidate catalog is pinned and
- *  loaded internally by `recommend()` — callers cannot supply arbitrary evidence-bearing candidates
- *  (mirrors the benchmark registry's pinned-catalog trust boundary). Synthetic candidates are injected
- *  only through the internal/test path (DESIGN §4). */
+/** The request carries ONLY workload + preference (rev-2 #3). The curated candidate catalog is pinned and
+ *  loaded internally, then FILTERED to the workload's EXACT model (no cross-model recommendations in
+ *  Phase 1 — that needs a separate quality-equivalence contract). */
 export interface RecommendationRequest {
-  /** The customer's workload — the SAME CalcInputs the frozen engine consumes. */
   workload: CalcInputs;
   optimizeFor: OptimizeFor;
-  /** Default false → pure frozen-engine composition (the rollback state). True → additionally attach
-   *  benchmark-registry provenance and demote effective confidence (never promote). */
+  /** Default false → pure frozen-engine composition (rollback state). True → attach registry provenance
+   *  and DEMOTE effective confidence (never promote). */
   experimentalProvenance?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Narrated layer — narrate(structured) → NarratedRecommendationResult
+// ---------------------------------------------------------------------------
+
+export interface NarratedDecision extends Decision {
+  rationale: string;
+}
+export interface NarratedCard extends Card {
+  bindingConstraint: string;
+  tradeoff: string;
+}
+export interface NarratedRecommendationResult {
+  caption: string;
+  decision: NarratedDecision;
+  apiOption: ApiOption;
+  bestSelfHost: NarratedCard | null;
+  alternatives: NarratedCard[];
+  rejected: Rejection[];
+  evaluations: CandidateEvaluation[];
+  mode: "control" | "experimental";
+  controlComparison?: ControlComparison;
 }
 
 export const RECOMMENDATION_CAPTION =

@@ -73,22 +73,33 @@ This keeps rc-qa-11 the control and guarantees no Phase-1 regression of the sign
 
 The authoritative types live in `schema.ts`; the shape (revised per the foundation review) is:
 
-- **Top-level `decision`** — `{ choice: "api" | "self-host" | "undetermined"; basis: "lower-cost" |
-  "evidence-gap" | "self-host-infeasible" | "sla" | "customer-preference"; rationale }`. This is the
-  overall answer. A GPU config is **never** presented as the overall recommendation when API wins.
+- **Structured vs narrated (rev-2 #5).** `recommend()` returns a `StructuredRecommendationResult` —
+  **facts only, no prose.** `narrate(structured)` returns a `NarratedRecommendationResult` that adds the
+  `decision.rationale`, card `bindingConstraint`/`tradeoff`, and caption. The change-diff compares the
+  **structured** results.
+- **Top-level `decision`** — `{ choice: "api" | "self-host" | "undetermined"; basis }` with the
+  deterministic precedence basis union `self-host-infeasible | sla | evidence-gap |
+  comparison-unavailable | lower-cost` (§4.2). `customer-preference` is **removed** from the top-level
+  derivation (Phase 1 has no comparable API latency/confidence metrics). A GPU config is **never** the
+  overall recommendation when API wins.
+- **`apiOption`** (rev-2 #3) — the API delivery option represented structurally: `{ modelId; monthlyCost:
+  number | null; priceState; comparisonQualified }`, not just a rationale string.
 - **`bestSelfHost: Card | null`** — the best *evidence-qualified* self-host config, separate from
   `decision`. `null` ⇒ no evidence-qualified self-host exists (honest empty state).
-- **`CandidateEvaluation`** carries **distinct** gate fields (rev-2) — `technicallyFeasible`,
-  `slaQualified`, `evidenceQualified`, `recommendationEligible` — plus **separate** confidence
-  representations (rev-3): `engineConfidence` (frozen `capacity.source`), `registry?` (experimental
-  provenance: status/confidence/reasons/transformations), and `effectiveConfidence`
-  (`EngineConfidence | "unbenchmarked"`). It also carries the structured explanation inputs (rev-6):
-  `fleet` (reconciled equation), `cost` (self-host vs API + verdict), TTFT + percentile, and the
-  reason-coded `rejections`.
+- **`CandidateEvaluation`** carries **distinct** gate fields — `technicallyFeasible` (which **excludes
+  price**, rev-2 #2), `slaQualified`, `evidenceQualified`, `priceQualified`, `comparisonQualified`,
+  `recommendationEligible` — plus **separate** confidence representations: `engineConfidence` (frozen
+  `capacity.source`), `registry?` (experimental provenance, using the registry's **exported** types —
+  `SelectionResult` status, `ConfidenceCategory`, `Reason[]`, `Transformation[]`, `ProvenanceView`), and
+  `effectiveConfidence` (`EngineConfidence | "unbenchmarked"`). It also carries the structured explanation
+  inputs: `fleet` (reconciled equation), `cost` (self-host vs API, both `number | null` — **no $0
+  sentinel**), TTFT + percentile, and the reason-coded `rejections`.
 - **`RecommendationRequest`** = `{ workload: CalcInputs; optimizeFor; experimentalProvenance? }` — **no
-  caller candidates** (rev-4). `recommend()` builds each candidate's `CalcInputs` with the existing pure
-  transforms `applyGpuSelection`/`applyModelSelection` (QA-014 ⇒ a test fixture is byte-identical to what
-  the app selector produces), so the sweep can never diverge from the real engine inputs.
+  caller candidates** (rev-4). `recommend()` loads the pinned catalog, **filters it to the workload's
+  EXACT model** (rev-2 #3 — no cross-model recommendations; that needs a separate quality-equivalence
+  contract), and builds each candidate's `CalcInputs` with the existing pure transforms
+  `applyGpuSelection`/`applyModelSelection` (QA-014 ⇒ a test fixture is byte-identical to the app
+  selector's output), so the sweep can never diverge from the real engine inputs.
 
 ### 3.1 Evidence reconciliation (rev-3) — deterministic, demote-only
 
@@ -123,12 +134,14 @@ is unit-tested.
 
 ## 4. Gate pipeline + decision derivation (deterministic — [06](../06-recommendation-presentation.md) order)
 
-**Per-candidate gates** set the four DISTINCT fields (rev-2); the first failing gate sets the primary
-rejection code (never conflate "can't run" with "not enough evidence"):
+**Per-candidate gates** set the DISTINCT fields; the first failing gate sets the primary rejection code
+(never conflate "can't run" with "not enough evidence", and **never** treat a missing price as
+infeasibility — rev-2 #2):
 
-1. **`technicallyFeasible`** — `crossover.feasible`; `capacity.contextOverflow` →
+1. **`technicallyFeasible`** (excludes price) — `crossover.feasible`; `capacity.contextOverflow` →
    `context-window-overflow`; `crossover.infeasibility[]` → `model-does-not-fit-serving-group` /
-   `node-count-exceeds-topology` / `fleet-exceeds-practical-limit`; missing price → `no-usable-price`.
+   `node-count-exceeds-topology` / `fleet-exceeds-practical-limit`; no compatible runtime/precision →
+   `no-compatible-runtime-or-precision`.
 2. **`slaQualified`** — `capacity.slaAchievable && ttftMet && interactivityMet` (P99 TTFT + streaming +
    N+1). Fail → `sla-unmet-ttft-or-streaming`.
 3. **`evidenceQualified`** — `effectiveConfidence ∈ {measured, measured-scaled}` on a real applicable
@@ -137,27 +150,44 @@ rejection code (never conflate "can't run" with "not enough evidence"):
    `technicallyFeasible=true` but `recommendationEligible=false`** — missing evidence is never
    infeasibility.
 4. **`recommendationEligible` = `technicallyFeasible && slaQualified && evidenceQualified`.**
+5. **`priceQualified`** (self-host price exists) and **`comparisonQualified`** (`priceQualified` AND an
+   API price exists) are tracked SEPARATELY — they feed the decision, not eligibility. An
+   evidence-qualified but unpriced config is still `recommendationEligible`, but drives the decision to
+   `undetermined`.
 
-**`bestSelfHost`** = the top of the deterministic ranking (§5) over `recommendationEligible` candidates
+**`bestSelfHost`** = the top of the deterministic ranking (§4.1) over `recommendationEligible` candidates
 (or `null` if none). `lowest-cost` / `highest-confidence` / `lowest-latency` alternatives = the best
 eligible candidate optimizing that axis, included **only when its candidate id differs** from a card
-already shown (rev-5). At R1 they legitimately collapse to "none" (one eligible config).
+already shown. At R1 they legitimately collapse to "none" (one eligible config).
 
-**Top-level `decision`** (rev-1) is derived AFTER the sweep, comparing the best evidence-qualified
-self-host config against the API option for the same workload:
+### 4.2 Top-level decision — deterministic precedence (rev-2 #1)
 
-| Condition | `decision.choice` | `decision.basis` |
+`deriveDecision(evaluations, apiOption)` — **first match wins**, so overlapping conditions can never
+produce a nondeterministic basis. `optimizeFor` does **not** enter here (it ranks self-host only):
+
+| # | Condition | `choice` / `basis` |
 |---|---|---|
-| an evidence-qualified self-host exists AND API is cheaper (trustworthy comparison) | `api` | `lower-cost` |
-| an evidence-qualified self-host exists AND it is cheaper | `self-host` | `lower-cost` |
-| evidence-qualified self-host cheaper on cost but preference axis flips it | per preference | `customer-preference` |
-| **no** self-host option is evidence-qualified (e.g. every candidate `unbenchmarked` in experimental mode) | `api` | `evidence-gap` |
-| no self-host option is even technically feasible | `api` | `self-host-infeasible` |
-| the only self-host options miss the SLA | `api` | `sla` |
-| an evidence-qualified self-host exists but the API comparison is untrustworthy/unavailable | `undetermined` | (nearest applicable) |
+| 1 | no `technicallyFeasible` self-host candidate | `api` / `self-host-infeasible` |
+| 2 | feasible exist, but none `slaQualified` | `api` / `sla` |
+| 3 | SLA-qualified exist, but none `evidenceQualified` | `api` / `evidence-gap` |
+| 4 | evidence-qualified exists, but no trustworthy cost comparison (`apiOption.monthlyCost == null` **or** no priced self-host) | `undetermined` / `comparison-unavailable` |
+| 5 | trustworthy comparison: `apiOption.monthlyCost ≤` cheapest evidence-qualified self-host | `api` / `lower-cost` |
+| 5′ | trustworthy comparison: cheapest evidence-qualified self-host is cheaper | `self-host` / `lower-cost` |
 
-So **R1/R5 → `decision=api` (`lower-cost`)** with `bestSelfHost = p6-b200` — the GPU config is the best
-self-host option, **not** the overall recommendation.
+So **R1/R5 → `api` / `lower-cost`** with `bestSelfHost = p6-b200`; a **heuristic-only** case (R3/R4,
+`bestSelfHost=null`) → **`api` / `evidence-gap`** (never `lower-cost` — the $554k/$522k heuristic numbers
+are not a comparison input).
+
+### 4.3 Registry request mapping (rev-2 #4) — honest, never invented
+
+`buildRegistryRequest(candidate, workload, calc)` sets only fields derived from **real** data — modelId,
+weight/KV precision (`precisionFromBits`), `gpuSku`, `awsInstance`, `gpuCount`, `isl`
+(`perQuery.llmInputTok`), `osl`, `concurrency`, the interactivity SLA, and `framework`/`serving` **only
+when** the frozen benchmark provenance actually reports them. Fields we cannot establish — **checkpoint,
+parallelism (TP/PP/EP), nodeCount, prefix-cache, speculative-decoding** — are left **UNSET**. The pinned
+InferenceX snapshot establishes none of these, so the request is incomplete and the registry returns
+`invalid-request` → the candidate stays `unbenchmarked` (approval limitation, preserved). No default is
+invented to force a resolution.
 
 ### 4.1 Ranking — complete deterministic total order (rev-5)
 
@@ -207,16 +237,17 @@ time, no randomness.
 
 ## 7. Reference-case anchoring (ground truth = [18](../18-reference-cases.md))
 
-The engine tests assert BOTH the overall `decision` AND the best evidence-qualified self-host candidate
-(rev-7), against the already-signed-off numbers:
+The engine tests assert BOTH the overall `decision` AND the best evidence-qualified self-host candidate,
+against the already-signed-off numbers. The **candidate set** for each case is stated explicitly (all
+share the exact model `dsv4`; the sweep varies only infra/precision):
 
-| Case | Candidate(s) | `decision` | `bestSelfHost` | Rejections |
+| Case | Candidate set (dsv4, exact model) | `decision` | `bestSelfHost` | Rejections |
 |---|---|---|---|---|
-| R1 | dsv4 · p6-b200 · INT4 | **api** / `lower-cost` | p6-b200 · 87 boxes · $7,176,630 · prefill · **Measured·scaled** | — |
-| R2 | dsv4 · p6-b200 · FP8 | api / `lower-cost` | (unchanged) | fp8 → `evidence-below-threshold` (fp4 substituted → not distinct/measured) |
-| R3 | dsv4 · p5e (H200) · INT4 | api / `lower-cost` | — | H200 heuristic → `technicallyFeasible=true`, `evidence-below-threshold`; the $554k figure NEVER shown as an alternative |
-| R4 | dsv4 · p5 (H100) · INT4 | api / `lower-cost` | — | H100 heuristic → `evidence-below-threshold` |
-| R5 | dsv4 · p6-b200 · INT4 · 5M vol | **api** / `lower-cost` | p6-b200 · 4 boxes · $329,960 | — |
+| R1 | {p6-b200·INT4} | **api** / `lower-cost` | p6-b200 · 87 boxes · $7,176,630 · prefill · **Measured·scaled** | — |
+| R2 | {p6-b200·**INT4**, p6-b200·**FP8**} — evaluated together | api / `lower-cost` | p6-b200·INT4 (unchanged) | FP8 → `evidence-below-threshold` (fp4 substituted → not distinct/measured) |
+| R3 | {p5e·H200·INT4} | **api** / **`evidence-gap`** | **null** | H200 heuristic → `technicallyFeasible=true`, `evidence-below-threshold`; the $554k figure NEVER a comparison input or alternative |
+| R4 | {p5·H100·INT4} | **api** / **`evidence-gap`** | **null** | H100 heuristic → `evidence-below-threshold` |
+| R5 | {p6-b200·INT4} · 5M vol | **api** / `lower-cost` | p6-b200 · 4 boxes · $329,960 | — |
 
 **Experimental-provenance mode (approval limitation, explicitly tested):** with the pinned registry,
 every candidate resolves to `unbenchmarked` ⇒ `effectiveConfidence=unbenchmarked` ⇒
@@ -247,9 +278,12 @@ The registry stays byte-identical to its approved `4b2c848` state; this layer on
 2. **Evidence PROMOTION rule (future)** — v1 is demote-only (§3.1) and is settled. If/when a registry
    record becomes measured-exact with a reviewed AWS-host mapping, the promotion rule and the 3-reviewer
    sign-off gate (owner Q3) must be specified before the registry may raise confidence.
-3. **`optimizeFor` default** — which axis is the Stage-A default — pending UX.
-4. **`undetermined` triggers** — the precise set of "untrustworthy comparison" conditions (beyond a
-   missing API price) that yield `decision=undetermined` — to be enumerated with UX.
+3. **`optimizeFor` default + delivery-model preference** — which axis is the Stage-A default, and whether
+   to add an explicit `deploymentPreference` request field (deterministic semantics) to let a customer
+   prefer API or self-host independent of cost. `customer-preference` was removed from the top-level
+   basis until such a field exists.
+4. **`undetermined` triggers** — v1 yields `undetermined`/`comparison-unavailable` only when a required
+   price is missing. Any further "untrustworthy comparison" conditions are to be enumerated with UX.
 5. **Alternative distinctness** — v1 uses the exact same-id rule (§4.1). Fuzzy percentage thresholds are
    deferred to the UI phase.
 6. **Narrative locale/format** — md/plain strings now; HTML rendering is a UI-phase concern.
