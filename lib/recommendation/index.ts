@@ -6,4 +6,5 @@
 export * from "./schema";
 export { recommend } from "./recommend";
 export { narrate } from "./narrate";
-// diffRecommendations() is added in a subsequent Phase-1 slice.
+export { diffRecommendations } from "./change-diff";
+export type { RecommendationDiff, RecommendationChange, ChangeCode } from "./change-diff";

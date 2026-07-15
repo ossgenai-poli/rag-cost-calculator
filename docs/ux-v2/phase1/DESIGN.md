@@ -391,3 +391,30 @@ engine + registry byte-identical to `4b2c848`; approved sweep behavior unchanged
 **After narrative HOLD-2:** recommendation tests 102 (81 sweep + 21 narrate), full suite 326, tsc clean;
 engine + registry byte-identical to `4b2c848`; approved sweep behavior unchanged; diff confined to
 `lib/recommendation/` + `docs/ux-v2/phase1/`; main frozen at `d749309`.
+
+### 10.7 Change-diff slice (implemented — for focused change-diff QA)
+
+`diffRecommendations(prev, next) → RecommendationDiff` (`change-diff.ts`) — a pure, deterministic,
+reason-coded diff of two **structured** results (never narrative prose). Requirements → coverage:
+
+| Requirement | How it is honored |
+|---|---|
+| Structured-only comparison | consumes `StructuredRecommendationResult` fields exclusively; no prose parsing. |
+| Reason-coded change classes | `mode/decision/comparator/api-model/best-self-host/pricing/adjustments-changed`, `candidate-added/removed`, and per-candidate `gate/rejection/confidence/fleet/cost-changed` — each with a `field` path. |
+| Before/after + candidate ids preserved | every change carries deep-copied `before`/`after` structured values; per-candidate changes carry the stable canonical `candidateId`. |
+| Identical → empty | `identical: true`, `changes: []` (tested on two identical R1 runs). |
+| Deterministic ordering/serialization | fixed sort (result-level first → candidate id → code order → field); byte-identical `JSON.stringify` across repeat calls. |
+| Null-safe | `undefined` → `null`, non-finite numbers → `null`; serialized diff never contains NaN/undefined; codes + values only, no invented explanations. |
+| No input mutation | pure reads + deep-copied values; tested with deep-frozen inputs and before/after JSON snapshots. |
+
+Tests (9): identical-R1 empty · R1→R5 fleet (87→4) + cost ($7,176,630→$329,960) · control→experimental
+(mode, effectiveConfidence measured-scaled→unbenchmarked, registry.status null→invalid-request,
+evidenceQualified/recommendationEligible flips, decision lower-cost→evidence-gap, bestSelfHost→null,
+comparator→null, rejection null→evidence-below-threshold) · API-model change (Fable→Opus + API cost) ·
+topN/uptime adjustments · pricing source/asOf per-field · candidate added/removed (both directions) ·
+decision+comparator flip with exact before/after amounts · determinism + deep-frozen-input immutability.
+
+**After the change-diff slice:** recommendation tests 111 (81 sweep + 21 narrate + 9 diff), full suite
+335, tsc clean; engine + registry byte-identical to `4b2c848`; approved sweep (`7c16584`) and narrative
+(`7c8b97a`) behavior unchanged; diff confined to `lib/recommendation/` + `docs/ux-v2/phase1/`; main
+frozen at `d749309`. UI / merge / deploy remain HELD pending change-diff QA.

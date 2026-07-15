@@ -1,23 +1,25 @@
-# Phase-1 QA handoff — recommendation sweep (APPROVED) + narrative generator (for review)
+# Phase-1 QA handoff — sweep (APPROVED `7c16584`) + narrative (APPROVED `7c8b97a`) + change-diff (for review)
 
-**Branch:** `ux/v2-phase1` · **Approved sweep baseline:** `7c16584` (frozen) · **Parent:** `ux/v2 @ c2d41f4`
-· **Frozen control/main:** rc-qa-11 `d749309`. Headless only. **No UI, no merge, no deploy.**
+**Branch:** `ux/v2-phase1` · **Approved sweep baseline:** `7c16584` · **Approved narrative baseline:**
+`7c8b97a` · **Parent:** `ux/v2 @ c2d41f4` · **Frozen control/main:** rc-qa-11 `d749309`. Headless only.
+**No UI, no merge, no deploy.**
 
-This handoff covers the **deterministic narrative generator** (`narrate`) built on the approved sweep.
-change-diff, UI, merge and deploy remain **HELD** until narrative QA.
+This handoff covers the **deterministic reason-coded change-diff** (`diffRecommendations`) built on the
+approved sweep + narrative. UI, merge and deploy remain **HELD** until change-diff QA.
 
 ## What to review
 
-1. **`lib/recommendation/narrate.ts`** — `narrate(structured) → NarratedRecommendationResult`. Pure,
-   deterministic, template over structured fields only (no engine/registry call, no Date/random).
-2. Contracts + design: [DESIGN.md](DESIGN.md) §5 (narrative design) and §10.4 (binding-requirement →
-   coverage table). The sweep itself (approved) is §3–§4 and the HOLD-1..4 records in §10.
+1. **`lib/recommendation/change-diff.ts`** — `diffRecommendations(prev, next) → RecommendationDiff`.
+   Pure, deterministic, reason-coded diff of two **structured** results (never narrative prose); no input
+   mutation; null-safe; identical inputs → empty diff. See [DESIGN.md](DESIGN.md) §10.7 for the
+   requirement→coverage table and test list.
+2. Previously approved (context): sweep §3–§4 + §10–§10.3, narrative §5 + §10.4–§10.6.
 
 ## Run
 
 ```
-npx vitest run lib/recommendation      # 102 (81 sweep/contracts + 21 narrate/comparator)
-npx vitest run                         # 326 (frozen 184 + registry 40 + recommendation 102)
+npx vitest run lib/recommendation      # 111 (81 sweep/contracts + 21 narrate/comparator + 9 change-diff)
+npx vitest run                         # 335 (frozen 184 + registry 40 + recommendation 111)
 npx tsc --noEmit                       # clean
 ```
 
