@@ -62,19 +62,44 @@ export function ChangesPanel({ diff }: { diff: RecommendationDiff | null }) {
       </ul>
       <details className="mt-2" data-testid="changes-audit">
         <summary className="cursor-pointer text-sm text-sky-800">View all {diff.changes.length} technical changes</summary>
-        <ul className="mt-2 space-y-1 text-sm">
-          {diff.changes.map((c, i) => (
+        {/* UI2-D3 (owner-recorded "later pass"): the COMPLETE audit, grouped result-level first and then
+            per candidate — same rows, same deterministic diff order within each group, nothing dropped. */}
+        {(() => {
+          const row = (c: RecommendationChange, i: number) => (
             <li key={i} className="min-w-0 break-words" data-testid={`change-${c.code}`}>
               <code className="rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-900">{c.code}</code>{" "}
               <span className="font-medium text-slate-800">{CODE_LABELS[c.code] ?? c.code}</span>
-              {c.candidateId && <span className="text-xs text-slate-500"> · {c.candidateId}</span>}
               {c.field && <span className="text-xs text-slate-500"> · {c.field}</span>}
               <span className="ml-1 font-mono text-slate-700" data-testid="change-values">
                 {val(c.before)} → {val(c.after)}
               </span>
             </li>
-          ))}
-        </ul>
+          );
+          const resultLevel = diff.changes.filter((c) => !c.candidateId);
+          const byCandidate = new Map<string, RecommendationChange[]>();
+          for (const c of diff.changes) {
+            if (!c.candidateId) continue;
+            const list = byCandidate.get(c.candidateId) ?? [];
+            list.push(c);
+            byCandidate.set(c.candidateId, list);
+          }
+          return (
+            <div className="mt-2 space-y-2">
+              {resultLevel.length > 0 && (
+                <div data-testid="audit-group-result">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Result-level ({resultLevel.length})</p>
+                  <ul className="mt-1 space-y-1 text-sm">{resultLevel.map(row)}</ul>
+                </div>
+              )}
+              {[...byCandidate.entries()].map(([id, list]) => (
+                <div key={id} data-testid={`audit-group-${id}`}>
+                  <p className="min-w-0 break-all text-xs font-semibold uppercase tracking-wide text-slate-500">{id} ({list.length})</p>
+                  <ul className="mt-1 space-y-1 text-sm">{list.map(row)}</ul>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </details>
       <p className="mt-2 text-xs text-slate-500">
         Reason-coded from the structured results (deterministic change-diff); raw before/after values are

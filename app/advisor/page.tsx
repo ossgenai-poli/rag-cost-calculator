@@ -28,6 +28,7 @@ import { RisksPanel } from "@/components/advisor/RisksPanel";
 import { ExportPanel } from "@/components/advisor/ExportPanel";
 import { RangeBandPanel } from "@/components/advisor/RangeBandPanel";
 import { computeRanges, rangeTripletValid, rangeDisclosures, RANGE_FIELDS, RANGE_FIELD_LABELS, type RangeComputation } from "@/components/advisor/ranges";
+import { resolveFocus } from "@/components/advisor/focus";
 import { PresetBar } from "@/components/advisor/PresetBar";
 import { advisorStatesEqual, changedPresetFields, initialProvenance, invalidateUndo, registerManualEdit, type PresetProvenance } from "@/components/advisor/presets";
 import { friendlyFieldErrors, type FieldError } from "@/components/advisor/copy";
@@ -56,6 +57,7 @@ export const DEFAULT_STATE: AdvisorState = {
   experimental: false,
   peakFactor: 1, // UI5-D2: real engine input; default 1 (flat) preserves the R1 canonical output
   ranges: {}, // doc 08: no ranges by default — the base case IS the R1 canonical output
+  selectedCandidateId: null, // doc 06: no selection → follow the engine's optimization-ranked best
 };
 
 /** Build the engine workload from the journey state — the SAME defaultInputs() base the calculator
@@ -145,6 +147,13 @@ export default function AdvisorPage() {
   // (low ≤ base ≤ high, field minima, whole numbers for counts) reach the recompute — a committed
   // range whose base was later edited outside it is PRESERVED in state but gated out here (the control
   // shows the inline error). An unexpected recompute failure fails closed to "no band", never a guess.
+  // doc 06 — the customer's selection resolved FAIL-CLOSED against the current structured result:
+  // only the eligible card set is selectable; an invalidated selection suspends (preserved in state,
+  // visibly flagged, ranked best shown) — never silently kept or silently dropped.
+  const focus = outcome.structured ? resolveFocus(outcome.structured, state.selectedCandidateId) : null;
+  const focusId = focus?.active ? focus.selectedId : null;
+  const selectCandidate = (id: string | null) => handleInputsChange({ ...state, selectedCandidateId: id });
+
   const rangeComputation = useMemo<RangeComputation | null>(() => {
     if (!outcome.structured) return null;
     const valid: AdvisorState["ranges"] = {};
@@ -153,11 +162,12 @@ export default function AdvisorPage() {
       if (b && rangeTripletValid(f, state[f], b)) valid[f] = b;
     }
     try {
-      return computeRanges(state, valid, outcome.structured, buildWorkload);
+      // The tracked candidate follows the ACTIVE selection (doc 06) — resolved fail-closed above.
+      return computeRanges(state, valid, outcome.structured, buildWorkload, focusId);
     } catch {
       return null;
     }
-  }, [outcome, state]);
+  }, [outcome, state, focusId]);
   const rangeLabels = rangeComputation ? rangeComputation.fields.map((f) => RANGE_FIELD_LABELS[f]) : undefined;
   const rangeNotes = rangeComputation ? rangeDisclosures(rangeComputation) : undefined;
 
@@ -228,22 +238,22 @@ export default function AdvisorPage() {
           )}
           {result && (
             <>
-              <DecisionSummary result={result} rangesActive={!!rangeComputation} />
+              <DecisionSummary result={result} rangesActive={!!rangeComputation} focus={focus} />
               {/* Doc 08 — base + band, two separate confidence channels, largest modeled range effect. */}
               <RangeBandPanel result={result} computation={rangeComputation} />
               <ChangesPanel diff={diff} />
               <AdjustmentsPanel result={result} />
-              <BestSelfHostCard result={result} />
-              <AlternativeCards result={result} />
+              <BestSelfHostCard result={result} focus={focus} onSelect={selectCandidate} />
+              <AlternativeCards result={result} focus={focus} onSelect={selectCandidate} />
               {/* Level 6 (10-result-hierarchy §6): risks & exclusions BEFORE the advanced evidence,
                   visible in both modes. */}
-              <RisksPanel result={result} riskOptions={{ rangeLabels, rangeNotes }} />
+              <RisksPanel result={result} riskOptions={{ rangeLabels, rangeNotes, focusId }} />
               {/* Owner D1: evidence & assumptions stay ACCESSIBLE (collapsed) in Simple mode;
                   rejected candidates remain Expert-only. */}
               {state.mode === "expert" && <RejectedOptions result={result} />}
               <TrustPanel result={result} />
               {/* Stage-F: the deterministic export reproduces the exact hierarchy order. */}
-              <ExportPanel result={result} ranges={rangeComputation} />
+              <ExportPanel result={result} ranges={rangeComputation} focus={focus} />
             </>
           )}
         </div>

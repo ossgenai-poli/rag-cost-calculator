@@ -127,8 +127,11 @@ function withValue(state: AdvisorState, field: RangeField, value: number): Advis
   return { ...state, [field]: value };
 }
 
-/** The candidate id the fleet band tracks: the BASE result's best-self-host / comparator candidate. */
-function relevantId(base: StructuredRecommendationResult): string | null {
+/** The candidate id the fleet band tracks: the customer's ACTIVE selection (doc 06 — the caller
+ *  resolves it fail-closed and passes only an eligible id), else the BASE result's best-self-host /
+ *  comparator candidate. */
+function relevantId(base: StructuredRecommendationResult, focusId?: string | null): string | null {
+  if (focusId && base.evaluations.some((e) => e.config.id === focusId && e.recommendationEligible)) return focusId;
   return base.bestSelfHost?.config.id ?? base.decision.costComparator?.selfHostCandidateId ?? null;
 }
 
@@ -157,7 +160,8 @@ export function computeRanges(
   state: AdvisorState,
   ranges: Partial<Record<RangeField, RangeBounds>>,
   base: StructuredRecommendationResult,
-  buildWorkload: (s: AdvisorState) => CalcInputs
+  buildWorkload: (s: AdvisorState) => CalcInputs,
+  focusId?: string | null
 ): RangeComputation | null {
   const fields = RANGE_FIELDS.filter((f) => ranges[f]);
   if (fields.length === 0) return null;
@@ -173,7 +177,7 @@ export function computeRanges(
   const lowR = run(allLowState);
   const highR = run(allHighState);
 
-  const id = relevantId(base);
+  const id = relevantId(base, focusId);
   const evalAt = (r: StructuredRecommendationResult) => (id ? (r.evaluations.find((e) => e.config.id === id) ?? null) : null);
   const baseEval = evalAt(base);
   const lowEval = evalAt(lowR);

@@ -44,6 +44,10 @@ export interface AdvisorState {
    *  stays in the plain field above and drives the headline; a range is valid ONLY as a full triplet
    *  (low ≤ base ≤ high — P1-UI5-1); bands come from real engine recomputes at these bounds. */
   ranges: Partial<Record<RangeField, RangeBounds>>;
+  /** Iteration-6 (doc 06 "Use this"): the customer's selected self-host FOCUS candidate, or null to
+   *  follow the engine's optimization-ranked best. A presentation focus over the one sweep result —
+   *  it never changes the decision/comparator; fail-closed resolution lives in focus.ts. */
+  selectedCandidateId: string | null;
 }
 
 export const PURCHASING_OPTIONS: Array<{ value: GpuPricingModel; label: string }> = [

@@ -8,12 +8,13 @@ import { useState } from "react";
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
 import { buildReport, type ReportExtras } from "./report";
 import type { RangeComputation } from "./ranges";
+import type { FocusResolution } from "./focus";
 
-export function ExportPanel({ result, ranges }: { result: NarratedRecommendationResult; ranges?: RangeComputation | null }) {
+export function ExportPanel({ result, ranges, focus }: { result: NarratedRecommendationResult; ranges?: RangeComputation | null; focus?: FocusResolution | null }) {
   // P2-UI4-1: explicit idle/success/error copy state — success is claimed ONLY when writeText
   // resolves, and a failure states itself with an accessible alert and a manual fallback path.
   const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
-  const extras: ReportExtras = { ranges };
+  const extras: ReportExtras = { ranges, focus };
   const report = buildReport(result, extras);
 
   const copy = async () => {

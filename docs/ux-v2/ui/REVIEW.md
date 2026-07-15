@@ -485,3 +485,69 @@ mobile acceptance PASS**, fresh-profile live probe ZERO console errors — re-ru
 triplet repro (inline error, no band), the sampled-scenario wording, Range coverage phrasing,
 apply-profile → add-range → Undo gone, and the peak-factor affordance. Isolation unchanged (headless
 `faa9af7`; all frozen pins intact; no merge/deploy/CI; `.claude/` excluded).
+
+---
+
+# Iteration 6 — alternative selection (doc 06 "Use this") + grouped technical audit (UI2-D3)
+
+**Branch:** `ux/v2-ui-6` (from the IMMUTABLE approved iteration-5 baseline `ux/v2-ui-5 @ b04b717`;
+headless consumed unchanged at the approved `ux/v2-phase1 @ faa9af7`). Scope: the last unbuilt doc-06
+interaction — "Selecting an alternative re-runs the same engine and updates the rail, hierarchy and
+export consistently (one source of truth)" — plus the owner-recorded UI2-D3 audit-grouping "later
+pass". No headless changes.
+
+## 1. Selection = a fail-closed presentation FOCUS over the one sweep result
+Reading of doc 06 recorded explicitly: every candidate was already evaluated by the SAME engine in the
+SAME sweep, so the structured result IS the single source of truth; selection re-anchors which
+EVIDENCE-QUALIFIED configuration the self-host surfaces describe — it can never mint a new engine
+claim. `AdvisorState.selectedCandidateId` (null = follow the ranked best) + `focus.ts`:
+- **Selectable set** = exactly the doc-06 card set (ranked best + distinct alternatives), all
+  recommendation-eligible by construction. Rejected/ineligible candidates carry no action and can
+  never be focused.
+- **Fail-closed suspension**: a selection that stops being selectable after an input change is
+  PRESERVED in state, visibly flagged ("…not evidence-qualified under the current inputs — showing the
+  recommended best. Your selection is preserved and resumes if it re-qualifies."), and the focus falls
+  back to the ranked best — never silently kept, never silently dropped (the UI5 preserved-but-gated
+  pattern).
+- **Invariant (tested)**: selection changes NOTHING the decision derives from — the workload sent to
+  the engine is byte-identical, the structured result is untouched, and the rendered hero/basis/
+  narrated rationale are asserted unchanged while the disclosure renders: "You selected … The decision
+  above is unchanged: it derives from the cheapest comparison-qualified configuration, not from your
+  focus."
+- **Focus-driven surfaces**: the self-host card ("Your selected self-host option · customer-selected —
+  not the optimization-ranked best; the decision above is unchanged", ITS structured fleet equation),
+  the decision summary's self-host column ("Selected self-host — …", framing arithmetic over the
+  focused amounts, focused evidence chip), the quota risk line, the range-band tracked candidate, and
+  the export (§4 APPENDS "Customer-selected self-host configuration — evidence-qualified, but not the
+  optimization-ranked best; the overall recommendation above is unchanged:" — the approved
+  iteration-4 role lines are byte-unchanged, asserted; no-focus reports stay byte-identical).
+- **Undo safety**: selecting/resetting is a committed state change → the approved P1-UI5-4 rule
+  invalidates the preset Undo snapshot automatically.
+- **Canonical honesty**: with today's pinned catalog exactly ONE configuration is eligible (doc 06's
+  worked example), so alternatives legitimately render the empty note and no selection control invents
+  a choice; the multi-candidate semantics are tested against a synthetic two-eligible structured
+  fixture (the established narrate-test precedent), ready for the day the catalog carries real
+  distinct evidence.
+
+## 2. UI2-D3 — the complete audit, grouped
+"View all N technical changes" now renders result-level changes first, then one group per candidate
+(id + count) — same rows, same deterministic diff order within each group, nothing dropped (asserted:
+row count equals `diff.changes.length`). The slot-reserved impact summary above is untouched.
+
+## Verification
+- **480/480** tests (11 new in `advisor6.test.tsx`: fail-closed resolution incl. rejected/unknown ids,
+  the decision-invariance suite, focus-driven card/risks/ranges/export wording, suspended-state
+  flagging, approved-report byte-identity without focus, grouped-audit completeness), `tsc --noEmit`
+  clean, `build:static` clean, **375px mobile acceptance PASS**.
+- Live (fresh Chrome profile, ZERO console errors): R1 canonical shows the honest single-eligible
+  state (no selection UI invented on the empty alternatives note); the grouped audit renders
+  "Result-level (5)" + per-candidate groups on a real SLA-change diff.
+- Isolation: frozen surfaces untouched (main `d749309`, benchmarks `4b2c848`, headless `faa9af7`, UI
+  pins `f02b51f`/`7fdee3d`/`63ebce6`/`88d0dc7`/`b04b717`); no merge/deploy/CI; `.claude/` excluded.
+
+## Open items for owner/UX review (UI6-D*)
+- **UI6-D1** Doc 06's card actions are "Use this · Compare · Tune". "Use this" is built; "Tune" is the
+  existing input journey; "Compare" (side-by-side of focused vs ranked best beyond the Δ-vs-best chip)
+  is NOT built — confirm deferral or scope it.
+- **UI6-D2** Selection is intentionally NOT exported into the report's §1–§3 (decision/cost lead) —
+  only §4's appended block and the §6 quota line follow the focus. Confirm this boundary.

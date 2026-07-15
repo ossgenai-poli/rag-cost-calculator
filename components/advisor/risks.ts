@@ -13,9 +13,15 @@ export interface RiskLine {
 const usd = (v: number): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 
-/** The evaluation the architecture/quota lines describe: the best self-host card's candidate, else the
- *  decision's cost comparator candidate. null ⇒ no self-host configuration is being described. */
-export function relevantEvaluation(r: NarratedRecommendationResult): CandidateEvaluation | null {
+/** The evaluation the architecture/quota lines describe: the customer's ACTIVE selection (doc 06 —
+ *  only ever an eligible card candidate; the caller resolves it fail-closed via focus.ts), else the
+ *  best self-host card's candidate, else the decision's cost comparator candidate. null ⇒ no
+ *  self-host configuration is being described. */
+export function relevantEvaluation(r: NarratedRecommendationResult, focusId?: string | null): CandidateEvaluation | null {
+  if (focusId) {
+    const focused = r.evaluations.find((e) => e.config.id === focusId);
+    if (focused?.recommendationEligible) return focused; // never describe an ineligible focus
+  }
   const id = r.bestSelfHost?.config.id ?? r.decision.costComparator?.selfHostCandidateId ?? null;
   return id ? (r.evaluations.find((e) => e.config.id === id) ?? null) : null;
 }
@@ -36,12 +42,14 @@ export interface RiskOptions {
   /** Bound-scenario disclosures from rangeDisclosures() (P1-UI5-3): engine reconciliations at the
    *  bounds + tracked-candidate eligibility — carried into risks verbatim. */
   rangeNotes?: string[];
+  /** The ACTIVE selection id (doc 06) — the quota/architecture lines describe the focused candidate. */
+  focusId?: string | null;
 }
 
 /** Assemble the active risk/exclusion lines. Pure and deterministic; order is fixed. */
 export function riskLines(r: NarratedRecommendationResult, opts?: RiskOptions): RiskLine[] {
   const lines: RiskLine[] = [];
-  const ev = relevantEvaluation(r);
+  const ev = relevantEvaluation(r, opts?.focusId);
   const gen = r.effectiveWorkload.generation;
 
   // Self-host capacity/architecture risks only apply when a self-host configuration is described.

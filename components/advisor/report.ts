@@ -8,6 +8,7 @@ import type { NarratedRecommendationResult } from "@/lib/recommendation";
 import { heroLine, perQuery } from "./DecisionSummary";
 import { riskLines, relevantEvaluation } from "./risks";
 import { decisionScenarioSentence, rangeDisclosures, RANGE_FIELD_LABELS, RANGE_FIELDS, type RangeComputation } from "./ranges";
+import type { FocusResolution } from "./focus";
 
 const usd = (v: number | null | undefined): string =>
   typeof v === "number" && Number.isFinite(v)
@@ -18,12 +19,17 @@ const num = (v: number): string => new Intl.NumberFormat("en-US").format(v);
 export interface ReportExtras {
   /** Active range recompute (doc 08) — adds the about-qualifier, the §3 band block and the §6 line. */
   ranges?: RangeComputation | null;
+  /** doc 06 selection focus — appends the customer-selected configuration to §4 (the approved
+   *  decision-role lines are UNCHANGED) and points the §6 quota line at the focused candidate. */
+  focus?: FocusResolution | null;
 }
 
 /** Build the deterministic Markdown report. Pure function of the narrated result (+ the optional
  *  range recompute, itself a pure derivation of real engine runs). */
 export function buildReport(r: NarratedRecommendationResult, extras?: ReportExtras): string {
   const ranges = extras?.ranges ?? null;
+  const focus = extras?.focus ?? null;
+  const selectedNonBest = !!focus && focus.active && !focus.isEngineBest && !!focus.evaluation;
   const ev = relevantEvaluation(r);
   const q = r.effectiveWorkload.traffic.queriesPerMonth;
   const apiCost = r.apiOption.monthlyCost;
@@ -108,6 +114,15 @@ export function buildReport(r: NarratedRecommendationResult, extras?: ReportExtr
       selfHostArch("Evaluated self-host option — not a recommendation:");
     }
   }
+  // doc 06 — the customer's selection is APPENDED with its role stated explicitly; the decision-role
+  // lines above are the approved wording, untouched by selection.
+  if (selectedNonBest) {
+    const fe = focus!.evaluation!;
+    push("");
+    push("Customer-selected self-host configuration — evidence-qualified, but not the optimization-ranked best; the overall recommendation above is unchanged:");
+    push(`${r.selfHostModelLabel} · ${fe.servingFacts.instanceType} (${fe.servingFacts.gpuSku}) · ${fe.servingFacts.weightPrecision} weights / ${fe.servingFacts.kvPrecision} KV · ${fe.fleet.boxes} boxes (${fe.fleet.bindingDim}-bound) · ${usd(fe.cost.selfHostMonthly)}/mo.`);
+    push(`Fleet equation: ${fe.fleet.equation}`);
+  }
   push("");
 
   // 5. Confidence — the exact ladder token + pricing provenance.
@@ -120,7 +135,8 @@ export function buildReport(r: NarratedRecommendationResult, extras?: ReportExtr
   push("## 6. Risks & exclusions");
   const rangeLabels = ranges ? ranges.fields.map((f) => RANGE_FIELD_LABELS[f]) : undefined;
   const rangeNotes = ranges ? rangeDisclosures(ranges) : undefined;
-  for (const risk of riskLines(r, { rangeLabels, rangeNotes })) push(`- ${risk.text}`);
+  const focusId = selectedNonBest ? focus!.selectedId : undefined;
+  for (const risk of riskLines(r, { rangeLabels, rangeNotes, focusId })) push(`- ${risk.text}`);
   push("");
 
   // 7. Advanced evidence — the full sweep audit (collapsed on page; complete here). Rejected or

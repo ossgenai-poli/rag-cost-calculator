@@ -10,6 +10,7 @@
 import type { NarratedRecommendationResult } from "@/lib/recommendation";
 import { PURCHASING_MODEL_LABELS } from "@/lib/recommendation";
 import { ConfidenceChip } from "./ConfidenceChip";
+import type { FocusResolution } from "./focus";
 
 /** Per-query rate over displayed structured values — LABELED presentation arithmetic (4 decimals).
  *  Exported so the report builder (report.ts) frames cost identically. */
@@ -51,10 +52,13 @@ const CHOICE_STYLE: Record<string, string> = {
   undetermined: "border-amber-400 bg-amber-50",
 };
 
-export function DecisionSummary({ result, rangesActive }: { result: NarratedRecommendationResult; rangesActive?: boolean }) {
+export function DecisionSummary({ result, rangesActive, focus }: { result: NarratedRecommendationResult; rangesActive?: boolean; focus?: FocusResolution | null }) {
   const { decision, apiOption, bestSelfHost, effectiveWorkload: w } = result;
   const apiCost = apiOption.monthlyCost;
-  const selfCost = bestSelfHost?.costMonthly ?? null;
+  // doc 06 selection: the self-host COLUMN shows the customer's focused configuration (labeled so),
+  // while the decision, hero, basis and rationale above are provably untouched by selection.
+  const selectedNonBest = !!focus && focus.active && !focus.isEngineBest && !!focus.evaluation;
+  const selfCost = selectedNonBest ? (focus!.evaluation!.cost.selfHostMonthly ?? null) : (bestSelfHost?.costMonthly ?? null);
   // Presentation arithmetic over the two displayed structured amounts (labeled as modeled difference).
   const delta = apiCost != null && selfCost != null ? selfCost - apiCost : null;
   const deltaPct = delta != null && apiCost != null && apiCost > 0 ? (delta / apiCost) * 100 : null;
@@ -111,6 +115,14 @@ export function DecisionSummary({ result, rangesActive }: { result: NarratedReco
         </div>
       )}
 
+      {/* doc 06 — the selection disclosure sits with the decision so the two can never read as one:
+          a customer focus does not move the recommendation. */}
+      {selectedNonBest && (
+        <p className="mt-2 rounded border border-sky-300 bg-sky-100 px-2 py-1 text-sm text-sky-900" data-testid="selection-disclosure">
+          You selected {focus!.evaluation!.config.label} — an evidence-qualified configuration that is not the optimization-ranked best. The decision above is unchanged: it derives from the cheapest comparison-qualified configuration, not from your focus.
+        </p>
+      )}
+
       {/* Level 2 — the deterministic why (narrate() rationale, verbatim; the headless layer now
           carries availability semantics natively — P1-UI-4 — so no UI clarification is needed). */}
       <p className="mt-2 text-sm text-slate-800" data-testid="decision-rationale">{decision.rationale}</p>
@@ -127,7 +139,9 @@ export function DecisionSummary({ result, rangesActive }: { result: NarratedReco
           )}
         </div>
         <div className="rounded border border-slate-200 bg-white p-2">
-          <dt className="text-xs uppercase tracking-wide text-slate-500">Best self-host — {result.selfHostModelLabel}</dt>
+          <dt className="text-xs uppercase tracking-wide text-slate-500">
+            {selectedNonBest ? `Selected self-host — ${result.selfHostModelLabel}` : `Best self-host — ${result.selfHostModelLabel}`}
+          </dt>
           <dd className="text-base font-semibold text-slate-900" data-testid="selfhost-monthly">
             {bestSelfHost ? `${usd(selfCost)}/mo` : decision.basis === "self-host-unavailable" ? "unavailable (API-only model)" : "none evidence-qualified"}
           </dd>
@@ -154,7 +168,13 @@ export function DecisionSummary({ result, rangesActive }: { result: NarratedReco
         <span><span className="text-slate-500">Output:</span> {num(w.generation.outTokens)} tok</span>
         <span className="inline-flex items-center gap-1">
           <span className="text-slate-500">Evidence:</span>{" "}
-          {bestSelfHost ? <ConfidenceChip confidence={bestSelfHost.confidence} /> : <span data-testid="evidence-none">no qualified self-host evidence</span>}
+          {selectedNonBest ? (
+            <ConfidenceChip confidence={focus!.evaluation!.effectiveConfidence} />
+          ) : bestSelfHost ? (
+            <ConfidenceChip confidence={bestSelfHost.confidence} />
+          ) : (
+            <span data-testid="evidence-none">no qualified self-host evidence</span>
+          )}
         </span>
       </div>
 
