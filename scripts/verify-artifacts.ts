@@ -3,8 +3,10 @@
 // (`prebuild` / `prebuild:static`), where `node:crypto` is the real platform implementation: it loads
 // the pinned benchmark catalog through the registry's PUBLIC index, which verifies every raw snapshot
 // checksum against MANIFEST.json fail-closed. Any tamper/mismatch throws → non-zero exit → the build
-// fails before a byte is emitted. The client-side shim (test-verified byte parity) remains as runtime
-// defense-in-depth; it is no longer the only verification point.
+// fails BEFORE Next starts and before any NEW build output is emitted (existing .next/out artifacts
+// from an earlier build are not deleted — the gate prevents a new build, P3-DOC-7-1). The client-side
+// shim (test-verified byte parity) remains as runtime defense-in-depth; it is no longer the only
+// verification point.
 //
 // The frozen registry is consumed via its public index only — this script adds no new surface.
 import { loadCatalog } from "../lib/benchmark-registry";

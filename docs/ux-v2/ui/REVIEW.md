@@ -588,11 +588,13 @@ trust boundary") — plus consolidation for the separately-authorized merge revi
 registry or engine changes.
 
 ## 1. P2-ARCH-1 — the build fails closed on unverified artifacts
-`scripts/verify-artifacts.ts` runs in Node via new `prebuild` AND `prebuild:static` hooks, BEFORE any
-build output exists: it loads the pinned catalog through the registry's PUBLIC index (no new surface),
+`scripts/verify-artifacts.ts` runs in Node via new `prebuild` AND `prebuild:static` hooks, BEFORE Next
+starts and before any NEW build output is emitted (existing `.next`/`out` artifacts from an earlier
+build may remain on disk — the gate prevents a new build, it does not delete prior output; corrected
+per P3-DOC-7-1): it loads the pinned catalog through the registry's PUBLIC index (no new surface),
 where `node:crypto` is the real platform implementation, so every raw-snapshot checksum is verified
-against `MANIFEST.json` fail-closed — any tamper/mismatch throws → non-zero exit → the build never
-emits a byte. The exported `verifyPinnedArtifacts()` core additionally rejects an empty catalog. The
+against `MANIFEST.json` fail-closed — any tamper/mismatch throws → non-zero exit → no new build output
+is emitted. The exported `verifyPinnedArtifacts()` core additionally rejects an empty catalog. The
 client-side sha256 shim (byte-parity-tested, incl. the real manifest checksums) REMAINS as runtime
 defense-in-depth; it is no longer the only verification point. Acceptance tests: the real pinned
 catalog verifies with the real record count; a checksum failure or empty catalog throws (never a
@@ -600,11 +602,15 @@ warning); the actual CLI exits 0 with the verified-count line; BOTH build entryp
 (package.json asserted). The build:static gate log shows the verification executing before Next.
 
 ## 2. Merge-readiness dossier
-`docs/ux-v2/MERGE-READINESS.md`: the complete approved-baseline table (every immutable pin with its
-verdict scope), the current verification matrix, the P2-ARCH-1 trust-boundary record, what a merge
-would and would NOT ship (owner-accepted deferrals UI6-D1 / D3 / D5 / D7), and the merge preconditions
-for the authorizing reviewer. The dossier explicitly does NOT authorize a merge — main stays frozen at
-`d749309` and both workflows remain main-only and untriggered.
+`docs/ux-v2/MERGE-READINESS.md`: the verdict-pin vs landing-ancestry record (corrected per
+P1-MERGE-7-1 — `f02b51f`/`7fdee3d` are audit pins whose REBASED EQUIVALENTS `eeb0717`/`2dfa181` sit in
+the landing ancestry after the two authorized headless rebases; main can fast-forward only while
+`d749309` remains main's tip), the current verification matrix, the P2-ARCH-1 trust-boundary record,
+what a merge would and would NOT ship (owner-accepted deferrals UI6-D1 / D3 / D5 / D7), and the merge
+preconditions. The dossier explicitly does NOT authorize a merge — main stays frozen at `d749309`.
+Workflow triggers stated accurately (P2-DOC-7-1): CI = `pull_request` + `push` filtered to `main`;
+Pages = `push` to `main` + `workflow_dispatch`. UX-v2 branch pushes triggered no runs because the push
+filter excluded them and no PR was opened — NOT because the workflows are entirely main-only.
 
 ## Verification
 **489/489** tests (4 new in `scripts/verify-artifacts.test.ts`; vitest include extended to
@@ -612,3 +618,19 @@ for the authorizing reviewer. The dossier explicitly does NOT authorize a merge 
 visible in the build log, **375px mobile acceptance PASS** (UI byte-unchanged this iteration).
 Isolation: frozen surfaces untouched; no merge/deploy/CI; `.claude/` excluded. Long-stale tracker item
 #18 (boundary-guard extension + QA handoff — delivered during Phase 1) closed with a note.
+
+## Iteration-7 HOLD remediation (portability + dossier accuracy)
+
+| Finding | Fix |
+|---|---|
+| **P1-ARCH-7-1** Windows-only CLI test would fail ubuntu-latest CI | The acceptance test now invokes `execFileSync(process.execPath, [<local node_modules/tsx/dist/cli.mjs>, "scripts/verify-artifacts.ts"])` — no shell of any kind (no cmd.exe/powershell/sh), no npx/network fallback, and the checked-in local tsx dependency is asserted to exist before spawning. Platform-neutral by construction (the current Node binary + a repo-local ESM CLI path). |
+| **P1-MERGE-7-1** dossier misstated Git ancestry | §1 rewritten as a verdict-pin vs landing-ancestry table with per-pin ancestry facts (verified via `git merge-base --is-ancestor`): `f02b51f` and `7fdee3d` are immutable AUDIT pins that are NOT ancestors of the proposed head; the chain contains their rebased equivalents `eeb0717` (slice-1 rev-3) and `2dfa181` (iteration-2 rev-3), each re-verified tree-level by the full gate set + a repin verdict after the authorized rebases. The "child of the previous immutable pin" and "preserves the reviewed increments verbatim" claims are REMOVED; the fast-forward statement is now conditional ("only while `d749309` remains main's tip … not every historical approval pin is contained in that ancestry"). |
+| **P2-DOC-7-1** workflow triggers misdescribed | Corrected in the dossier and this doc: CI = `pull_request` + `push` filtered to `main`; Pages = `push` to `main` + `workflow_dispatch`. Branch pushes triggered nothing because of the push filter and the absence of a PR — not because the workflows are "main-only". The merge PR will be CI's first execution of this work (ubuntu-latest). |
+| **P3-DOC-7-1** build-output wording | "before any build output exists" → "BEFORE Next starts and before any NEW build output is emitted"; the gate prevents a new build and does not delete pre-existing `.next`/`out` artifacts (script comment, this doc and the dossier all corrected). |
+
+Verifier implementation, package hooks, isolation and approved UI behavior are unchanged.
+
+### Verification (this revision)
+**489/489** tests (the CLI test now shell-free/platform-neutral), `tsc --noEmit` clean, `build:static`
+clean with the verification gate in the log, **375px mobile acceptance PASS** (UI byte-unchanged).
+Isolation unchanged; no merge/deploy; `.claude/` excluded.
