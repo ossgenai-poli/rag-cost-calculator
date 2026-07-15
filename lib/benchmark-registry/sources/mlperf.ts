@@ -1,8 +1,13 @@
 // MLPerf Inference adapter — independent-reviewed validation anchor. Pure & deterministic.
 // A single result is a latency/accuracy-qualified point, NOT a full concurrency curve.
 import type { BenchmarkRecord, Reason, SourceAdapter } from "../schema";
-import { SchemaError, strictNum, strictNumOpt, strictStr, strictStrOpt } from "../raw-validate";
+import { SchemaError, strictEnum, strictNum, strictNumOpt, strictStr, strictStrOpt } from "../raw-validate";
 import { sha256 } from "../hash";
+
+// Supported MLPerf scenarios for THIS vertical slice. Server is the only scenario whose
+// latency-constrained semantics are implemented; any other/unknown scenario fails closed
+// (its concurrency/serving/latency semantics differ and are NOT modelled here) — P1-BENCH-011.
+const MLPERF_SCENARIOS = ["Server"] as const;
 
 export const mlperfAdapter: SourceAdapter = {
   sourceName: "MLPerf Inference",
@@ -31,7 +36,7 @@ export const mlperfAdapter: SourceAdapter = {
     const frameworkVersion = strictStrOpt(res.software.version, "software.version") ?? undefined;
     const formFactor = strictStr(sys.form_factor, "system.form_factor");
     const interconnect = strictStr(sys.interconnect, "system.interconnect");
-    const scenario = strictStr(res.scenario, "result.scenario");
+    const scenario = strictEnum(res.scenario, "result.scenario", MLPERF_SCENARIOS);
     const isl = strictNum(res.workload.isl, "workload.isl");
     const osl = strictNum(res.workload.osl, "workload.osl");
     const gpuCount = strictNum(sys.accelerator_count, "system.accelerator_count");

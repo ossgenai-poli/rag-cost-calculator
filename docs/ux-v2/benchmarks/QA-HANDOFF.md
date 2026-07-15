@@ -20,10 +20,17 @@ The layer **imports** the frozen `lib/benchmarks.ts` read-only (the control wrap
 ## Run the tests
 
 ```
-npx vitest run lib/benchmark-registry     # 34/34 — the guarantees + all P1/P2 reproductions (five rounds)
-npx vitest run                            # 218/218 — frozen 184 + new 34 (no regression)
+npx vitest run lib/benchmark-registry     # 37/37 — the guarantees + all P1/P2 reproductions (six rounds)
+npx vitest run                            # 221/221 — frozen 184 + new 37 (no regression)
 npx tsc --noEmit                          # clean
 ```
+
+**Round 6 (sixth HOLD) — close the last two trust-boundary gaps:**
+
+| Finding | Fix |
+|---|---|
+| **P1-BENCH-010** public `catalog` override bypassed the pinned-evidence boundary | removed `catalog` from the public `ResolveOptions`; production `resolveOperatingPoint()` ALWAYS consumes the pinned, checksum-verified `loadCatalog()` and frozen policy — an ordinary caller can no longer supply arbitrary unnormalized/unverified records. Synthetic-catalog + injected-equivalence injection moved to an internal test-only entry point (`__resolveOperatingPointForTest`). Test proves the public resolver ignores a caller-supplied catalog (→ `unbenchmarked`) while the test resolver accepts it |
+| **P1-BENCH-011** unknown scenario/row-kind treated as valid latency evidence | added `strictEnum`; TensorRT-LLM `row_kind` is validated against `{latency-qualified, max-throughput}` and `latencyQualified` now requires an explicit `latency-qualified` row (no "not-max-load ⇒ latency" default); MLPerf `scenario` is validated against the supported set (`Server` only for this slice — other/unknown scenarios fail closed). Reproductions added: `row_kind="typo-latency"` and `scenario="typo-server"` both throw |
 
 **Round 5 (fifth HOLD) — public-boundary + policy-immutability fixes:**
 

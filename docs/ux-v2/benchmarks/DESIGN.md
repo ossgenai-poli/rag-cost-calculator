@@ -252,6 +252,20 @@ Plus determinism: the selector is a pure function of (RequestSpec, pinned catalo
   lacks a reviewed AWS-host mapping and prefix-cache metadata — neither inferred); measured-exact is
   exercised end-to-end via a fully-specified synthetic record.
 
+### Round-6 hardening
+- **No public catalog override (P1-BENCH-010):** the public `ResolveOptions` no longer carries a
+  `catalog`. Production `resolveOperatingPoint()` ALWAYS resolves the pinned, checksum-verified
+  `loadCatalog()`; an ordinary caller cannot inject arbitrary unnormalized/unverified records (which
+  would otherwise fabricate a measured-exact result more directly than any equivalence override).
+  Synthetic fixtures use the internal `__resolveOperatingPointForTest` entry point only. Any future
+  support for external catalogs must be a separate ingestion API with schema + checksum/provenance
+  verification and non-verified trust classification.
+- **Semantic enum validation (P1-BENCH-011):** `strictStr` fixed type coercion but not semantics.
+  Source enums that CONTROL qualification/topology/serving are now validated against explicit unions
+  and fail closed on an unknown value: TensorRT-LLM `row_kind ∈ {latency-qualified, max-throughput}`
+  (and `latencyQualified` requires an explicit `latency-qualified` row — never "not max-load ⇒
+  latency"), MLPerf `scenario ∈ {Server}` (the only scenario whose latency semantics are implemented).
+
 ### Round-5 hardening
 - **Validation at the *public* boundary (P1-BENCH-006):** `resolveOperatingPoint()` runs
   `requestBoundaryErrors()` (completeness + type/range) **before** catalog selection and returns a

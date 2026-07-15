@@ -1,7 +1,10 @@
 // NVIDIA TensorRT-LLM adapter — vendor-measured supplement. Pure & deterministic.
 // Max-load rows are a capacity CEILING, not an interactive result unless latency-qualified.
 import type { BenchmarkRecord, Reason, SourceAdapter } from "../schema";
-import { SchemaError, strictBool, strictNum, strictNumOpt, strictStr, strictStrOpt } from "../raw-validate";
+import { SchemaError, strictBool, strictEnum, strictNum, strictNumOpt, strictStr, strictStrOpt } from "../raw-validate";
+
+// Supported TensorRT-LLM row kinds — an unknown value must fail closed, NOT default to latency.
+const TRT_ROW_KINDS = ["latency-qualified", "max-throughput"] as const;
 import { sha256 } from "../hash";
 
 export const tensorrtllmAdapter: SourceAdapter = {
@@ -17,7 +20,7 @@ export const tensorrtllmAdapter: SourceAdapter = {
     return r.rows.map((row: any, i: number): BenchmarkRecord => {
       // Every decision-critical raw identifier is strict-validated BEFORE normalization — a number/
       // boolean where a string identifier is required fails closed, never String()-coerced (P1-BENCH-008).
-      const rowKind = strictStr(row.row_kind, "row.row_kind");
+      const rowKind = strictEnum(row.row_kind, "row.row_kind", TRT_ROW_KINDS);
       const maxLoad = rowKind === "max-throughput";
       const perGpuReported = strictBool(row.per_gpu_reported, "row.per_gpu_reported");
       const multinode = strictBool(row.multinode, "row.multinode");
@@ -87,7 +90,8 @@ export const tensorrtllmAdapter: SourceAdapter = {
         itl: null,
         throughputTotal: strictNumOpt(row.system_tokens_per_second_total, "system_tokens_per_second_total"),
         perGpuReported,
-        latencyQualified: !maxLoad && row.ttft_ms != null,
+        // Only an explicit latency-qualified row with a real TTFT qualifies — never inferred from "not max-load".
+        latencyQualified: rowKind === "latency-qualified" && row.ttft_ms != null,
         measuredDate: snap.retrievedAt,
         intrinsicQualifications: intrinsic,
         unknownFields: {},

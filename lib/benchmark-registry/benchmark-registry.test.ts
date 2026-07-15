@@ -4,7 +4,7 @@
 // provenance, and injected (never-mutated) host equivalence.
 import { describe, it, expect } from "vitest";
 import type { BenchmarkRecord, Provenance, RequestSpec } from "./schema";
-import { resolveOperatingPoint } from "./index";
+import { resolveOperatingPoint, __resolveOperatingPointForTest } from "./index";
 import { loadCatalog, loadAllSnapshots } from "./sources";
 import { inferencexAdapter } from "./sources/inferencex";
 import { mlperfAdapter } from "./sources/mlperf";
@@ -162,7 +162,7 @@ describe("catalog / provenance / control (architecture-only slice)", () => {
     expect(codes(loadCatalog().find((r) => r.concurrency === 8)!, dsv4Req({ concurrency: 8 }))).toContain("host-not-equivalent");
   });
   it("measured-exact end-to-end is exercised with a fully-specified synthetic record", () => {
-    const res = resolveOperatingPoint(fullReq(), { mode: "experimental", catalog: [mk({ id: "x" })] });
+    const res = __resolveOperatingPointForTest(fullReq(), { mode: "experimental", catalog: [mk({ id: "x" })] });
     expect(res.status).toBe("selected");
     expect(res.record!.provenance.rawChecksum).toBe(res.provenance!.full.rawChecksum);
     expect(res.operatingPoint!.tputPerGpu).toBe(600);
@@ -185,7 +185,7 @@ describe("catalog / provenance / control (architecture-only slice)", () => {
   it("control-diff compares concurrency/interactivity", () => {
     const rec = mk({ id: "d", modelId: "dsv4", checkpoint: "DeepSeek-V4-Pro", gpuSku: "B200", awsRepresentativeInstances: ["p6-b200.48xlarge"], weightPrecision: "fp4", framework: "trt", concurrency: 16, outputTputPerGpu: 106.4, inputTputPerGpu: 107.5, intvty: 56.7, ttft: { value: 2.24, percentile: "p99" } });
     const control = { inferencexKey: "dsv4", instanceType: "p6-b200.48xlarge", weightBits: 4, isl: 1024, osl: 1024, interactivityTarget: 30 };
-    const res = resolveOperatingPoint(dsv4Req({ concurrency: 16 }), { mode: "experimental", catalog: [rec], control });
+    const res = __resolveOperatingPointForTest(dsv4Req({ concurrency: 16 }), { mode: "experimental", catalog: [rec], control });
     expect(res.status).toBe("selected");
     expect(res.differsFromControl).toBe(true);
   });
@@ -233,10 +233,10 @@ describe("R5-P1-BENCH-006 — public resolver validates the request BEFORE catal
     expect(r2.status).toBe("invalid-request");
   });
   it("validation precedes catalog access — invalid on an EMPTY catalog is still invalid-request", () => {
-    expect(resolveOperatingPoint(fullReq({ isl: 0 }), { mode: "experimental", catalog: [] }).status).toBe("invalid-request");
+    expect(__resolveOperatingPointForTest(fullReq({ isl: 0 }), { mode: "experimental", catalog: [] }).status).toBe("invalid-request");
   });
   it("a valid, complete request with no evidence → unbenchmarked (the reserved meaning)", () => {
-    const res = resolveOperatingPoint(fullReq(), { mode: "experimental", catalog: [] });
+    const res = __resolveOperatingPointForTest(fullReq(), { mode: "experimental", catalog: [] });
     expect(res.status).toBe("unbenchmarked");
     expect(res.reasons.some((x) => x.code === "unbenchmarked")).toBe(true);
   });
@@ -250,7 +250,7 @@ describe("R5-P1-BENCH-007 — a non-identical sequence bucket is never measured-
     expect(m.evidenceStatus).toBe("measured-scaled");
     expect(m.evidenceStatus).not.toBe("measured-exact");
     expect(m.transformations![0].factor).toBe(4);
-    const res = resolveOperatingPoint(fullReq({ isl: 4096 }), { mode: "experimental", catalog: [rec] });
+    const res = __resolveOperatingPointForTest(fullReq({ isl: 4096 }), { mode: "experimental", catalog: [rec] });
     expect(res.status).toBe("selected");
     expect(res.record!.id).toBe("s4x");
     expect(res.confidence).toBe("extrapolated"); // measured-scaled never carries a source-class exact confidence
@@ -284,8 +284,33 @@ describe("R5-P1/P2-BENCH-009 — production trust policy is frozen and not publi
     // Same-SKU, non-AWS-representative record: only an INJECTED (internal) allowlist could proxy it.
     // The public resolver exposes no such injection → the record stays unbenchmarked.
     const rec = mk({ id: "h", hostSystem: "hgx-h200-reviewed", awsRepresentativeInstances: [] });
-    expect(resolveOperatingPoint(fullReq(), { mode: "experimental", catalog: [rec] }).status).toBe("unbenchmarked");
+    expect(__resolveOperatingPointForTest(fullReq(), { mode: "experimental", catalog: [rec] }).status).toBe("unbenchmarked");
     // …while the internal evaluator CAN inject a reviewed fixture (tests only):
     expect(evaluate(rec, fullReq(), { hostAllowlist: TEST_HOST }).evidenceStatus).toBe("proxy");
+  });
+});
+
+describe("R6-P1-BENCH-010 — the public resolver never consumes a caller-supplied catalog", () => {
+  it("public resolveOperatingPoint ignores injected records (pinned, verified catalog only)", () => {
+    const fabricated = mk({ id: "fab" }); // WOULD be measured-exact for fullReq() via the test resolver
+    // The public API exposes no `catalog`; forcing one via `as any` must have NO effect — production
+    // always uses the pinned catalog, in which fullReq (llama/H200) has no match → unbenchmarked.
+    const pub = resolveOperatingPoint(fullReq(), { mode: "experimental", catalog: [fabricated] } as any);
+    expect(pub.status).toBe("unbenchmarked");
+    expect(pub.status).not.toBe("selected");
+    // The internal test-only resolver DOES accept a synthetic catalog (proves the fixture is valid):
+    expect(__resolveOperatingPointForTest(fullReq(), { mode: "experimental", catalog: [fabricated] }).status).toBe("selected");
+  });
+});
+
+describe("R6-P1-BENCH-011 — unknown source enums fail closed (never defaulted to latency/topology)", () => {
+  const clone = (o: unknown) => JSON.parse(JSON.stringify(o));
+  it("TensorRT-LLM rejects an unknown row_kind instead of defaulting to latency-qualified", () => {
+    const t = clone(trtRaw); t.rows[0].row_kind = "typo-latency";
+    expect(() => tensorrtllmAdapter.normalize(t)).toThrow();
+  });
+  it("MLPerf rejects an unknown/unsupported scenario", () => {
+    const m = clone(mlpRaw); m.result.scenario = "typo-server";
+    expect(() => mlperfAdapter.normalize(m)).toThrow();
   });
 });
