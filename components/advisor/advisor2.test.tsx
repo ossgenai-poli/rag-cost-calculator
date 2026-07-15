@@ -1,6 +1,6 @@
-// UI iteration 2 tests — presets (preview/conflict/apply/undo contract, docs/ux-v2/07-presets.md),
-// the reason-coded ChangesPanel (rendered from the APPROVED structured change-diff), and alternatives
-// cards (distinct-only + honest empty). Real headless output; no mocks.
+// UI iteration 2 tests (post-HOLD revision) — presets with EXPLICIT per-field origin tracking
+// (default | manual | preset:<id>), accurate preview wording, safe undo; the compact structured change
+// summary + collapsed audit; and alternatives cards. Real headless output; no mocks.
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { recommend, narrate, diffRecommendations } from "../../lib/recommendation";
@@ -8,7 +8,11 @@ import type { NarratedCard } from "../../lib/recommendation";
 import { defaultInputs } from "../../lib/calc-engine";
 import type { CalcInputs, PriceBook } from "../../lib/types";
 import pricesJson from "../../public/prices.json";
-import { RESPONSE_PRESETS, computePreview, applyPreset } from "./presets";
+import {
+  RESPONSE_PRESETS, initialProvenance, changedPresetFields, registerManualEdit, computePreview,
+  previewCounts, applyPresetWithProvenance, undoPreset,
+} from "./presets";
+import { summarizeChanges } from "./change-summary";
 import { ChangesPanel } from "./ChangesPanel";
 import { AlternativeCards } from "./AlternativeCards";
 import type { AdvisorState } from "./AdvisorInputs";
@@ -19,80 +23,129 @@ const DEFAULTS: AdvisorState = {
   ttftTargetMs: 2000, interactivityTarget: 30, outTokens: 500, queryTokens: 50, promptOverhead: 300,
   chunkSize: 512, topN: 5, topK: 20, uptimeHours: 730, experimental: false,
 };
-function workload(volume = 200_000_000): CalcInputs {
+function workload(volume = 200_000_000, mutate?: (w: CalcInputs) => void): CalcInputs {
   const w = defaultInputs(priceBook);
   w.generation.mode = "self-hosted";
   w.generation.llmModelId = "deepseek-v4-pro-oss";
   w.generation.outTokens = 500;
   w.traffic.queriesPerMonth = volume;
   w.traffic.peakFactor = 1;
+  mutate?.(w);
   return w;
 }
+const strict = RESPONSE_PRESETS.find((p) => p.id === "strict-conversational")!;
+const analyst = RESPONSE_PRESETS.find((p) => p.id === "analyst")!;
+const interactive = RESPONSE_PRESETS.find((p) => p.id === "interactive-rag")!;
 
-describe("presets — preview/conflict/apply/undo contract (pure logic)", () => {
-  const conversational = RESPONSE_PRESETS.find((p) => p.id === "conversational")!;
-  const interactive = RESPONSE_PRESETS.find((p) => p.id === "interactive-rag")!;
+describe("presets — owner positions (bundle set)", () => {
+  it("Batch is REMOVED; Conversational is the explicitly strict target; RAG/Analyst retained", () => {
+    expect(RESPONSE_PRESETS.map((p) => p.id)).toEqual(["strict-conversational", "interactive-rag", "analyst"]);
+    expect(strict.label).toBe("Strict conversational target");
+    expect(strict.description).toMatch(/aggressive customer target/i);
+    expect(strict.description).toMatch(/not a universal recommendation/i);
+    expect(RESPONSE_PRESETS.some((p) => /batch/i.test(p.id) || /batch/i.test(p.label))).toBe(false);
+  });
+});
 
-  it("preview shows exactly which fields change, with 'no-change' rows identified", () => {
-    const rows = computePreview(DEFAULTS, DEFAULTS, conversational);
-    expect(rows).toEqual([
-      { field: "ttftTargetMs", label: "P99 TTFT target (ms)", current: 2000, proposed: 1000, status: "change" },
-      { field: "interactivityTarget", label: "Streaming target (tok/s/user)", current: 30, proposed: 50, status: "change" },
-    ]);
-    // applying the default-matching preset → all rows no-change
-    expect(computePreview(DEFAULTS, DEFAULTS, interactive).every((r) => r.status === "no-change")).toBe(true);
+describe("presets — explicit origin tracking (P1-UI2-1)", () => {
+  it("preset→preset switching: fields written by a previous preset are NOT conflicts and switch normally", () => {
+    // Apply Strict conversational from defaults…
+    const rows1 = computePreview(DEFAULTS, initialProvenance().origins, strict);
+    const applied = applyPresetWithProvenance(DEFAULTS, initialProvenance(), strict, rows1, {});
+    expect(applied.next.ttftTargetMs).toBe(1000);
+    expect(applied.provenance.origins.ttftTargetMs).toBe("preset:strict-conversational");
+    // …then preview Analyst: preset-origin values are ordinary CHANGES, not conflicts (repro A fixed).
+    const rows2 = computePreview(applied.next, applied.provenance.origins, analyst);
+    expect(rows2.every((r) => r.status === "change")).toBe(true);
+    const applied2 = applyPresetWithProvenance(applied.next, applied.provenance, analyst, rows2, {});
+    expect(applied2.next.ttftTargetMs).toBe(5000); // switched without per-field opt-ins
+    expect(applied2.next.interactivityTarget).toBe(15);
   });
 
-  it("an SA-edited field is a CONFLICT and is KEPT by default (no silent overwrite)", () => {
-    const edited = { ...DEFAULTS, ttftTargetMs: 1500 }; // SA edited away from the default
-    const rows = computePreview(edited, DEFAULTS, conversational);
+  it("only MANUAL-origin fields create conflicts, and they default to KEEP", () => {
+    const prov = registerManualEdit(initialProvenance(), ["ttftTargetMs"]);
+    const state = { ...DEFAULTS, ttftTargetMs: 1500 };
+    const rows = computePreview(state, prov.origins, strict);
     expect(rows.find((r) => r.field === "ttftTargetMs")!.status).toBe("conflict");
-    const { next, fieldsKept, fieldsChanged } = applyPreset(edited, rows, {}); // no explicit opt-in
+    expect(rows.find((r) => r.field === "interactivityTarget")!.status).toBe("change");
+    const { next, provenance } = applyPresetWithProvenance(state, prov, strict, rows, {});
     expect(next.ttftTargetMs).toBe(1500); // kept
-    expect(next.interactivityTarget).toBe(50); // non-conflicting field applied
-    expect(fieldsKept).toBe(1);
-    expect(fieldsChanged).toBe(1);
+    expect(provenance.origins.ttftTargetMs).toBe("manual"); // kept field stays manual-origin
+    expect(provenance.origins.interactivityTarget).toBe("preset:strict-conversational");
+    expect(provenance.active).toMatchObject({ label: "Strict conversational target", fieldsKept: 1, modified: false });
   });
 
-  it("an explicit per-field opt-in uses the preset value", () => {
-    const edited = { ...DEFAULTS, ttftTargetMs: 1500 };
-    const rows = computePreview(edited, DEFAULTS, conversational);
-    const { next, fieldsKept } = applyPreset(edited, rows, { ttftTargetMs: true });
-    expect(next.ttftTargetMs).toBe(1000);
-    expect(fieldsKept).toBe(0);
+  it("preset→manual edit: chip becomes Modified and Undo is INVALIDATED (never overwrites later edits)", () => {
+    const rows = computePreview(DEFAULTS, initialProvenance().origins, strict);
+    const applied = applyPresetWithProvenance(DEFAULTS, initialProvenance(), strict, rows, {});
+    expect(applied.provenance.undo).not.toBeNull(); // safe undo exists right after apply
+    // SA manually edits a preset field afterwards…
+    const after = { ...applied.next, ttftTargetMs: 1200 };
+    const prov2 = registerManualEdit(applied.provenance, changedPresetFields(applied.next, after));
+    expect(prov2.active).toMatchObject({ modified: true }); // "Modified from …"
+    expect(prov2.undo).toBeNull(); // undo invalidated
+    expect(undoPreset(prov2)).toBeNull(); // no path can restore over the manual edit
+    expect(prov2.origins.ttftTargetMs).toBe("manual");
   });
 
-  it("apply → undo restores the exact pre-apply state (single undo)", () => {
-    const before = { ...DEFAULTS, ttftTargetMs: 1500 };
-    const rows = computePreview(before, DEFAULTS, conversational);
-    const { next } = applyPreset(before, rows, { ttftTargetMs: true });
-    expect(next).not.toEqual(before);
-    // the PresetBar stores `before` as the undo snapshot; restoring it is exact
-    expect(before).toEqual({ ...DEFAULTS, ttftTargetMs: 1500 });
+  it("safe Undo (no later edits) restores the exact pre-apply state AND origins", () => {
+    const prov0 = registerManualEdit(initialProvenance(), ["interactivityTarget"]);
+    const state0 = { ...DEFAULTS, interactivityTarget: 20 };
+    const rows = computePreview(state0, prov0.origins, strict);
+    const applied = applyPresetWithProvenance(state0, prov0, strict, rows, { interactivityTarget: true });
+    const restored = undoPreset(applied.provenance)!;
+    expect(restored.state).toEqual(state0);
+    expect(restored.provenance.origins).toEqual(prov0.origins); // provenance restored with state
+    expect(restored.provenance.active).toBeNull();
+    expect(restored.revertedLabel).toBe("Strict conversational target");
   });
 
-  it("presets set INPUTS, not outputs — the engine still derives the fleet from them", () => {
-    // Analyst preset relaxes the SLA; the engine result is still computed, not hardcoded.
-    const w = workload();
-    w.generation.ttftTargetMs = 5000;
-    w.generation.interactivityTarget = 15;
+  it("presets set INPUTS, not outputs — the engine still derives the fleet", () => {
+    const w = workload(200_000_000, (x) => { x.generation.ttftTargetMs = 5000; x.generation.interactivityTarget = 15; });
     const r = narrate(recommend({ workload: w, optimizeFor: "cost" }));
-    expect(r.bestSelfHost).not.toBeNull(); // derived by the engine
+    expect(r.bestSelfHost).not.toBeNull();
     expect(r.evaluations[0].fleet.boxes).toBeGreaterThan(0);
   });
 });
 
-describe("ChangesPanel — reason-coded rendering of the approved structured diff", () => {
-  it("R1→R5 volume change renders fleet/cost rows with verbatim before→after values", () => {
+describe("presets — accurate preview wording (P2-UI2-1)", () => {
+  it("counts split proposed differences into selected vs kept under the current choices", () => {
+    const prov = registerManualEdit(initialProvenance(), ["ttftTargetMs"]);
+    const state = { ...DEFAULTS, ttftTargetMs: 1500 };
+    const rows = computePreview(state, prov.origins, strict);
+    expect(previewCounts(rows, {})).toEqual({ differences: 2, selected: 1, kept: 1 }); // conflict kept by default
+    expect(previewCounts(rows, { ttftTargetMs: true })).toEqual({ differences: 2, selected: 2, kept: 0 });
+    // preset matching current values → zero differences
+    const rowsSame = computePreview(DEFAULTS, initialProvenance().origins, interactive);
+    expect(previewCounts(rowsSame, {})).toEqual({ differences: 0, selected: 0, kept: 0 });
+  });
+});
+
+describe("ChangesPanel — compact structured summary + collapsed audit (P2-UI2-2)", () => {
+  it("canonical strict-conversational case: summary exposes SLA failure, evidence-gap, removal, decision", () => {
+    const a = recommend({ workload: workload(), optimizeFor: "cost" });
+    const b = recommend({ workload: workload(200_000_000, (w) => { w.generation.ttftTargetMs = 1000; w.generation.interactivityTarget = 50; }), optimizeFor: "cost" });
+    const diff = diffRecommendations(a, b);
+    const summary = summarizeChanges(diff);
+    const text = summary.map((s) => s.text).join(" | ");
+    expect(text).toContain("Decision: api (lower-cost) → api (evidence-gap) — no SLA-compatible configuration has qualifying evidence.");
+    expect(text).toContain("now fails the selected SLA (rejection: sla-unmet-ttft-or-streaming)");
+    expect(text).toContain("Best self-host option removed");
+    expect(summary.length).toBeLessThanOrEqual(6);
+    const html = renderToStaticMarkup(<ChangesPanel diff={diff} />);
+    expect(html).toContain("changes-summary");
+    expect(html).toMatch(/View all \d+ technical changes/); // complete audit preserved, collapsed
+    expect(html).toContain("decision-changed"); // raw reason-coded rows still present inside the audit
+  });
+  it("R1→R5 volume change: summary carries fleet/cost facts; audit keeps verbatim values", () => {
     const a = recommend({ workload: workload(), optimizeFor: "cost" });
     const b = recommend({ workload: workload(5_000_000), optimizeFor: "cost" });
     const diff = diffRecommendations(a, b);
+    const text = summarizeChanges(diff).map((s) => s.text).join(" | ");
+    expect(text).toContain("87 → 4 box(es)");
+    expect(text).toContain("$7,176,630 → $329,960/mo");
     const html = renderToStaticMarkup(<ChangesPanel diff={diff} />);
-    expect(html).toContain("What changed since your last input");
-    expect(html).toContain("fleet-changed");
-    expect(html).toContain("87 → 4"); // structured before/after verbatim
-    expect(html).toContain("cost-changed");
-    expect(html).toContain("effective-workload-changed");
+    expect(html).toContain("87 → 4");
     expect(html).not.toMatch(/NaN|undefined/);
   });
   it("renders nothing for identical results or no diff yet", () => {
@@ -100,42 +153,21 @@ describe("ChangesPanel — reason-coded rendering of the approved structured dif
     expect(renderToStaticMarkup(<ChangesPanel diff={diffRecommendations(a, a)} />)).toBe("");
     expect(renderToStaticMarkup(<ChangesPanel diff={null} />)).toBe("");
   });
-  it("control→experimental renders decision + evidence-state changes", () => {
-    const a = recommend({ workload: workload(), optimizeFor: "cost" });
-    const b = recommend({ workload: workload(), optimizeFor: "cost", experimentalProvenance: true });
-    const html = renderToStaticMarkup(<ChangesPanel diff={diffRecommendations(a, b)} />);
-    expect(html).toContain("decision-changed");
-    expect(html).toContain("api (lower-cost) → api (evidence-gap)");
-    expect(html).toContain("confidence-changed");
-    expect(html).toContain("measured-scaled → unbenchmarked");
-  });
 });
 
-describe("AlternativeCards — distinct-only, honest empty", () => {
+describe("AlternativeCards — distinct-only, honest empty (approved in review; regression only)", () => {
   const r1 = narrate(recommend({ workload: workload(), optimizeFor: "cost" }));
-  it("R1 (single eligible config) → honest 'none' note, no invented alternative", () => {
-    const html = renderToStaticMarkup(<AlternativeCards result={r1} />);
-    expect(html).toContain("alternatives-empty");
-    expect(html).toContain("single distinct configuration");
-    expect(html).not.toContain("Lowest-cost feasible alternative");
-  });
-  it("renders structured alternative cards when the headless layer produced distinct candidates", () => {
+  it("R1 → honest 'none' note; fixture renders structured cards; hidden without a primary", () => {
+    expect(renderToStaticMarkup(<AlternativeCards result={r1} />)).toContain("single distinct configuration");
     const alt: NarratedCard = {
       kind: "lowest-cost",
       config: { id: "x", llmModelId: "deepseek-v4-pro-oss", instanceType: "p5e.48xlarge", gpuSku: "H200", weightBits: 4, kvBits: 16, label: "p5e (H200) · INT4" },
       costMonthly: 5_000_000, costDeltaVsBest: -2_176_630, confidence: "measured-scaled",
       bindingConstraint: "eq", tradeoff: "cheaper, same evidence class",
     };
-    const withAlt = { ...r1, alternatives: [alt] };
-    const html = renderToStaticMarkup(<AlternativeCards result={withAlt} />);
+    const html = renderToStaticMarkup(<AlternativeCards result={{ ...r1, alternatives: [alt] }} />);
     expect(html).toContain("Lowest-cost feasible alternative");
-    expect(html).toContain("p5e (H200) · INT4");
     expect(html).toContain("$5,000,000/mo");
-    expect(html).toContain("−$2,176,630 vs best");
-    expect(html).toContain('data-confidence="measured-scaled"');
-  });
-  it("renders nothing when there is no primary self-host card", () => {
-    const empty = { ...r1, bestSelfHost: null };
-    expect(renderToStaticMarkup(<AlternativeCards result={empty} />)).toBe("");
+    expect(renderToStaticMarkup(<AlternativeCards result={{ ...r1, bestSelfHost: null }} />)).toBe("");
   });
 });

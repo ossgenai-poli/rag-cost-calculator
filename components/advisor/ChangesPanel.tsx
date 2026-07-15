@@ -5,6 +5,7 @@
 // verbatim {code, field, before → after}; nothing is inferred from prose, and object-valued changes
 // point to the structured audit rather than being summarized in invented language.
 import type { RecommendationChange, RecommendationDiff } from "@/lib/recommendation";
+import { summarizeChanges } from "./change-summary";
 
 const CODE_LABELS: Partial<Record<RecommendationChange["code"], string>> = {
   "decision-changed": "Decision",
@@ -48,24 +49,33 @@ function val(v: unknown): string {
 
 export function ChangesPanel({ diff }: { diff: RecommendationDiff | null }) {
   if (!diff || diff.identical || diff.changes.length === 0) return null;
+  // P2-UI2-2: a compact, structured impact summary first; the COMPLETE reason-coded audit stays
+  // available under a collapsed disclosure. Both are deterministic templates over the structured diff.
+  const summary = summarizeChanges(diff);
   return (
     <section aria-labelledby="changes-heading" data-testid="changes-panel" className="rounded-lg border border-sky-300 bg-sky-50 p-4">
-      <h2 id="changes-heading" className="text-base font-semibold text-sky-900">
-        What changed since your last input ({diff.changes.length})
-      </h2>
-      <ul className="mt-2 space-y-1 text-sm">
-        {diff.changes.map((c, i) => (
-          <li key={i} className="min-w-0 break-words" data-testid={`change-${c.code}`}>
-            <code className="rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-900">{c.code}</code>{" "}
-            <span className="font-medium text-slate-800">{CODE_LABELS[c.code] ?? c.code}</span>
-            {c.candidateId && <span className="text-xs text-slate-500"> · {c.candidateId}</span>}
-            {c.field && <span className="text-xs text-slate-500"> · {c.field}</span>}
-            <span className="ml-1 font-mono text-slate-700" data-testid="change-values">
-              {val(c.before)} → {val(c.after)}
-            </span>
-          </li>
+      <h2 id="changes-heading" className="text-base font-semibold text-sky-900">What changed since your last input</h2>
+      <ul className="mt-2 space-y-1 text-sm" data-testid="changes-summary">
+        {summary.map((s) => (
+          <li key={s.key} className="min-w-0 break-words text-slate-800">{s.text}</li>
         ))}
       </ul>
+      <details className="mt-2" data-testid="changes-audit">
+        <summary className="cursor-pointer text-sm text-sky-800">View all {diff.changes.length} technical changes</summary>
+        <ul className="mt-2 space-y-1 text-sm">
+          {diff.changes.map((c, i) => (
+            <li key={i} className="min-w-0 break-words" data-testid={`change-${c.code}`}>
+              <code className="rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-900">{c.code}</code>{" "}
+              <span className="font-medium text-slate-800">{CODE_LABELS[c.code] ?? c.code}</span>
+              {c.candidateId && <span className="text-xs text-slate-500"> · {c.candidateId}</span>}
+              {c.field && <span className="text-xs text-slate-500"> · {c.field}</span>}
+              <span className="ml-1 font-mono text-slate-700" data-testid="change-values">
+                {val(c.before)} → {val(c.after)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
       <p className="mt-2 text-xs text-slate-500">
         Reason-coded from the structured results (deterministic change-diff); raw before/after values are
         preserved in the structured audit.

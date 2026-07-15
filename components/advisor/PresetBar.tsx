@@ -1,48 +1,55 @@
 "use client";
 
-// Preset interaction (docs/ux-v2/07-presets.md): applying a preset ALWAYS shows a preview of exactly
-// which fields change (old → new, "no change" greyed), flags conflicts with SA-edited fields
-// (default = KEEP the edit), requires an explicit Apply, and supports a single Undo that restores the
-// pre-apply state. After apply, a chip shows the active preset and how many fields were kept.
+// Preset interaction (docs/ux-v2/07-presets.md), revised per iteration-2 HOLD. CONTROLLED component:
+// provenance (per-field origins, active preset, safe undo) lives in page state and every transition is
+// a pure function from presets.ts. Wording is accurate under conflicts (P2-UI2-1): the header counts
+// proposed differences split into selected-to-change vs kept, and the actions are "Apply selected
+// changes" plus an explicit "Use all preset values" override. A manual edit after apply flips the chip
+// to "Modified from …" and removes Undo (P1-UI2-1).
 import { useState } from "react";
 import type { AdvisorState } from "./AdvisorInputs";
-import { RESPONSE_PRESETS, computePreview, applyPreset, type PresetBundle, type PresetField, type PreviewRow } from "./presets";
+import {
+  RESPONSE_PRESETS, computePreview, previewCounts, applyPresetWithProvenance, undoPreset,
+  type PresetBundle, type PresetField, type PresetProvenance, type PreviewRow,
+} from "./presets";
 
-interface ActivePreset {
-  label: string;
-  fieldsKept: number;
+export interface PresetBarProps {
+  state: AdvisorState;
+  provenance: PresetProvenance;
+  onApply: (next: AdvisorState, provenance: PresetProvenance) => void;
+  onUndo: (state: AdvisorState, provenance: PresetProvenance, revertedLabel: string) => void;
 }
 
-export function PresetBar({ state, defaults, onChange }: { state: AdvisorState; defaults: AdvisorState; onChange: (next: AdvisorState) => void }) {
+export function PresetBar({ state, provenance, onApply, onUndo }: PresetBarProps) {
   const [previewFor, setPreviewFor] = useState<PresetBundle | null>(null);
   const [useValue, setUseValue] = useState<Partial<Record<PresetField, boolean>>>({});
-  const [active, setActive] = useState<ActivePreset | null>(null);
-  const [undoSnapshot, setUndoSnapshot] = useState<AdvisorState | null>(null);
   const [undoneLabel, setUndoneLabel] = useState<string | null>(null);
 
-  const rows: PreviewRow[] = previewFor ? computePreview(state, defaults, previewFor) : [];
+  const rows: PreviewRow[] = previewFor ? computePreview(state, provenance.origins, previewFor) : [];
+  const counts = previewCounts(rows, useValue);
 
   const openPreview = (bundle: PresetBundle) => {
     setPreviewFor(bundle);
     setUseValue({}); // conflicts default to KEEP the SA's value
     setUndoneLabel(null);
   };
-  const apply = () => {
+  const apply = (overrideAll: boolean) => {
     if (!previewFor) return;
-    const { next, fieldsKept } = applyPreset(state, rows, useValue);
-    setUndoSnapshot(state); // single undo restores the pre-apply state
-    setActive({ label: previewFor.label, fieldsKept });
+    const choices = overrideAll
+      ? Object.fromEntries(rows.filter((r) => r.status === "conflict").map((r) => [r.field, true]))
+      : useValue;
+    const { next, provenance: nextProv } = applyPresetWithProvenance(state, provenance, previewFor, rows, choices);
     setPreviewFor(null);
-    onChange(next);
+    onApply(next, nextProv);
   };
   const undo = () => {
-    if (!undoSnapshot || !active) return;
-    onChange(undoSnapshot);
-    setUndoneLabel(active.label);
-    setActive(null);
-    setUndoSnapshot(null);
+    const restored = undoPreset(provenance);
+    if (!restored) return;
+    setUndoneLabel(restored.revertedLabel);
+    onUndo(restored.state, restored.provenance, restored.revertedLabel);
   };
 
+  const active = provenance.active;
   return (
     <section aria-label="Response-experience presets" data-testid="preset-bar" className="rounded-lg border border-slate-200 bg-white p-3">
       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Response experience (Stage C)</h2>
@@ -64,9 +71,12 @@ export function PresetBar({ state, defaults, onChange }: { state: AdvisorState; 
       {active && (
         <p className="mt-2 flex flex-wrap items-center gap-2 text-xs" data-testid="active-preset-chip">
           <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-sky-900">
-            {active.label}{active.fieldsKept > 0 ? ` (${active.fieldsKept} field${active.fieldsKept > 1 ? "s" : ""} kept)` : ""}
+            {active.modified ? `Modified from ${active.label}` : active.label}
+            {!active.modified && active.fieldsKept > 0 ? ` (${active.fieldsKept} field${active.fieldsKept > 1 ? "s" : ""} kept)` : ""}
           </span>
-          <button type="button" data-testid="preset-undo" onClick={undo} className="text-sky-700 underline">Undo</button>
+          {provenance.undo && (
+            <button type="button" data-testid="preset-undo" onClick={undo} className="text-sky-700 underline">Undo</button>
+          )}
         </p>
       )}
       {undoneLabel && (
@@ -75,8 +85,9 @@ export function PresetBar({ state, defaults, onChange }: { state: AdvisorState; 
 
       {previewFor && (
         <div role="dialog" aria-modal="false" aria-label={`Preview: ${previewFor.label}`} data-testid="preset-preview" className="mt-2 rounded border border-slate-300 bg-slate-50 p-3">
-          <p className="text-sm font-medium text-slate-800">
-            “{previewFor.label}” will change {rows.filter((r) => r.status !== "no-change").length} field(s):
+          {/* P2-UI2-1 — accurate, dynamic wording under conflicts. */}
+          <p className="text-sm font-medium text-slate-800" data-testid="preview-header">
+            “{previewFor.label}” proposes {counts.differences} difference{counts.differences === 1 ? "" : "s"}: {counts.selected} selected to change, {counts.kept} kept.
           </p>
           <ul className="mt-2 space-y-1 text-sm">
             {rows.map((r) => (
@@ -110,9 +121,16 @@ export function PresetBar({ state, defaults, onChange }: { state: AdvisorState; 
               </li>
             ))}
           </ul>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" data-testid="preset-cancel" onClick={() => setPreviewFor(null)} className="rounded border border-slate-300 px-2 py-0.5 text-xs">Cancel</button>
-            <button type="button" data-testid="preset-apply" onClick={apply} className="rounded bg-slate-800 px-2 py-0.5 text-xs text-white">Apply all</button>
+            <button type="button" data-testid="preset-apply" onClick={() => apply(false)} className="rounded bg-slate-800 px-2 py-0.5 text-xs text-white">
+              Apply selected changes
+            </button>
+            {rows.some((r) => r.status === "conflict") && (
+              <button type="button" data-testid="preset-apply-all" onClick={() => apply(true)} className="rounded border border-slate-400 px-2 py-0.5 text-xs text-slate-700">
+                Use all preset values
+              </button>
+            )}
           </div>
         </div>
       )}
